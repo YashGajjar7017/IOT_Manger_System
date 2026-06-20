@@ -1,0 +1,23 @@
+{
+  "name": "iot-monitor-system",
+  "version": "1.0.0",
+  "description": "IoT Monitor System Gateway and Dashboard",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [
+    "IoT",
+    "Electron",
+    "Dashboard",
+    "OTA"
+  ],
+  "author": "Antigravity",
+  "license": "MIT",
+  "dependencies": {
+    "serialport": "^12.0.0"
+  },
+  "devDependencies": {
+    "electron": "^28.2.0"
+  }
+}
