@@ -43,10 +43,21 @@ const diagItems = {
   rtc: document.getElementById('diag-rtc')
 };
 
-// Telemetry Grid
+// Advanced Switchboard Controls
+const toggleRelay1 = document.getElementById('toggle-relay-1');
+const toggleRelay2 = document.getElementById('toggle-relay-2');
+const sliderInterval = document.getElementById('slider-interval');
+const lblIntervalVal = document.getElementById('lbl-interval-val');
+const btnRunSelfTest = document.getElementById('btn-run-selftest');
+const pingLatencyBadge = document.getElementById('ping-latency-badge');
+
+// Telemetry Grid & Filters
 const deviceCountSpan = document.getElementById('device-count');
 const gridPlaceholder = document.getElementById('grid-placeholder-box');
 const devicesGrid = document.getElementById('devices-grid');
+const searchDeviceId = document.getElementById('search-device-id');
+const filterDeviceStatus = document.getElementById('filter-device-status');
+const btnExportData = document.getElementById('btn-export-data');
 
 // OTA Updates
 const inputOtaIp = document.getElementById('ota-ip');
@@ -66,12 +77,18 @@ const btnStartOta = document.getElementById('btn-start-ota');
 const consoleTerminal = document.getElementById('console-terminal-lines');
 const btnClearLogs = document.getElementById('btn-clear-logs');
 
-// App Variables
+// Application State Variables
 let currentConnection = { type: null, target: null };
 let selectedOtaFilePath = null;
+let devicesCacheMap = new Map(); // Store complete list of subdevices
+
+// Ping RTT latency variables
+let pingIntervalId = null;
+let lastPingTime = 0;
+let awaitingPingResponse = false;
 
 // ==========================================================================
-// FRAMELESS TITLEBAR HANDLERS
+// FRAMELESS WINDOW HANDLERS
 // ==========================================================================
 btnMinimize.addEventListener('click', () => ipcRenderer.send('window-minimize'));
 btnMaximize.addEventListener('click', () => ipcRenderer.send('window-maximize'));
@@ -85,11 +102,9 @@ navItems.forEach(item => {
   item.addEventListener('click', () => {
     const targetId = item.getAttribute('data-target');
     
-    // Toggle navigation button active states
     navItems.forEach(nav => nav.classList.remove('active'));
     item.classList.add('active');
 
-    // Toggle pages display
     pageViews.forEach(page => {
       if (page.id === targetId) {
         page.classList.add('active');
@@ -100,7 +115,6 @@ navItems.forEach(item => {
   });
 });
 
-// Connection Panels Tab Switching
 tabButtons.forEach(btn => {
   btn.addEventListener('click', () => {
     const targetTab = btn.getAttribute('data-tab');
@@ -120,17 +134,28 @@ tabButtons.forEach(btn => {
 
 
 // ==========================================================================
-// CONNECTION INTERFACE LOGIC
+// INTERFACE CONTROLS & COMMAND ROUTER
 // ==========================================================================
 
-// Refresh Serial COM Ports
+// Helper: Send configuration commands to the active interface
+function sendGatewayCommand(command) {
+  if (currentConnection.type === 'serial') {
+    ipcRenderer.send('send-serial-command', command);
+  } else if (currentConnection.type === 'tcp') {
+    ipcRenderer.send('send-tcp-command', command);
+  } else {
+    appendLogLine(`[WARN] Cannot send command '${command}': Gateway disconnected.`, 'warning');
+  }
+}
+
+// Refresh COM Ports
 async function refreshSerialPorts() {
-  selectSerialPort.innerHTML = '<option value="">Scanning...</option>';
+  selectSerialPort.innerHTML = '<option value="">Scanning COM ports...</option>';
   const ports = await ipcRenderer.invoke('list-ports');
   selectSerialPort.innerHTML = '';
   
   if (ports.length === 0) {
-    selectSerialPort.innerHTML = '<option value="">No ports detected</option>';
+    selectSerialPort.innerHTML = '<option value="">No COM ports detected</option>';
     return;
   }
 
@@ -147,10 +172,10 @@ btnRefreshPorts.addEventListener('click', (e) => {
   refreshSerialPorts();
 });
 
-// Initial scan
+// Run initial port refresh
 refreshSerialPorts();
 
-// Connect Serial Click
+// Connect Serial
 btnConnectSerial.addEventListener('click', () => {
   const portPath = selectSerialPort.value;
   const baudRate = selectSerialBaud.value;
@@ -163,12 +188,12 @@ btnConnectSerial.addEventListener('click', () => {
   ipcRenderer.send('connect-serial', { portPath, baudRate });
 });
 
-// Start Boot Serial Command Trigger
+// START_BOOT Command Button
 btnBootTrigger.addEventListener('click', () => {
   ipcRenderer.send('send-serial-command', 'START_BOOT');
 });
 
-// Connect WiFi TCP Socket
+// Connect WiFi Socket
 btnConnectWifi.addEventListener('click', () => {
   const ip = inputWifiIp.value;
   const port = inputWifiPort.value;
@@ -181,40 +206,80 @@ btnConnectWifi.addEventListener('click', () => {
   ipcRenderer.send('connect-tcp', { ip, port });
 });
 
-// Disconnect active
+// Disconnect
 btnDisconnect.addEventListener('click', () => {
   ipcRenderer.send('disconnect-active');
 });
 
 
 // ==========================================================================
-// MAIN CONTROLLER AND IPC STATUS UPDATES
+// PING / LATENCY MONITOR ROUTINE
 // ==========================================================================
+function startPingMonitor() {
+  stopPingMonitor(); // Ensure clean start
+  
+  pingIntervalId = setInterval(() => {
+    if (currentConnection.type === 'tcp' && !awaitingPingResponse) {
+      lastPingTime = Date.now();
+      awaitingPingResponse = true;
+      ipcRenderer.send('send-tcp-command', 'PING');
+    }
+  }, 3000);
+}
 
-// Watch Connection Status Changes from Main Process
+function stopPingMonitor() {
+  if (pingIntervalId) {
+    clearInterval(pingIntervalId);
+    pingIntervalId = null;
+  }
+  awaitingPingResponse = false;
+  pingLatencyBadge.textContent = 'Offline';
+  pingLatencyBadge.className = 'ping-result offline';
+}
+
+ipcRenderer.on('ping-pong-reply', () => {
+  awaitingPingResponse = false;
+  const rtt = Date.now() - lastPingTime;
+  
+  pingLatencyBadge.textContent = `${rtt} ms`;
+  
+  if (rtt < 30) {
+    pingLatencyBadge.className = 'ping-result excellent';
+  } else if (rtt < 100) {
+    pingLatencyBadge.className = 'ping-result warning';
+  } else {
+    pingLatencyBadge.className = 'ping-result poor';
+  }
+});
+
+
+// ==========================================================================
+// CONNECTION STATE MANAGEMENT
+// ==========================================================================
 ipcRenderer.on('connection-status', (event, data) => {
   if (data.status === 'connected') {
     currentConnection.type = data.type;
     currentConnection.target = data.target;
 
-    // UI Updates
     globalConnPill.textContent = data.type === 'serial' ? 'SERIAL ACTIVE' : 'SOCKET ACTIVE';
     globalConnPill.className = 'connection-pill connected';
     
     connIndicatorDot.className = 'pulse-dot connected';
     connIndicatorText.textContent = 'Connected';
-    connDetailsSub.innerHTML = `Mode: ${data.type.toUpperCase()}<br>Target: ${data.target}`;
+    connDetailsSub.innerHTML = `Interface: ${data.type.toUpperCase()}<br>Node Target: ${data.target}`;
 
-    // Show disconnect and hide input tabs
     btnDisconnect.style.display = 'block';
     document.querySelector('.tabs-control').style.display = 'none';
     tabContents.forEach(c => c.style.display = 'none');
 
-    // Handle Boot Command Activation for Serial
+    // Serial-specific overrides
     if (data.type === 'serial') {
       btnBootTrigger.disabled = false;
+      pingLatencyBadge.textContent = 'USB Line';
+      pingLatencyBadge.className = 'ping-result excellent';
     } else {
       btnBootTrigger.disabled = true;
+      startPingMonitor();
     }
   } else if (data.status === 'disconnected' || data.status === 'error') {
     currentConnection.type = null;
@@ -227,15 +292,23 @@ ipcRenderer.on('connection-status', (event, data) => {
     connIndicatorText.textContent = 'Not Connected';
     connDetailsSub.innerHTML = data.status === 'error' ? `<span style="color:var(--accent-red)">${data.message}</span>` : 'Gateway Offline';
 
-    // Toggle Panels
     btnDisconnect.style.display = 'none';
     document.querySelector('.tabs-control').style.display = 'flex';
     tabContents.forEach(c => c.style.display = '');
     
     btnBootTrigger.disabled = true;
+    
+    // Disable switchboard controls
+    toggleRelay1.disabled = true;
+    toggleRelay2.disabled = true;
+    sliderInterval.disabled = true;
+    btnRunSelfTest.disabled = true;
+
+    stopPingMonitor();
+    resetDiagnostics();
 
     if (data.status === 'error') {
-      alert(`Connection Error: ${data.message}`);
+      alert(`Connection Failed: ${data.message}`);
     }
   }
 });
@@ -248,15 +321,14 @@ function appendLogLine(line, type = 'normal') {
   const lineElement = document.createElement('div');
   lineElement.className = `terminal-line ${type}`;
   
-  // Highlighting prefixes
   let lowerLine = line.toLowerCase();
   if (lowerLine.includes('[error]') || lowerLine.includes('fail')) {
     lineElement.classList.add('error');
-  } else if (lowerLine.includes('success') || lowerLine.includes('ok')) {
+  } else if (lowerLine.includes('success') || lowerLine.includes('ok') || lowerLine.includes('active')) {
     lineElement.classList.add('success');
-  } else if (lowerLine.includes('[diagnostic]')) {
+  } else if (lowerLine.includes('[diagnostic]') || lowerLine.includes('[cmd]')) {
     lineElement.classList.add('system');
-  } else if (lowerLine.includes('[tx]')) {
+  } else if (lowerLine.includes('[tx')) {
     lineElement.classList.add('tx');
   } else if (lowerLine.includes('[telemetry]')) {
     lineElement.classList.add('rx');
@@ -265,10 +337,8 @@ function appendLogLine(line, type = 'normal') {
   lineElement.textContent = `[${new Date().toLocaleTimeString()}] ${line}`;
   consoleTerminal.appendChild(lineElement);
   
-  // Auto Scroll
   consoleTerminal.scrollTop = consoleTerminal.scrollHeight;
   
-  // Cap history to 500 lines to avoid memory leak
   if (consoleTerminal.children.length > 500) {
     consoleTerminal.removeChild(consoleTerminal.firstChild);
   }
@@ -284,10 +354,9 @@ btnClearLogs.addEventListener('click', () => {
 
 
 // ==========================================================================
-// DIAGNOSTICS & TELEMETRY LIVE UPDATES
+// DIAGNOSTICS & HARDWARE SYNC
 // ==========================================================================
 
-// Reset Diagnostics
 function resetDiagnostics() {
   diagImei.textContent = 'IMEI: --';
   diagMac.textContent = 'MAC: --';
@@ -299,16 +368,15 @@ function resetDiagnostics() {
   });
 }
 
-// 9-Point Hardware Diagnostic Update
+// Initial Diagnostic Success parsing
 ipcRenderer.on('hardware-payload', (event, payload) => {
   if (payload.status === 'BOOT_SUCCESS') {
     diagImei.textContent = `IMEI: ${payload.imei || '--'}`;
     diagMac.textContent = `MAC: ${payload.mac || '--'}`;
     
-    // Sync values on OTA inputs
-    inputOtaIp.value = '192.168.4.1'; // standard gateway IP
+    inputOtaIp.value = '192.168.4.1'; // Default
     
-    appendLogLine('[SYS] Valid boot diagnostics JSON payload parsed successfully.', 'success');
+    appendLogLine('[SYS] Received self-test success payload from gateway.', 'success');
 
     if (payload.diagnostics) {
       Object.keys(payload.diagnostics).forEach(key => {
@@ -328,77 +396,160 @@ ipcRenderer.on('hardware-payload', (event, payload) => {
   }
 });
 
-// Telemetry Client Data Binding
+// Synchronize switchboard control states on payload push
+ipcRenderer.on('control-payload-sync', (event, payload) => {
+  // Sync state values on input components
+  toggleRelay1.disabled = false;
+  toggleRelay2.disabled = false;
+  sliderInterval.disabled = false;
+  btnRunSelfTest.disabled = false;
+
+  toggleRelay1.checked = !!payload.relay1;
+  toggleRelay2.checked = !!payload.relay2;
+  
+  sliderInterval.value = payload.interval || 1500;
+  lblIntervalVal.textContent = `${payload.interval || 1500} ms`;
+
+  appendLogLine(`[SYS] Control Switchboard synchronized. Rate: ${payload.interval}ms, R1: ${payload.relay1 ? 'ON':'OFF'}, R2: ${payload.relay2 ? 'ON':'OFF'}`);
+});
+
+
+// ==========================================================================
+// INTERACTIVE SWITCHBOARD CONTROL LISTENERS
+// ==========================================================================
+
+toggleRelay1.addEventListener('change', () => {
+  const cmd = toggleRelay1.checked ? 'RELAY_1_ON' : 'RELAY_1_OFF';
+  sendGatewayCommand(cmd);
+});
+
+toggleRelay2.addEventListener('change', () => {
+  const cmd = toggleRelay2.checked ? 'RELAY_2_ON' : 'RELAY_2_OFF';
+  sendGatewayCommand(cmd);
+});
+
+sliderInterval.addEventListener('input', () => {
+  lblIntervalVal.textContent = `${sliderInterval.value} ms`;
+});
+
+sliderInterval.addEventListener('change', () => {
+  const interval = sliderInterval.value;
+  sendGatewayCommand(`SET_INTERVAL:${interval}`);
+});
+
+btnRunSelfTest.addEventListener('click', () => {
+  resetDiagnostics();
+  sendGatewayCommand('RE_DIAGNOSE');
+});
+
+
+// ==========================================================================
+// TELEMETRY PROCESSING, FILTERING & JSON EXPORT
+// ==========================================================================
+
 ipcRenderer.on('telemetry-payload', (event, payload) => {
   if (payload.type === 'telemetry') {
-    deviceCountSpan.textContent = payload.count || 0;
-    
-    // Hide empty state and show grid
-    gridPlaceholder.style.display = 'none';
-    devicesGrid.style.display = 'grid';
-
-    // Loop through devices and append or update their cards
-    payload.devices.forEach(device => {
-      let card = document.getElementById(`device-card-${device.id}`);
-      
-      if (!card) {
-        // Create new device card dynamically
-        card = document.createElement('div');
-        card.id = `device-card-${device.id}`;
-        card.className = 'device-card';
-        
-        card.innerHTML = `
-          <div class="device-card-header">
-            <span class="device-id">NODE #${device.id}</span>
-            <span class="device-status-badge">ONLINE</span>
-          </div>
-          <div class="device-metrics">
-            <div class="device-metric">
-              <span class="metric-label">Temp</span>
-              <span class="metric-val temp-val">${device.temp}°C</span>
-            </div>
-            <div class="device-metric">
-              <span class="metric-label">Signal</span>
-              <span class="metric-val rssi-val">${device.rssi} dBm</span>
-            </div>
-            <div class="device-metric" style="grid-column: span 2;">
-              <span class="metric-label">Battery</span>
-              <div class="bat-wrapper">
-                <div class="bat-bar-outer">
-                  <div class="bat-bar-inner" style="width: ${device.bat}%"></div>
-                </div>
-                <span class="metric-val bat-val" style="font-size:11px;">${device.bat}%</span>
-              </div>
-            </div>
-          </div>
-        `;
-        devicesGrid.appendChild(card);
-      } else {
-        // Update existing device card properties
-        card.querySelector('.temp-val').textContent = `${device.temp}°C`;
-        card.querySelector('.rssi-val').textContent = `${device.rssi} dBm`;
-        card.querySelector('.bat-val').textContent = `${device.bat}%`;
-        
-        const batFill = card.querySelector('.bat-bar-inner');
-        batFill.style.width = `${device.bat}%`;
-        
-        if (device.bat < 20) {
-          batFill.classList.add('low');
-        } else {
-          batFill.classList.remove('low');
-        }
-
-        // Status update
-        const statusBadge = card.querySelector('.device-status-badge');
-        if (device.status === 'ONLINE') {
-          card.classList.remove('offline');
-          statusBadge.textContent = 'ONLINE';
-        } else {
-          card.classList.add('offline');
-          statusBadge.textContent = 'OFFLINE';
-        }
-      }
+    // Update local cache
+    payload.devices.forEach(dev => {
+      devicesCacheMap.set(dev.id, dev);
     });
+
+    renderFilteredDevices();
+  }
+});
+
+// Filters inputs trigger render
+searchDeviceId.addEventListener('input', renderFilteredDevices);
+filterDeviceStatus.addEventListener('change', renderFilteredDevices);
+
+function renderFilteredDevices() {
+  const query = searchDeviceId.value.trim().toLowerCase();
+  const filter = filterDeviceStatus.value;
+  const devices = Array.from(devicesCacheMap.values());
+  
+  const filtered = devices.filter(dev => {
+    // Search filter
+    const matchesSearch = dev.id.toString().includes(query);
+    
+    // Status filter
+    let matchesStatus = true;
+    if (filter === 'ONLINE') matchesStatus = dev.status === 'ONLINE';
+    if (filter === 'OFFLINE') matchesStatus = dev.status !== 'ONLINE';
+    
+    return matchesSearch && matchesStatus;
+  });
+
+  deviceCountSpan.textContent = filtered.length;
+
+  if (devicesCacheMap.size === 0) {
+    gridPlaceholder.style.display = 'flex';
+    devicesGrid.style.display = 'none';
+    return;
+  }
+
+  gridPlaceholder.style.display = 'none';
+  devicesGrid.style.display = 'grid';
+
+  let html = '';
+  filtered.forEach(device => {
+    const isOffline = device.status !== 'ONLINE';
+    const isLowBat = device.bat < 20;
+
+    html += `
+      <div class="device-card ${isOffline ? 'offline' : ''}">
+        <div class="device-card-header">
+          <span class="device-id">NODE #${device.id}</span>
+          <span class="device-status-badge">${device.status}</span>
+        </div>
+        <div class="device-metrics">
+          <div class="device-metric">
+            <span class="metric-label">Temp</span>
+            <span class="metric-val temp-val">${parseFloat(device.temp).toFixed(1)}°C</span>
+          </div>
+          <div class="device-metric">
+            <span class="metric-label">Signal</span>
+            <span class="metric-val rssi-val">${device.rssi} dBm</span>
+          </div>
+          <div class="device-metric" style="grid-column: span 2;">
+            <span class="metric-label">Battery</span>
+            <div class="bat-wrapper">
+              <div class="bat-bar-outer">
+                <div class="bat-bar-inner ${isLowBat ? 'low' : ''}" style="width: ${device.bat}%"></div>
+              </div>
+              <span class="metric-val bat-val" style="font-size:11px;">${device.bat}%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  devicesGrid.innerHTML = html || `<div style="grid-column: 1/-1; text-align:center; padding: 30px; color: var(--text-dim);">No devices match active filters.</div>`;
+}
+
+// Export captured telemetry to JSON file
+btnExportData.addEventListener('click', () => {
+  if (devicesCacheMap.size === 0) {
+    alert('No telemetry data available to export.');
+    return;
+  }
+
+  try {
+    const devicesList = Array.from(devicesCacheMap.values());
+    const dataStr = JSON.stringify(devicesList, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nebula-telemetry-dump-${Date.now()}.json`;
+    a.click();
+    
+    URL.revokeObjectURL(url);
+    appendLogLine(`[SYS] Telemetry dump exported successfully. Count: ${devicesList.length} clients`, 'success');
+  } catch (err) {
+    alert(`Export failed: ${err.message}`);
+    appendLogLine(`[ERROR] Export failed: ${err.message}`, 'error');
   }
 });
 
@@ -407,7 +558,6 @@ ipcRenderer.on('telemetry-payload', (event, payload) => {
 // OTA UPDATE DRAG AND DROP HANDLERS
 // ==========================================================================
 
-// Drag events
 otaDropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
   otaDropZone.classList.add('dragover');
@@ -427,7 +577,6 @@ otaDropZone.addEventListener('drop', (e) => {
   }
 });
 
-// File click dialog browse
 btnBrowseBin.addEventListener('click', (e) => {
   e.preventDefault();
   otaFileInput.click();
@@ -439,80 +588,71 @@ otaFileInput.addEventListener('change', () => {
   }
 });
 
-// Process Selected File
 function handleOtaFileSelection(file) {
   if (!file.name.endsWith('.bin')) {
-    alert('Invalid File Format. Please choose a compiled firmware binary (.bin) file.');
+    alert('Invalid File format. Select a compiled firmware binary file (.bin)');
     return;
   }
 
-  selectedOtaFilePath = file.path; // Absolute local file path (available in Electron)
-  
-  // Format sizes
+  selectedOtaFilePath = file.path;
   const sizeInKB = Math.round(file.size / 1024);
   
   selectedFileName.textContent = file.name;
   selectedFileSize.textContent = `${sizeInKB} KB`;
-  
   selectedFileInfo.style.display = 'flex';
+  
   btnStartOta.disabled = false;
   
-  appendLogLine(`[OTA] Selected firmware file: ${file.name} (${sizeInKB} KB)`);
+  appendLogLine(`[OTA] Selected firmware binary: ${file.name} (${sizeInKB} KB)`);
 }
 
-// Start Wireless Upload Trigger
 btnStartOta.addEventListener('click', () => {
   if (!selectedOtaFilePath) return;
 
   const otaIp = inputOtaIp.value;
   if (!otaIp) {
-    alert('Please enter the gateway IP address.');
+    alert('Enter the gateway AP IP address.');
     return;
   }
 
-  // Lock UI inputs
   btnStartOta.disabled = true;
   otaDropZone.style.pointerEvents = 'none';
   
-  // Init progress state
   otaProgressBox.style.display = 'block';
   otaBarFill.style.width = '0%';
   otaPercentText.textContent = '0%';
   otaStatusText.textContent = 'Uploading firmware...';
-  otaBarFill.style.backgroundColor = ''; // Reset error red
+  otaBarFill.style.backgroundColor = '';
 
-  // Send start command to Main
   ipcRenderer.send('start-ota', { 
     filePath: selectedOtaFilePath, 
     ip: otaIp 
   });
 });
 
-// Process OTA progress responses from main.js
 ipcRenderer.on('ota-progress', (event, update) => {
   if (update.status === 'uploading') {
     otaBarFill.style.width = `${update.progress}%`;
     otaPercentText.textContent = `${update.progress}%`;
-    otaStatusText.textContent = `Streaming data: ${update.progress}%`;
+    otaStatusText.textContent = `Uploading firmware: ${update.progress}%`;
   } else if (update.status === 'success') {
     otaBarFill.style.width = '100%';
     otaPercentText.textContent = '100%';
-    otaStatusText.textContent = 'Update successful! Gateway is rebooting...';
-    otaBarFill.style.background = 'var(--grad-emerald)';
+    otaStatusText.textContent = 'Flash successful! Rebooting device...';
+    otaBarFill.style.background = 'var(--grad-emerald-cyan)';
     
-    appendLogLine('[OTA] SUCCESS: Firmware update verified. Gateway rebooting in 3 seconds.', 'success');
-    alert('Firmware update succeeded! The gateway will reboot now.');
+    appendLogLine('[OTA] SUCCESS: Firmware flash verification succeeded. Gateway rebooting...', 'success');
+    alert('Firmware flash completed successfully! The gateway will reboot.');
     
-    // Unlock UI
     resetOtaForm();
   } else if (update.status === 'error') {
     otaStatusText.textContent = `Error: ${update.message}`;
-    otaBarFill.style.background = 'var(--accent-red)';
+    otaBarFill.style.background = 'var(--accent-pink)';
     btnStartOta.disabled = false;
     otaDropZone.style.pointerEvents = '';
     
-    appendLogLine(`[OTA ERROR] Failed: ${update.message}`, 'error');
-    alert(`OTA Update Failed:\n${update.message}`);
+    appendLogLine(`[OTA ERROR] Flashing aborted: ${update.message}`, 'error');
+    alert(`Wireless OTA failed:\n${update.message}`);
   }
 });
 

@@ -1,23 +1,32 @@
 {
   "name": "iot-monitor-system",
-  "version": "1.0.0",
-  "description": "IoT Monitor System Gateway and Dashboard",
+  "version": "2.0.0",
+  "description": "IoT Monitor Gateway MERN Desktop Dashboard",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "build": "vite build",
+    "start": "npm run build && electron ."
   },
   "keywords": [
     "IoT",
     "Electron",
-    "Dashboard",
-    "OTA"
+    "React",
+    "MERN",
+    "Express",
+    "MongoDB"
   ],
   "author": "Antigravity",
   "license": "MIT",
   "dependencies": {
+    "express": "^4.18.2",
+    "mongoose": "^8.0.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "serialport": "^12.0.0"
   },
   "devDependencies": {
-    "electron": "^28.2.0"
+    "@vitejs/plugin-react": "^4.2.1",
+    "electron": "^28.2.0",
+    "vite": "^5.0.10"
   }
 }

@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const net = require('net');
+const express = require('express');
+const mongoose = require('mongoose');
 const { SerialPort } = require('serialport');
 
 let mainWindow;
@@ -10,29 +12,163 @@ let activeSerialPort = null;
 let activeTcpSocket = null;
 let serialBuffer = '';
 let tcpBuffer = '';
+let expressServer = null;
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false, // Set to false to allow direct IPC access in renderer.js
-      backgroundThrottling: false
-    },
-    titleBarStyle: 'hidden', // Custom window controls styling can be used
-    backgroundColor: '#12072b'
+// Database Configuration
+let mongodbConnected = false;
+let memoryHistoryBuffer = []; // In-memory fallback database if MongoDB is not running
+
+// Mongoose Schema Definition
+const TelemetrySchema = new mongoose.Schema({
+  timestamp: { type: Date, default: Date.now },
+  count: Number,
+  devices: [
+    {
+      id: Number,
+      temp: Number,
+      rssi: Number,
+      bat: Number,
+      status: String
+    }
+  ]
+});
+
+const TelemetryModel = mongoose.model('Telemetry', TelemetrySchema);
+
+// 1. Initialize MongoDB Connection with Graceful In-Memory Fallback
+function connectDatabase() {
+  const mongoURI = 'mongodb://127.0.0.1:27017/iot_monitor';
+  console.log(`[DATABASE] Connecting to MongoDB at ${mongoURI}...`);
+
+  mongoose.connect(mongoURI, {
+    serverSelectionTimeoutMS: 3000 // Timeout fast if MongoDB is not running
+  })
+  .then(() => {
+    mongodbConnected = true;
+    console.log('[DATABASE] MongoDB connection established successfully.');
+  })
+  .catch((err) => {
+    mongodbConnected = false;
+    console.warn('[DATABASE] MongoDB connection failed. Falling back to In-Memory Logging.');
+    console.warn(`[DATABASE] Error details: ${err.message}`);
+  });
+}
+
+// 2. Start Express Web Server
+function startExpressServer() {
+  const expressApp = express();
+  expressApp.use(express.json());
+
+  // Serve Vite compiled React frontend assets
+  const distPath = path.join(__dirname, 'dist');
+  expressApp.use(express.static(distPath));
+
+  // REST API: Get database connection and logs status
+  expressApp.get('/api/status', (req, res) => {
+    res.json({
+      mongodb: mongodbConnected ? 'CONNECTED' : 'FALLBACK_MEMORY',
+      recordsCount: mongodbConnected ? 'Fetching dynamically' : memoryHistoryBuffer.length
+    });
   });
 
-  mainWindow.loadFile('index.html');
-  
-  // Open devtools during development if needed
-  // mainWindow.webContents.openDevTools();
+  // REST API: Retrieve the last 50 historical telemetry snapshots
+  expressApp.get('/api/telemetry/history', async (req, res) => {
+    try {
+      if (mongodbConnected) {
+        const history = await TelemetryModel.find()
+          .sort({ timestamp: -1 })
+          .limit(50);
+        res.json(history);
+      } else {
+        // Return memory buffer (newest first)
+        res.json([...memoryHistoryBuffer].reverse());
+      }
+    } catch (err) {
+      res.status(500).json({ error: `Failed to fetch logs: ${err.message}` });
+    }
+  });
+
+  // REST API: Delete all telemetry history logs
+  expressApp.delete('/api/telemetry/history', async (req, res) => {
+    try {
+      if (mongodbConnected) {
+        await TelemetryModel.deleteMany({});
+        res.json({ success: true, message: 'MongoDB history logs cleared.' });
+      } else {
+        memoryHistoryBuffer = [];
+        res.json({ success: true, message: 'In-Memory history logs cleared.' });
+      }
+    } catch (err) {
+      res.status(500).json({ error: `Failed to clear logs: ${err.message}` });
+    }
+  });
+
+  // Fallback to React index.html for single-page routing
+  expressApp.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+
+  // Create HTTP server wrapper
+  expressServer = http.createServer(expressApp);
+  expressServer.listen(8000, '127.0.0.1', () => {
+    console.log('[EXPRESS] Server running on http://127.0.0.1:8000');
+  });
+}
+
+// 3. Save Telemetry snapshot helper
+async function saveTelemetrySnapshot(data) {
+  const snapshot = {
+    timestamp: new Date(),
+    count: data.count,
+    devices: data.devices
+  };
+
+  if (mongodbConnected) {
+    try {
+      await TelemetryModel.create(snapshot);
+      
+      // Auto-cap history to 200 documents to prevent bloated database in PoC
+      const count = await TelemetryModel.countDocuments();
+      if (count > 200) {
+        const oldest = await TelemetryModel.find().sort({ timestamp: 1 }).limit(1);
+        if (oldest.length > 0) {
+          await TelemetryModel.deleteOne({ _id: oldest[0]._id });
+        }
+      }
+    } catch (err) {
+      console.error('[DATABASE] Failed to write telemetry record to MongoDB:', err);
+    }
+  } else {
+    memoryHistoryBuffer.push(snapshot);
+    if (memoryHistoryBuffer.length > 50) {
+      memoryHistoryBuffer.shift(); // Keep last 50 snapshots
+    }
+  }
+}
+
+// 4. Electron Window Creation
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1250,
+    height: 870,
+    minWidth: 1000,
+    minHeight: 700,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false, // Set to false to allow direct IPC access in React
+      backgroundThrottling: false
+    },
+    titleBarStyle: 'hidden',
+    backgroundColor: '#03000a'
+  });
+
+  // Load the compiled React app served via local Express
+  mainWindow.loadURL('http://localhost:8000');
 }
 
 app.whenReady().then(() => {
+  connectDatabase();
+  startExpressServer();
   createWindow();
 
   app.on('activate', () => {
@@ -42,6 +178,9 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   cleanupConnections();
+  if (expressServer) {
+    expressServer.close();
+  }
   if (process.platform !== 'darwin') app.quit();
 });
 
@@ -80,13 +219,12 @@ function cleanupConnections() {
 // IPC Handlers: Serial Communication
 // -------------------------------------------------------------
 
-// List available serial ports
 ipcMain.handle('list-ports', async () => {
   try {
     const ports = await SerialPort.list();
     return ports.map(p => ({
       path: p.path,
-      manufacturer: p.manufacturer || 'Generic'
+      manufacturer: p.manufacturer || 'Generic Device'
     }));
   } catch (err) {
     console.error('Failed to list serial ports:', err);
@@ -94,7 +232,6 @@ ipcMain.handle('list-ports', async () => {
   }
 });
 
-// Connect to a serial port
 ipcMain.on('connect-serial', (event, { portPath, baudRate }) => {
   cleanupConnections();
 
@@ -117,15 +254,13 @@ ipcMain.on('connect-serial', (event, { portPath, baudRate }) => {
       activeSerialPort.on('data', (chunk) => {
         serialBuffer += chunk.toString();
         
-        // Process data line-by-line
         let lines = serialBuffer.split('\n');
-        serialBuffer = lines.pop(); // Keep incomplete line in buffer
+        serialBuffer = lines.pop(); // Keep partial line
 
         for (let line of lines) {
           line = line.trim();
           if (!line) continue;
 
-          // Check if it's the custom JSON telemetry or boot payload
           if (line.startsWith('JSON_PAYLOAD:')) {
             const jsonStr = line.substring(13);
             try {
@@ -134,8 +269,15 @@ ipcMain.on('connect-serial', (event, { portPath, baudRate }) => {
             } catch (e) {
               event.reply('console-log', `[ERROR] Failed to parse boot JSON: ${e.message}`);
             }
+          } else if (line.startsWith('CONTROL_STATUS:')) {
+            const jsonStr = line.substring(15);
+            try {
+              const payload = JSON.parse(jsonStr);
+              event.reply('control-payload-sync', payload);
+            } catch (e) {
+              event.reply('console-log', `[ERROR] Failed to parse control status: ${e.message}`);
+            }
           } else {
-            // Forward serial debug logs directly to renderer console
             event.reply('console-log', line);
           }
         }
@@ -154,14 +296,13 @@ ipcMain.on('connect-serial', (event, { portPath, baudRate }) => {
   }
 });
 
-// Send a serial command
 ipcMain.on('send-serial-command', (event, command) => {
   if (activeSerialPort && activeSerialPort.isOpen) {
     activeSerialPort.write(command + '\n', (err) => {
       if (err) {
         event.reply('console-log', `[ERROR] Failed to write command: ${err.message}`);
       } else {
-        event.reply('console-log', `[TX] Send Command: ${command}`);
+        event.reply('console-log', `[TX SERIAL] Send: ${command}`);
       }
     });
   } else {
@@ -173,29 +314,27 @@ ipcMain.on('send-serial-command', (event, command) => {
 // IPC Handlers: TCP Network Communication
 // -------------------------------------------------------------
 
-// Connect to the gateway via TCP Socket (WiFi AP mode)
 ipcMain.on('connect-tcp', (event, { ip, port }) => {
   cleanupConnections();
   const hostIP = ip || '192.168.4.1';
-  const hostPort = parseInt(port) || 8080;
+  const hostPort = parseInt(port) || 9000;
 
-  event.reply('console-log', `[TCP] Attempting connection to ${hostIP}:${hostPort}...`);
+  event.reply('console-log', `[TCP] Connecting to telemetry socket at ${hostIP}:${hostPort}...`);
 
   activeTcpSocket = new net.Socket();
-  activeTcpSocket.setTimeout(5000); // 5 seconds timeout
+  activeTcpSocket.setTimeout(6000);
 
   activeTcpSocket.connect(hostPort, hostIP, () => {
     event.reply('connection-status', { status: 'connected', type: 'tcp', target: `${hostIP}:${hostPort}` });
-    event.reply('console-log', `[TCP] Successfully connected to telemetry server at ${hostIP}:${hostPort}`);
+    event.reply('console-log', `[TCP] Connected to gateway socket at ${hostIP}:${hostPort}`);
     tcpBuffer = '';
   });
 
   activeTcpSocket.on('data', (chunk) => {
     tcpBuffer += chunk.toString();
 
-    // Process TCP JSON packets line-by-line
     let lines = tcpBuffer.split('\n');
-    tcpBuffer = lines.pop(); // Keep incomplete line
+    tcpBuffer = lines.pop();
 
     for (let line of lines) {
       line = line.trim();
@@ -203,22 +342,32 @@ ipcMain.on('connect-tcp', (event, { ip, port }) => {
 
       try {
         const payload = JSON.parse(line);
-        event.reply('telemetry-payload', payload);
+        if (payload.type === 'telemetry') {
+          event.reply('telemetry-payload', payload);
+          
+          // Auto-save incoming telemetry packet to MongoDB / memory database
+          saveTelemetrySnapshot(payload);
+        } else if (payload.type === 'control_status') {
+          event.reply('control-payload-sync', payload);
+        } else if (payload.type === 'pong') {
+          event.reply('ping-pong-reply');
+        } else if (payload.status === 'BOOT_SUCCESS') {
+          event.reply('hardware-payload', payload);
+        }
       } catch (e) {
-        // Log telemetry lines if they aren't JSON
         event.reply('console-log', `[TCP RX] ${line}`);
       }
     }
   });
 
   activeTcpSocket.on('timeout', () => {
-    event.reply('console-log', '[TCP] Connection timed out.');
+    event.reply('console-log', '[TCP] Connection timeout threshold reached.');
     activeTcpSocket.destroy();
   });
 
   activeTcpSocket.on('close', () => {
     event.reply('connection-status', { status: 'disconnected' });
-    event.reply('console-log', '[TCP] Socket connection closed.');
+    event.reply('console-log', '[TCP] Client socket disconnected.');
   });
 
   activeTcpSocket.on('error', (err) => {
@@ -227,11 +376,24 @@ ipcMain.on('connect-tcp', (event, { ip, port }) => {
   });
 });
 
-// Disconnect active interface
+ipcMain.on('send-tcp-command', (event, command) => {
+  if (activeTcpSocket && !activeTcpSocket.destroyed) {
+    activeTcpSocket.write(command + '\n', (err) => {
+      if (err) {
+        event.reply('console-log', `[ERROR] Failed to send TCP command: ${err.message}`);
+      } else {
+        event.reply('console-log', `[TX TCP] Send: ${command}`);
+      }
+    });
+  } else {
+    event.reply('console-log', '[ERROR] TCP connection is inactive.');
+  }
+});
+
 ipcMain.on('disconnect-active', (event) => {
   cleanupConnections();
   event.reply('connection-status', { status: 'disconnected' });
-  event.reply('console-log', '[SYSTEM] Active connections disconnected.');
+  event.reply('console-log', '[SYSTEM] Interface disconnected.');
 });
 
 // -------------------------------------------------------------
@@ -240,10 +402,10 @@ ipcMain.on('disconnect-active', (event) => {
 
 ipcMain.on('start-ota', (event, { filePath, ip }) => {
   const gatewayIP = ip || '192.168.4.1';
-  event.reply('console-log', `[OTA] Starting OTA transfer of ${path.basename(filePath)} to ${gatewayIP}...`);
+  event.reply('console-log', `[OTA] Streaming binary firmware to http://${gatewayIP}:8000/update...`);
 
   if (!fs.existsSync(filePath)) {
-    event.reply('ota-progress', { status: 'error', message: 'Selected file does not exist.' });
+    event.reply('ota-progress', { status: 'error', message: 'Binary file does not exist.' });
     return;
   }
 
@@ -251,7 +413,6 @@ ipcMain.on('start-ota', (event, { filePath, ip }) => {
     const stats = fs.statSync(filePath);
     const fileSize = stats.size;
     
-    // WebKitFormBoundary for multipart form-data
     const boundary = '----WebKitFormBoundaryIoT' + Math.random().toString(36).substring(2);
     const filename = path.basename(filePath);
     
@@ -265,7 +426,7 @@ ipcMain.on('start-ota', (event, { filePath, ip }) => {
     
     const options = {
       hostname: gatewayIP,
-      port: 80,
+      port: 8000,
       path: '/update',
       method: 'POST',
       headers: {
@@ -284,11 +445,11 @@ ipcMain.on('start-ota', (event, { filePath, ip }) => {
       res.on('end', () => {
         if (res.statusCode === 200 && responseData.toUpperCase().includes('OK')) {
           event.reply('ota-progress', { status: 'success', progress: 100 });
-          event.reply('console-log', '[OTA] Upgrade complete! Device rebooting...');
+          event.reply('console-log', '[OTA] Upgrade completed! Router reboot triggered.');
         } else {
           event.reply('ota-progress', { 
             status: 'error', 
-            message: `Server update failed. Code ${res.statusCode}: ${responseData}` 
+            message: `Flashing failed. Code ${res.statusCode}: ${responseData}` 
           });
         }
       });
@@ -297,16 +458,14 @@ ipcMain.on('start-ota', (event, { filePath, ip }) => {
     req.on('error', (err) => {
       event.reply('ota-progress', { 
         status: 'error', 
-        message: `OTA request error: ${err.message}. Ensure you are connected to the Gateway Access Point.` 
+        message: `OTA transmission failed: ${err.message}. Check AP connection.` 
       });
       event.reply('console-log', `[OTA ERROR] ${err.message}`);
     });
     
-    // Write headers
     req.write(header);
     
-    // Stream binary file with progress updates
-    const fileStream = fs.createReadStream(filePath, { highWaterMark: 32768 }); // 32KB chunks
+    const fileStream = fs.createReadStream(filePath, { highWaterMark: 32768 });
     let bytesSent = 0;
     
     fileStream.on('data', (chunk) => {
