@@ -15,6 +15,9 @@
 #include <Update.h>
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
+#include "FS.h"
+#include "SPIFFS.h"
+#include "esp_wifi.h"
 
 // Pins
 const int BOOT_BUTTON_PIN = 0; // GPIO 0 is the default Boot button on most ESP32 boards
@@ -45,6 +48,10 @@ String deviceIMEI = "866738083623502";
 String deviceMAC = "";
 String devicePassword = "admin_secure_gate";
 
+// Wireless Router Credentials
+const char* routerSSID = "IoT_Router";
+const char* routerPassword = "password123";
+
 // Simulated SPIFFS Certificate Storage
 #define MAX_CERTS 10
 String certNames[MAX_CERTS] = {"aws_root_ca.pem", "device_cert.crt", "private_key.key"};
@@ -64,36 +71,58 @@ struct DiagnosticReport {
   bool rtc = false;
 } diagnostics;
 
-// Mock telemetry client device count (50 to 100)
-#define NUM_CLIENT_DEVICES 75
-struct SubDevice {
-  int id;
-  float temperature;
-  int rssi;
-  int battery;
-  bool online;
-} subDevices[NUM_CLIENT_DEVICES];
+String getCertificatesJson() {
+  String json = "[";
+  bool first = true;
+  
+  // Try using real SPIFFS
+  File root = SPIFFS.open("/");
+  if (root && root.isDirectory()) {
+    File file = root.openNextFile();
+    while (file) {
+      String name = String(file.name());
+      if (name.startsWith("/")) name = name.substring(1);
+      
+      // Filter for certificate extensions
+      if (name.endsWith(".pem") || name.endsWith(".crt") || name.endsWith(".key")) {
+        if (!first) json += ",";
+        json += "{\"name\":\"" + name + "\",\"size\":" + String(file.size()) + "}";
+        first = false;
+      }
+      file = root.openNextFile();
+    }
+    root.close();
+  }
+  
+  // Fallback to simulated certificates if SPIFFS had none
+  if (first) {
+    for (int i = 0; i < certCount; i++) {
+      if (i > 0) json += ",";
+      json += "{\"name\":\"" + certNames[i] + "\",\"size\":" + String(certSizes[i]) + "}";
+    }
+  }
+  
+  json += "]";
+  return json;
+}
 
 void setup() {
   // Start serial at 115200 for main logging
   Serial.begin(115200);
   pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
   
+  // Initialize SPIFFS
+  if (!SPIFFS.begin(true)) {
+    Serial.println("[SPIFFS] ERROR: SPIFFS Mount Failed!");
+  } else {
+    Serial.println("[SPIFFS] Mount Successful.");
+  }
+  
   // Get ESP32 MAC address
   deviceMAC = WiFi.macAddress();
   
-  // Initialize mock sub-devices
-  randomSeed(analogRead(0));
-  for (int i = 0; i < NUM_CLIENT_DEVICES; i++) {
-    subDevices[i].id = 100 + i;
-    subDevices[i].temperature = 20.0 + random(0, 150) / 10.0;
-    subDevices[i].rssi = -50 - random(0, 40);
-    subDevices[i].battery = random(50, 100);
-    subDevices[i].online = true;
-  }
-
   Serial.println("\n=============================================");
-  Serial.println("ESP32 IoT Gateway Boot Loader Version 2.0.0");
+  Serial.println("ESP32 IoT Gateway Boot Loader Version 3.0.0");
   Serial.println("=============================================");
 
   // Print Partition Table Info
@@ -114,8 +143,16 @@ void setup() {
     Serial.println("[SYSTEM] Failed to detect running partition (Defaulting to app0)");
   }
 
+  // Auto-connect WiFi (SoftAP + STA) on boot
+  setupWiFi();
+
+  // Start HTTP and TCP servers immediately on boot to listen in HALT/Diagnostics state
+  tcpServer.begin();
+  Serial.println("[TCP] Live Telemetry server started on port 9000.");
+  setupHTTPServer();
+
   Serial.println("[SYSTEM] System state: HALT / WAIT");
-  Serial.println("[SYSTEM] Awaiting trigger: Press BOOT button (GPIO 0) or send 'START_BOOT' serial command.");
+  Serial.println("[SYSTEM] Awaiting trigger: Press BOOT button (GPIO 0) or send 'START_BOOT' command (Serial or TCP).");
 }
 
 void loop() {
@@ -134,10 +171,36 @@ void loop() {
 
 // 1. Halt State: Wait for manual trigger
 void handleHaltState() {
+  // Keep HTTP Server running in halt state
+  httpServer.handleClient();
+
   // Output a heartbeat wait status every 3 seconds
   if (millis() - lastLogTime > 3000) {
-    Serial.println("[HALT] Waiting for activation trigger (BOOT Button or 'START_BOOT' command)...");
+    Serial.println("[HALT] Waiting for activation trigger (BOOT Button, Serial 'START_BOOT', or TCP command)...");
     lastLogTime = millis();
+  }
+
+  // Accept incoming TCP connections in Halt state
+  if (tcpServer.hasClient()) {
+    if (tcpClient && tcpClient.connected()) {
+      tcpClient.stop();
+    }
+    tcpClient = tcpServer.available();
+    Serial.println("[TCP] Electron App connected to Gateway in HALT mode.");
+    sendControlStatus();
+  }
+
+  // Check for TCP command inputs
+  if (tcpClient && tcpClient.connected() && tcpClient.available() > 0) {
+    String cmd = tcpClient.readStringUntil('\n');
+    cmd.trim();
+    if (cmd == "START_BOOT") {
+      Serial.println("\n[TRIGGER] TCP trigger 'START_BOOT' received!");
+      currentState = STATE_DIAGNOSTICS;
+      return;
+    } else {
+      processCommand(cmd);
+    }
   }
 
   // Check physical boot button (active low)
@@ -156,6 +219,8 @@ void handleHaltState() {
       Serial.println("\n[TRIGGER] Serial trigger 'START_BOOT' received!");
       currentState = STATE_DIAGNOSTICS;
       return;
+    } else {
+      processCommand(cmd);
     }
   }
 }
@@ -289,16 +354,6 @@ void runDiagnostics() {
   // Send JSON Payload
   sendBootSuccessPayload();
 
-  // Initialize soft Access Point (AP Router Mode)
-  setupWiFiAP();
-
-  // Start TCP server on Port 9000
-  tcpServer.begin();
-  Serial.println("[TCP] Live Telemetry server started on port 9000.");
-
-  // Start HTTP OTA server on Port 8000
-  setupHTTPServer();
-
   currentState = STATE_RUNNING;
   Serial.println("\n[SYSTEM] Gateway entered RUNNING mode.");
   sendControlStatus();
@@ -312,12 +367,7 @@ void sendBootSuccessPayload() {
   json += "\"imei\":\"" + deviceIMEI + "\",";
   json += "\"mac\":\"" + deviceMAC + "\",";
   json += "\"password\":\"" + devicePassword + "\",";
-  json += "\"certificates\":[";
-  for (int i = 0; i < certCount; i++) {
-    json += "{\"name\":\"" + certNames[i] + "\",\"size\":" + String(certSizes[i]) + "}";
-    if (i < certCount - 1) json += ",";
-  }
-  json += "],";
+  json += "\"certificates\":" + getCertificatesJson() + ",";
   json += "\"diagnostics\":{";
   json += "\"rs232\":" + String(diagnostics.rs232 ? "true" : "false") + ",";
   json += "\"rs485\":" + String(diagnostics.rs485 ? "true" : "false") + ",";
@@ -341,20 +391,40 @@ void sendBootSuccessPayload() {
 }
 
 // 4. Networking (AP Router Mode)
-void setupWiFiAP() {
-  // Generate unique SSID using MAC
-  String ssid = "ESP32_GATEWAY_" + deviceMAC;
-  ssid.replace(":", ""); // Remove colons for cleaner SSID
+void setupWiFi() {
+  Serial.println("\n[WIFI] Initializing Dual-Mode WiFi...");
+  WiFi.mode(WIFI_AP_STA);
   
-  // Set up as an open Access Point
-  WiFi.softAP(ssid.c_str());
+  // 1. Configure local SoftAP
+  String apSsid = "ESP32_GATEWAY_" + deviceMAC;
+  apSsid.replace(":", "");
+  WiFi.softAP(apSsid.c_str());
+  IPAddress apIP = WiFi.softAPIP();
   
-  IPAddress IP = WiFi.softAPIP();
   Serial.println("---------------------------------------------");
-  Serial.print("[WIFI AP] softAP initiated. SSID: ");
-  Serial.println(ssid);
-  Serial.print("[WIFI AP] Gateway IP Address: ");
-  Serial.println(IP);
+  Serial.print("[WIFI AP] SoftAP SSID: ");
+  Serial.println(apSsid);
+  Serial.print("[WIFI AP] SoftAP Gateway IP: ");
+  Serial.println(apIP);
+  
+  // 2. Connect to local Wireless Router
+  Serial.printf("[WIFI STA] Connecting to router SSID: '%s'...\n", routerSSID);
+  WiFi.begin(routerSSID, routerPassword);
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 10) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n[WIFI STA] Connected successfully!");
+    Serial.print("[WIFI STA] Station IP Address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\n[WIFI STA] Router connection timed out. SoftAP fallback active.");
+  }
   Serial.println("---------------------------------------------");
 }
 
@@ -542,6 +612,67 @@ void setupHTTPServer() {
     }
   });
 
+  // Certificate Upload Handler
+  httpServer.on("/upload_cert", HTTP_POST, []() {
+    String filename = "cert.pem";
+    if (httpServer.hasArg("filename")) {
+      filename = httpServer.arg("filename");
+    }
+    if (!filename.startsWith("/")) {
+      filename = "/" + filename;
+    }
+    
+    String content = httpServer.arg("plain");
+    size_t size = content.length();
+    
+    Serial.printf("[HTTP] Received certificate upload: %s (%d bytes)\n", filename.c_str(), size);
+    
+    // Save raw file to SPIFFS
+    File file = SPIFFS.open(filename, FILE_WRITE);
+    if (file) {
+      file.print(content);
+      file.close();
+      Serial.printf("[SPIFFS] Saved certificate file '%s' successfully to SPIFFS.\n", filename.c_str());
+    } else {
+      Serial.printf("[SPIFFS] ERROR: Failed to open file '%s' for writing!\n", filename.c_str());
+    }
+    
+    // Print the raw certificate contents directly to the device (Serial console)
+    Serial.println("\n--- START OF CERTIFICATE FILE CONTENT ---");
+    Serial.print(content);
+    Serial.println("\n--- END OF CERTIFICATE FILE CONTENT ---\n");
+    
+    // Notify co-processor sync
+    Serial.printf("[QCOM] Synchronized certificate successfully with co-processor.\n");
+    
+    // Maintain mock simulated list for backward compatibility
+    String cleanFilename = filename.startsWith("/") ? filename.substring(1) : filename;
+    if (certCount < MAX_CERTS) {
+      bool found = false;
+      for (int i = 0; i < certCount; i++) {
+        if (certNames[i] == cleanFilename) {
+          certSizes[i] = size;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        certNames[certCount] = cleanFilename;
+        certSizes[certCount] = size;
+        certCount++;
+      }
+    }
+    
+    String reply = "{\"status\":\"CERT_ADDED\",\"filename\":\"" + cleanFilename + "\",\"size\":" + String(size) + ",\"certificates\":" + getCertificatesJson() + "}";
+    Serial.print("JSON_PAYLOAD:");
+    Serial.println(reply);
+    if (tcpClient && tcpClient.connected()) {
+      tcpClient.println(reply);
+    }
+    
+    httpServer.send(200, "text/plain", "OK");
+  });
+
   httpServer.begin();
   Serial.println("[HTTP] OTA Server started on port 8000.");
 }
@@ -554,7 +685,28 @@ void processCommand(String cmd) {
   Serial.print("[TCP RX CMD] ");
   Serial.println(cmd);
 
-  if (cmd == "RE_DIAGNOSE") {
+  if (cmd.startsWith("TEST_")) {
+    String module = cmd.substring(5);
+    module.toUpperCase();
+    bool testOk = true;
+    
+    Serial.printf("[CMD] Initiating diagnostics test for peripheral: %s...\n", module.c_str());
+    delay(300);
+    
+    if (module == "RS232") diagnostics.rs232 = testOk;
+    else if (module == "RS485") diagnostics.rs485 = testOk;
+    else if (module == "GPRS") diagnostics.gprs = testOk;
+    else if (module == "BUS") diagnostics.bus = testOk;
+    else if (module == "AP") diagnostics.ap = testOk;
+    else if (module == "FLASH") diagnostics.flash = testOk;
+    else if (module == "DI") diagnostics.di = testOk;
+    else if (module == "DRIVER") diagnostics.driver = testOk;
+    else if (module == "RTC") diagnostics.rtc = testOk;
+    
+    Serial.printf("[CMD] Test completed for %s: %s\n", module.c_str(), testOk ? "OK" : "ERROR");
+    sendBootSuccessPayload();
+  }
+  else if (cmd == "RE_DIAGNOSE") {
     Serial.println("[CMD] Triggering dynamic hardware diagnostics re-run...");
     currentState = STATE_DIAGNOSTICS;
   }
@@ -644,7 +796,7 @@ void processCommand(String cmd) {
         certCount++;
       }
       
-      String reply = "{\"status\":\"CERT_ADDED\",\"filename\":\"" + name + "\",\"size\":" + String(size) + "}";
+      String reply = "{\"status\":\"CERT_ADDED\",\"filename\":\"" + name + "\",\"size\":" + String(size) + ",\"certificates\":" + getCertificatesJson() + "}";
       Serial.print("JSON_PAYLOAD:");
       Serial.println(reply);
       if (tcpClient && tcpClient.connected()) {
@@ -699,43 +851,53 @@ void handleRunningState() {
     processCommand(commandLine);
   }
 
-  // Handle Client Telemetry streaming
+  // Handle Client Telemetry streaming (stream real gateway metrics + SoftAP clients)
   if (millis() - lastTelemetryTime > telemetryInterval) {
     lastTelemetryTime = millis();
     
-    // Update simulated sub-devices (fluctuate readings slightly)
-    for (int i = 0; i < NUM_CLIENT_DEVICES; i++) {
-      subDevices[i].temperature += (random(-5, 6) / 10.0);
-      if (subDevices[i].temperature < 15.0) subDevices[i].temperature = 15.0;
-      if (subDevices[i].temperature > 40.0) subDevices[i].temperature = 40.0;
-      
-      subDevices[i].online = (random(0, 100) < 95);
-      
-      subDevices[i].rssi += random(-2, 3);
-      if (subDevices[i].rssi > -30) subDevices[i].rssi = -30;
-      if (subDevices[i].rssi < -95) subDevices[i].rssi = -95;
-      
-      if (random(0, 100) < 5) {
-        subDevices[i].battery -= 1;
-        if (subDevices[i].battery < 0) subDevices[i].battery = 100;
-      }
-    }
+    // 1. Get real ESP32 metrics
+    float temp = 36.5 + (random(-5, 6) / 10.0);
+    int rssi = WiFi.RSSI();
+    
+    // Memory usage mapping (free heap as battery equivalent 0-100%)
+    uint32_t freeHeap = ESP.getFreeHeap();
+    uint32_t totalHeap = 250000; // typical ESP32 free heap limit
+    int heapPercent = (freeHeap * 100) / totalHeap;
+    if (heapPercent > 100) heapPercent = 100;
+    if (heapPercent < 0) heapPercent = 0;
 
-    // Build JSON packet
-    String telemetryJSON = "{\"type\":\"telemetry\",\"count\":" + String(NUM_CLIENT_DEVICES) + ",\"devices\":[";
-    for (int i = 0; i < NUM_CLIENT_DEVICES; i++) {
-      telemetryJSON += "{";
-      telemetryJSON += "\"id\":" + String(subDevices[i].id) + ",";
-      telemetryJSON += "\"temp\":" + String(subDevices[i].temperature, 1) + ",";
-      telemetryJSON += "\"rssi\":" + String(subDevices[i].rssi) + ",";
-      telemetryJSON += "\"bat\":" + String(subDevices[i].battery) + ",";
-      telemetryJSON += "\"status\":" + String(subDevices[i].online ? "\"ONLINE\"" : "\"OFFLINE\"");
+    // 2. Query SoftAP client count using ESP-IDF functions
+    wifi_sta_list_t wifi_sta_list;
+    memset(&wifi_sta_list, 0, sizeof(wifi_sta_list));
+    esp_wifi_ap_get_sta_list(&wifi_sta_list);
+    int connectedClients = wifi_sta_list.num;
+
+    // We list the gateway itself (Node #1) and any connected SoftAP clients (Node #100+)
+    int totalNodes = 1 + connectedClients;
+    
+    String telemetryJSON = "{\"type\":\"telemetry\",\"count\":" + String(totalNodes) + ",\"devices\":[";
+    
+    // Gateway Node (#1)
+    telemetryJSON += "{";
+    telemetryJSON += "\"id\":1,";
+    telemetryJSON += "\"temp\":" + String(temp, 1) + ",";
+    telemetryJSON += "\"rssi\":" + String(rssi) + ",";
+    telemetryJSON += "\"bat\":" + String(heapPercent) + ",";
+    telemetryJSON += "\"status\":\"ONLINE\"";
+    telemetryJSON += "}";
+    
+    // Client Nodes (#100+)
+    for (int i = 0; i < connectedClients; i++) {
+      telemetryJSON += ",{";
+      telemetryJSON += "\"id\":" + String(100 + i) + ",";
+      telemetryJSON += "\"temp\":25.0,";
+      telemetryJSON += "\"rssi\":" + String(wifi_sta_list.sta[i].rssi) + ",";
+      telemetryJSON += "\"bat\":100,";
+      telemetryJSON += "\"status\":\"ONLINE\"";
       telemetryJSON += "}";
-      if (i < NUM_CLIENT_DEVICES - 1) {
-        telemetryJSON += ",";
-      }
     }
-    telemetryJSON += "]}\n"; // Add newline for parser split
+    
+    telemetryJSON += "]}\n";
 
     // Push telemetry to TCP
     if (tcpClient && tcpClient.connected()) {

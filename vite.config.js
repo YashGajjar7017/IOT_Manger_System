@@ -6,8 +6,8 @@ export default defineConfig({
   plugins: [react()],
   base: './', // Configures relative asset paths so Electron loads files correctly from the filesystem
   build: {
-    outDir: 'dist',
-    emptyOutDir: true,
+    outDir: 'frontend-build',
+    emptyOutDir: false,
     sourcemap: false
   },
   resolve: {

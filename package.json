@@ -5,8 +5,9 @@
   "main": "main.js",
   "scripts": {
     "build": "vite build",
-    "electron-dev": "npm run build && electron .",
-    "electron-start": "electron ."
+    "electron-start": "electron .",
+    "electron-build": "npm run build && electron-builder",
+    "electron-dev": "concurrently \"npm start\" \"wait-on http://localhost:4000 && electron .\""
   },
   "keywords": [
     "IoT",
@@ -28,6 +29,45 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",
     "electron": "^28.2.0",
-    "vite": "^5.0.10"
+    "vite": "^5.0.10",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.iot_PubSub.app",
+    "productName": "IOT Monitor System",
+    "icon": "icon/logo.png",
+    "files": [
+      "frontend-build/**/*",
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "public",
+      "output": "installer-release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon/logo.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

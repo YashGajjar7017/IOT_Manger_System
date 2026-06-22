@@ -60,7 +60,7 @@ function startExpressServer() {
   expressApp.use(express.json());
 
   // Serve Vite compiled React frontend assets
-  const distPath = path.join(__dirname, 'dist');
+  const distPath = path.join(__dirname, 'frontend-build');
   expressApp.use(express.static(distPath));
 
   // REST API: Get database connection and logs status
@@ -354,7 +354,7 @@ ipcMain.on('connect-tcp', (event, { ip, port }) => {
           event.reply('control-payload-sync', payload);
         } else if (payload.type === 'pong') {
           event.reply('ping-pong-reply');
-        } else if (payload.status === 'BOOT_SUCCESS' || payload.status === 'BOOT_PROGRESS') {
+        } else if (payload.status) {
           event.reply('hardware-payload', payload);
         }
       } catch (e) {
@@ -493,3 +493,61 @@ ipcMain.on('start-ota', (event, { filePath, ip, target }) => {
     event.reply('console-log', `[OTA EXCEPTION] ${err.message}`);
   }
 });
+
+// IPC Handler: upload-certificate to ESP32 WebServer via HTTP POST
+ipcMain.on('upload-certificate', (event, { filePath, ip }) => {
+  const gatewayIP = ip || '192.168.4.1';
+  event.reply('console-log', `[SPIFFS] Uploading certificate ${path.basename(filePath)} to http://${gatewayIP}:8000/upload_cert...`);
+  
+  if (!fs.existsSync(filePath)) {
+    event.reply('console-log', `[ERROR] Certificate file not found: ${filePath}`);
+    event.reply('hardware-payload', { status: 'CERT_ERROR', filename: path.basename(filePath), message: 'File not found' });
+    return;
+  }
+  
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const filename = path.basename(filePath);
+    
+    const options = {
+      hostname: gatewayIP,
+      port: 8000,
+      path: `/upload_cert?filename=${encodeURIComponent(filename)}`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain',
+        'Content-Length': Buffer.byteLength(content)
+      }
+    };
+    
+    const req = http.request(options, (res) => {
+      let responseData = '';
+      res.on('data', (chunk) => {
+        responseData += chunk.toString();
+      });
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          event.reply('console-log', `[SPIFFS] Certificate ${filename} uploaded successfully to gateway.`);
+          // The gateway will also broadcast its CERT_ADDED JSON payload over the socket,
+          // but we can reply with confirmation here as a fallback or extra validation.
+        } else {
+          event.reply('console-log', `[ERROR] Certificate upload failed. Status: ${res.statusCode} - ${responseData}`);
+          event.reply('hardware-payload', { status: 'CERT_ERROR', filename, message: `Upload failed: status ${res.statusCode}` });
+        }
+      });
+    });
+    
+    req.on('error', (err) => {
+      event.reply('console-log', `[ERROR] Certificate upload HTTP error: ${err.message}`);
+      event.reply('hardware-payload', { status: 'CERT_ERROR', filename, message: err.message });
+    });
+    
+    req.write(content);
+    req.end();
+    
+  } catch (err) {
+    event.reply('console-log', `[EXCEPTION] Failed to upload certificate: ${err.message}`);
+    event.reply('hardware-payload', { status: 'CERT_ERROR', filename: path.basename(filePath), message: err.message });
+  }
+});
+

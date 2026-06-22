@@ -164,13 +164,22 @@ export default function App() {
         setPasswordInput(payload.password);
         addLogLine('[SYS] Dynamic Credentials Password update completed successfully.', 'success');
       } else if (payload.status === 'CERT_ADDED') {
-        setCertificates(prev => {
-          if (prev.some(c => c.name === payload.filename)) return prev;
-          return [...prev, { name: payload.filename, size: payload.size }];
-        });
+        if (payload.certificates) {
+          setCertificates(payload.certificates);
+        } else {
+          setCertificates(prev => {
+            if (prev.some(c => c.name === payload.filename)) return prev;
+            return [...prev, { name: payload.filename, size: payload.size }];
+          });
+        }
         setIsCertUploading(false);
         setCertUploadProgress(0);
         addLogLine(`[SYS] Certificate file successfully stored to SPIFFS and synchronized to QCOM: ${payload.filename}`, 'success');
+      } else if (payload.status === 'CERT_ERROR') {
+        setIsCertUploading(false);
+        setCertUploadProgress(0);
+        addLogLine(`[ERROR] Certificate upload failed: ${payload.message}`, 'error');
+        alert(`Certificate upload failed: ${payload.message}`);
       }
     };
     ipcRenderer.on('hardware-payload', onHardwarePayload);
@@ -412,19 +421,15 @@ export default function App() {
     }
 
     setIsCertUploading(true);
-    setCertUploadProgress(20);
-    addLogLine(`[SPIFFS] Preparing to write certificate: ${file.name}...`);
-
-    setTimeout(() => {
-      setCertUploadProgress(50);
-      addLogLine(`[SPIFFS] Copying file contents to SPIFFS sector storage (${file.size} bytes)...`);
-      
-      setTimeout(() => {
-        setCertUploadProgress(85);
-        addLogLine(`[QCOM] Broadcasting certificates sync across co-processor links...`);
-        sendControlCommand(`ADD_CERT:${file.name}:${file.size}`);
-      }, 500);
-    }, 400);
+    setCertUploadProgress(10);
+    addLogLine(`[SPIFFS] Initiating HTTP upload of certificate: ${file.name}...`);
+    
+    // Send file path and IP to Electron uploader IPC
+    ipcRenderer.send('upload-certificate', { filePath: file.path, ip: otaIp });
+    
+    // Update progress feedback for UI rendering
+    setTimeout(() => setCertUploadProgress(40), 200);
+    setTimeout(() => setCertUploadProgress(75), 500);
   };
 
   // Trigger Connections
@@ -442,7 +447,7 @@ export default function App() {
   };
 
   const triggerBoot = () => {
-    ipcRenderer.send('send-serial-command', 'START_BOOT');
+    sendControlCommand('START_BOOT');
   };
 
   // Switchboard Event Actions
@@ -469,6 +474,12 @@ export default function App() {
   const triggerSelfCheckReRun = () => {
     resetDiagnostics();
     sendControlCommand('RE_DIAGNOSE');
+  };
+
+  const testModule = (moduleKey) => {
+    setDiagnostics(prev => ({ ...prev, [moduleKey]: 'TESTING' }));
+    sendControlCommand(`TEST_${moduleKey.toUpperCase()}`);
+    addLogLine(`[CMD] Triggering diagnostics check for module: ${moduleKey.toUpperCase()}`);
   };
 
   // Sub-device grid filters
@@ -698,10 +709,21 @@ export default function App() {
 
                 <div className="diag-checklist">
                   {Object.keys(diagnostics).map(key => (
-                    <div key={key} className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : ''}`}>
+                    <div key={key} className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : diagnostics[key] === 'TESTING' ? 'warning' : ''}`}>
                       <div className="diag-indicator"></div>
-                      <div className="diag-label">{key.toUpperCase()} Module</div>
-                      <div className="diag-value">{diagnostics[key]}</div>
+                      <div className="diag-label" style={{ flex: 1 }}>{key.toUpperCase()} Module</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div className="diag-value" style={{ fontSize: '11px', fontWeight: 'bold' }}>{diagnostics[key]}</div>
+                        {connection.type && diagnostics[key] !== 'TESTING' && (
+                          <button 
+                            className="btn btn-secondary small" 
+                            style={{ padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', margin: 0, border: '1px solid rgba(255, 0, 127, 0.3)', cursor: 'pointer' }}
+                            onClick={() => testModule(key)}
+                          >
+                            Test
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -760,7 +782,7 @@ export default function App() {
             </div>
 
             {/* System Boot & Update Orchestrator */}
-            {connection.type === 'serial' && (
+            {connection.type && (
               <div className="glass-card boot-orchestrator-card">
                 <div className="boot-orchestrator-header">
                   <div className="boot-title-wrapper">
@@ -1094,6 +1116,7 @@ export default function App() {
                 <div className="ota-actions">
                   <button className="btn btn-primary large" onClick={startOtaUpdate} disabled={!otaFile || otaProgress !== null}>
                     Initiate wireless flash update
+                  </button>
                 </div>
               </div>
 
