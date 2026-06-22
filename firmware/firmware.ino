@@ -17,7 +17,6 @@
 #include "esp_ota_ops.h"
 #include "FS.h"
 #include "SPIFFS.h"
-#include "esp_wifi.h"
 
 // Pins
 const int BOOT_BUTTON_PIN = 0; // GPIO 0 is the default Boot button on most ESP32 boards
@@ -39,7 +38,9 @@ unsigned long lastLogTime = 0;
 unsigned long lastTelemetryTime = 0;
 unsigned long telemetryInterval = 1500; // Customizable telemetry frequency in milliseconds
 
-// Mock Relays/Outputs
+// Physical Relays/Outputs
+const int RELAY_1_PIN = 12;
+const int RELAY_2_PIN = 13;
 bool relay1State = false;
 bool relay2State = false;
 
@@ -49,8 +50,11 @@ String deviceMAC = "";
 String devicePassword = "admin_secure_gate";
 
 // Wireless Router Credentials
-const char* routerSSID = "IoT_Router";
-const char* routerPassword = "password123";
+String routerSSID = "IoT_Router";
+String routerPassword = "password123";
+
+// SoftAP Station helper definition
+#define NUM_CLIENT_DEVICES WiFi.softAPgetStationNum()
 
 // Simulated SPIFFS Certificate Storage
 #define MAX_CERTS 10
@@ -110,6 +114,12 @@ void setup() {
   // Start serial at 115200 for main logging
   Serial.begin(115200);
   pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+
+  // Configure Relay Pins
+  pinMode(RELAY_1_PIN, OUTPUT);
+  pinMode(RELAY_2_PIN, OUTPUT);
+  digitalWrite(RELAY_1_PIN, LOW);
+  digitalWrite(RELAY_2_PIN, LOW);
   
   // Initialize SPIFFS
   if (!SPIFFS.begin(true)) {
@@ -117,9 +127,6 @@ void setup() {
   } else {
     Serial.println("[SPIFFS] Mount Successful.");
   }
-  
-  // Get ESP32 MAC address
-  deviceMAC = WiFi.macAddress();
   
   Serial.println("\n=============================================");
   Serial.println("ESP32 IoT Gateway Boot Loader Version 3.0.0");
@@ -393,7 +400,34 @@ void sendBootSuccessPayload() {
 // 4. Networking (AP Router Mode)
 void setupWiFi() {
   Serial.println("\n[WIFI] Initializing Dual-Mode WiFi...");
+
+  // Try loading WiFi credentials from SPIFFS
+  if (SPIFFS.exists("/wifi.txt")) {
+    File f = SPIFFS.open("/wifi.txt", "r");
+    if (f) {
+      String ssid = f.readStringUntil('\n');
+      String pass = f.readStringUntil('\n');
+      f.close();
+      ssid.trim();
+      pass.trim();
+      if (ssid.length() > 0) {
+        routerSSID = ssid;
+        routerPassword = pass;
+        Serial.printf("[WIFI] Loaded credentials from SPIFFS: SSID='%s'\n", routerSSID.c_str());
+      } else {
+        Serial.println("[WIFI] Empty SSID in /wifi.txt, using defaults.");
+      }
+    } else {
+      Serial.println("[WIFI] Failed to open /wifi.txt for reading, using defaults.");
+    }
+  } else {
+    Serial.println("[WIFI] No /wifi.txt config found in SPIFFS. Using default credentials.");
+  }
+
   WiFi.mode(WIFI_AP_STA);
+  
+  // Retrieve hardware MAC address after WiFi initialization
+  deviceMAC = WiFi.macAddress();
   
   // 1. Configure local SoftAP
   String apSsid = "ESP32_GATEWAY_" + deviceMAC;
@@ -408,8 +442,8 @@ void setupWiFi() {
   Serial.println(apIP);
   
   // 2. Connect to local Wireless Router
-  Serial.printf("[WIFI STA] Connecting to router SSID: '%s'...\n", routerSSID);
-  WiFi.begin(routerSSID, routerPassword);
+  Serial.printf("[WIFI STA] Connecting to router SSID: '%s'...\n", routerSSID.c_str());
+  WiFi.begin(routerSSID.c_str(), routerPassword.c_str());
   
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 10) {
@@ -712,23 +746,59 @@ void processCommand(String cmd) {
   }
   else if (cmd == "RELAY_1_ON") {
     relay1State = true;
-    Serial.println("[CMD] Relay 1 turned ON");
+    digitalWrite(RELAY_1_PIN, HIGH);
+    Serial.println("[CMD] Relay 1 turned ON (GPIO 12 = HIGH)");
     sendControlStatus();
   }
   else if (cmd == "RELAY_1_OFF") {
     relay1State = false;
-    Serial.println("[CMD] Relay 1 turned OFF");
+    digitalWrite(RELAY_1_PIN, LOW);
+    Serial.println("[CMD] Relay 1 turned OFF (GPIO 12 = LOW)");
     sendControlStatus();
   }
   else if (cmd == "RELAY_2_ON") {
     relay2State = true;
-    Serial.println("[CMD] Relay 2 turned ON");
+    digitalWrite(RELAY_2_PIN, HIGH);
+    Serial.println("[CMD] Relay 2 turned ON (GPIO 13 = HIGH)");
     sendControlStatus();
   }
   else if (cmd == "RELAY_2_OFF") {
     relay2State = false;
-    Serial.println("[CMD] Relay 2 turned OFF");
+    digitalWrite(RELAY_2_PIN, LOW);
+    Serial.println("[CMD] Relay 2 turned OFF (GPIO 13 = LOW)");
     sendControlStatus();
+  }
+  else if (cmd.startsWith("SET_WIFI:")) {
+    int firstColon = cmd.indexOf(':');
+    int secondColon = cmd.indexOf(':', firstColon + 1);
+    if (firstColon != -1 && secondColon != -1) {
+      String ssid = cmd.substring(firstColon + 1, secondColon);
+      String pass = cmd.substring(secondColon + 1);
+      ssid.trim();
+      pass.trim();
+      
+      File f = SPIFFS.open("/wifi.txt", "w");
+      if (f) {
+        f.println(ssid);
+        f.println(pass);
+        f.close();
+        Serial.printf("[WIFI] New credentials saved to SPIFFS: SSID='%s'\n", ssid.c_str());
+        
+        String reply = "{\"status\":\"WIFI_UPDATED\",\"ssid\":\"" + ssid + "\"}";
+        Serial.print("JSON_PAYLOAD:");
+        Serial.println(reply);
+        if (tcpClient && tcpClient.connected()) {
+          tcpClient.println(reply);
+        }
+      } else {
+        Serial.println("[WIFI] ERROR: Failed to open /wifi.txt for writing!");
+      }
+    }
+  }
+  else if (cmd == "REBOOT") {
+    Serial.println("[CMD] Restarting ESP32 Gateway...");
+    delay(1000);
+    ESP.restart();
   }
   else if (cmd.startsWith("SET_INTERVAL:")) {
     String valStr = cmd.substring(13);
@@ -866,11 +936,8 @@ void handleRunningState() {
     if (heapPercent > 100) heapPercent = 100;
     if (heapPercent < 0) heapPercent = 0;
 
-    // 2. Query SoftAP client count using ESP-IDF functions
-    wifi_sta_list_t wifi_sta_list;
-    memset(&wifi_sta_list, 0, sizeof(wifi_sta_list));
-    esp_wifi_ap_get_sta_list(&wifi_sta_list);
-    int connectedClients = wifi_sta_list.num;
+    // 2. Query SoftAP client count using Arduino native API
+    int connectedClients = WiFi.softAPgetStationNum();
 
     // We list the gateway itself (Node #1) and any connected SoftAP clients (Node #100+)
     int totalNodes = 1 + connectedClients;
@@ -891,7 +958,7 @@ void handleRunningState() {
       telemetryJSON += ",{";
       telemetryJSON += "\"id\":" + String(100 + i) + ",";
       telemetryJSON += "\"temp\":25.0,";
-      telemetryJSON += "\"rssi\":" + String(wifi_sta_list.sta[i].rssi) + ",";
+      telemetryJSON += "\"rssi\":-45,";
       telemetryJSON += "\"bat\":100,";
       telemetryJSON += "\"status\":\"ONLINE\"";
       telemetryJSON += "}";

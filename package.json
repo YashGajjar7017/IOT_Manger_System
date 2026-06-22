@@ -5,6 +5,7 @@
   "main": "main.js",
   "scripts": {
     "build": "vite build",
+    "start": "vite --port 4000",
     "electron-start": "electron .",
     "electron-build": "npm run build && electron-builder",
     "electron-dev": "concurrently \"npm start\" \"wait-on http://localhost:4000 && electron .\""
@@ -28,9 +29,11 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
     "electron": "^28.2.0",
+    "electron-builder": "^26.8.1",
     "vite": "^5.0.10",
-    "electron-builder": "^26.8.1"
+    "wait-on": "^7.2.0"
   },
   "build": {
     "appId": "com.iot_PubSub.app",
@@ -44,7 +47,7 @@
     ],
     "directories": {
       "buildResources": "public",
-      "output": "installer-release"
+      "output": "C:/Users/Admin/iot-monitor-release"
     },
     "win": {
       "target": [

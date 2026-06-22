@@ -4,7 +4,7 @@ const fs = require('fs');
 const http = require('http');
 const net = require('net');
 const express = require('express');
-const mongoose = require('mongoose');
+const db = require('./database');
 const { SerialPort } = require('serialport');
 
 let mainWindow;
@@ -13,46 +13,6 @@ let activeTcpSocket = null;
 let serialBuffer = '';
 let tcpBuffer = '';
 let expressServer = null;
-
-// Database Configuration
-let mongodbConnected = false;
-let memoryHistoryBuffer = []; // In-memory fallback database if MongoDB is not running
-
-// Mongoose Schema Definition
-const TelemetrySchema = new mongoose.Schema({
-  timestamp: { type: Date, default: Date.now },
-  count: Number,
-  devices: [
-    {
-      id: Number,
-      temp: Number,
-      rssi: Number,
-      bat: Number,
-      status: String
-    }
-  ]
-});
-
-const TelemetryModel = mongoose.model('Telemetry', TelemetrySchema);
-
-// 1. Initialize MongoDB Connection with Graceful In-Memory Fallback
-function connectDatabase() {
-  const mongoURI = 'mongodb://127.0.0.1:27017/iot_monitor';
-  console.log(`[DATABASE] Connecting to MongoDB at ${mongoURI}...`);
-
-  mongoose.connect(mongoURI, {
-    serverSelectionTimeoutMS: 3000 // Timeout fast if MongoDB is not running
-  })
-  .then(() => {
-    mongodbConnected = true;
-    console.log('[DATABASE] MongoDB connection established successfully.');
-  })
-  .catch((err) => {
-    mongodbConnected = false;
-    console.warn('[DATABASE] MongoDB connection failed. Falling back to In-Memory Logging.');
-    console.warn(`[DATABASE] Error details: ${err.message}`);
-  });
-}
 
 // 2. Start Express Web Server
 function startExpressServer() {
@@ -66,22 +26,22 @@ function startExpressServer() {
   // REST API: Get database connection and logs status
   expressApp.get('/api/status', (req, res) => {
     res.json({
-      mongodb: mongodbConnected ? 'CONNECTED' : 'FALLBACK_MEMORY',
-      recordsCount: mongodbConnected ? 'Fetching dynamically' : memoryHistoryBuffer.length
+      mongodb: db.isDbConnected() ? 'CONNECTED' : 'FALLBACK_MEMORY',
+      recordsCount: db.isDbConnected() ? 'Fetching dynamically' : db.getMemoryHistoryBuffer().length
     });
   });
 
   // REST API: Retrieve the last 50 historical telemetry snapshots
   expressApp.get('/api/telemetry/history', async (req, res) => {
     try {
-      if (mongodbConnected) {
-        const history = await TelemetryModel.find()
+      if (db.isDbConnected()) {
+        const history = await db.TelemetryModel.find()
           .sort({ timestamp: -1 })
           .limit(50);
         res.json(history);
       } else {
         // Return memory buffer (newest first)
-        res.json([...memoryHistoryBuffer].reverse());
+        res.json([...db.getMemoryHistoryBuffer()].reverse());
       }
     } catch (err) {
       res.status(500).json({ error: `Failed to fetch logs: ${err.message}` });
@@ -91,11 +51,11 @@ function startExpressServer() {
   // REST API: Delete all telemetry history logs
   expressApp.delete('/api/telemetry/history', async (req, res) => {
     try {
-      if (mongodbConnected) {
-        await TelemetryModel.deleteMany({});
+      if (db.isDbConnected()) {
+        await db.TelemetryModel.deleteMany({});
         res.json({ success: true, message: 'MongoDB history logs cleared.' });
       } else {
-        memoryHistoryBuffer = [];
+        db.clearMemoryHistoryBuffer();
         res.json({ success: true, message: 'In-Memory history logs cleared.' });
       }
     } catch (err) {
@@ -113,37 +73,6 @@ function startExpressServer() {
   expressServer.listen(8000, '127.0.0.1', () => {
     console.log('[EXPRESS] Server running on http://127.0.0.1:8000');
   });
-}
-
-// 3. Save Telemetry snapshot helper
-async function saveTelemetrySnapshot(data) {
-  const snapshot = {
-    timestamp: new Date(),
-    count: data.count,
-    devices: data.devices
-  };
-
-  if (mongodbConnected) {
-    try {
-      await TelemetryModel.create(snapshot);
-      
-      // Auto-cap history to 200 documents to prevent bloated database in PoC
-      const count = await TelemetryModel.countDocuments();
-      if (count > 200) {
-        const oldest = await TelemetryModel.find().sort({ timestamp: 1 }).limit(1);
-        if (oldest.length > 0) {
-          await TelemetryModel.deleteOne({ _id: oldest[0]._id });
-        }
-      }
-    } catch (err) {
-      console.error('[DATABASE] Failed to write telemetry record to MongoDB:', err);
-    }
-  } else {
-    memoryHistoryBuffer.push(snapshot);
-    if (memoryHistoryBuffer.length > 50) {
-      memoryHistoryBuffer.shift(); // Keep last 50 snapshots
-    }
-  }
 }
 
 // 4. Electron Window Creation
@@ -170,7 +99,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  connectDatabase();
+  db.connectDatabase();
   startExpressServer();
   createWindow();
 
@@ -349,7 +278,7 @@ ipcMain.on('connect-tcp', (event, { ip, port }) => {
           event.reply('telemetry-payload', payload);
           
           // Auto-save incoming telemetry packet to MongoDB / memory database
-          saveTelemetrySnapshot(payload);
+          db.saveTelemetrySnapshot(payload);
         } else if (payload.type === 'control_status') {
           event.reply('control-payload-sync', payload);
         } else if (payload.type === 'pong') {

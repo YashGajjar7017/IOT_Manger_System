@@ -42,6 +42,8 @@ export default function App() {
   const [password, setPassword] = useState('--');
   const [imeiInput, setImeiInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+  const [wifiRouterSsid, setWifiRouterSsid] = useState('');
+  const [wifiRouterPass, setWifiRouterPass] = useState('');
 
   // SPIFFS Certificate State
   const [certificates, setCertificates] = useState([]);
@@ -93,7 +95,8 @@ export default function App() {
     const onConnectionStatus = (event, data) => {
       if (data.status === 'connected') {
         setConnection({ type: data.type, target: data.target });
-        setBootTriggerEnabled(data.type === 'serial');
+        setBootTriggerEnabled(true);
+        setControlsDisabled(false);
         addLogLine(`Gateway interface online: ${data.type.toUpperCase()} -> ${data.target}`, 'success');
 
         if (data.type === 'serial') {
@@ -163,6 +166,9 @@ export default function App() {
         setPassword(payload.password);
         setPasswordInput(payload.password);
         addLogLine('[SYS] Dynamic Credentials Password update completed successfully.', 'success');
+      } else if (payload.status === 'WIFI_UPDATED') {
+        setWifiRouterSsid(payload.ssid);
+        addLogLine(`[SYS] WiFi credentials updated on gateway. SSID is now: ${payload.ssid}`, 'success');
       } else if (payload.status === 'CERT_ADDED') {
         if (payload.certificates) {
           setCertificates(payload.certificates);
@@ -275,7 +281,7 @@ export default function App() {
 
   // Terminal scroll handler
   useEffect(() => {
-    consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    consoleEndRef.current?.scrollIntoView({ behavior: 'auto' });
   }, [consoleLogs]);
 
   // ==========================================================================
@@ -409,6 +415,22 @@ export default function App() {
     sendControlCommand(`SET_IMEI:${imeiInput}`);
     sendControlCommand(`SET_PASS:${passwordInput}`);
     addLogLine(`[CMD] Sending dynamic updates: IMEI -> ${imeiInput}, Password -> *****`);
+  };
+
+  // Apply WiFi Router SSID and Password configuration to firmware
+  const applyWifiRouterSettings = () => {
+    if (!wifiRouterSsid) {
+      alert('WiFi Router SSID cannot be empty.');
+      return;
+    }
+    sendControlCommand(`SET_WIFI:${wifiRouterSsid}:${wifiRouterPass}`);
+    addLogLine(`[CMD] Sending WiFi credentials update: SSID -> ${wifiRouterSsid}`);
+    
+    // Reboot the gateway automatically after 1 second so changes take effect
+    setTimeout(() => {
+      sendControlCommand('REBOOT');
+      addLogLine('[CMD] Sent REBOOT command to Gateway.');
+    }, 1000);
   };
 
   // Upload certificate to device SPIFFS & QCOM
@@ -772,6 +794,9 @@ export default function App() {
                   <button className="btn btn-accent" onClick={() => sendControlCommand('SHIFT_TO_QCOM')} disabled={!connection.type}>
                     <span className="btn-icon">&#10145;</span> Shift to QCOM
                   </button>
+                  <button className="btn btn-danger" onClick={() => sendControlCommand('REBOOT')} disabled={!connection.type}>
+                    <span className="btn-icon">&#10227;</span> Reboot Gateway
+                  </button>
                   <div className="ping-widget">
                     <span className="ping-label">Socket RTT Ping:</span>
                     <span className={`ping-result ${pingLatency.status}`}>{pingLatency.value}</span>
@@ -1090,7 +1115,7 @@ export default function App() {
 
                   {otaFile && (
                     <div className="selected-file-display" onClick={(e) => e.stopPropagation()}>
-                      <span className="file-name">{otaFile.name}</span>
+                      <span className="file-name" style={{ wordBreak: 'break-all' }}>{otaFile.path || otaFile.name}</span>
                       <span className="file-size">{Math.round(otaFile.size / 1024)} KB</span>
                     </div>
                   )}
@@ -1168,48 +1193,89 @@ export default function App() {
 
             <div className="security-layout-grid">
               
-              {/* Credentials Configuration Card */}
-              <div className="glass-card">
-                <h3><span className="icon">&#128274;</span> Identity Credentials</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
-                  Update gateway hardware identifier and communication passphrase. Updates sync dynamically over the active interface.
-                </p>
-
-                <div className="input-group">
-                  <label>Device IMEI</label>
-                  <input 
-                    type="text" 
-                    value={imeiInput} 
-                    onChange={(e) => setImeiInput(e.target.value)} 
-                    placeholder="e.g. 866738083623502" 
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* Credentials Configuration Card */}
+                <div className="glass-card">
+                  <h3><span className="icon">&#128274;</span> Identity Credentials</h3>
+                  <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                    Update gateway hardware identifier and communication passphrase. Updates sync dynamically over the active interface.
+                  </p>
+  
+                  <div className="input-group">
+                    <label>Device IMEI</label>
+                    <input 
+                      type="text" 
+                      value={imeiInput} 
+                      onChange={(e) => setImeiInput(e.target.value)} 
+                      placeholder="e.g. 866738083623502" 
+                      disabled={!connection.type}
+                    />
+                  </div>
+  
+                  <div className="input-group">
+                    <label>Gateway Password</label>
+                    <input 
+                      type="password" 
+                      value={passwordInput} 
+                      onChange={(e) => setPasswordInput(e.target.value)} 
+                      placeholder="Enter device passphrase"
+                      disabled={!connection.type}
+                    />
+                  </div>
+  
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={applyDeviceSettings} 
                     disabled={!connection.type}
-                  />
+                    style={{ marginTop: '10px' }}
+                  >
+                    Apply Credentials Update
+                  </button>
+  
+                  <div style={{ marginTop: '20px', padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)', fontSize: '11px' }}>
+                    <span style={{ fontWeight: 'bold', display: 'block', color: 'var(--accent-pink)', marginBottom: '5px' }}>Current Sync Profile:</span>
+                    <span style={{ display: 'block', fontFamily: 'var(--font-mono)' }}>IMEI: {imei}</span>
+                    <span style={{ display: 'block', fontFamily: 'var(--font-mono)' }}>Password: {password}</span>
+                  </div>
                 </div>
 
-                <div className="input-group">
-                  <label>Gateway Password</label>
-                  <input 
-                    type="password" 
-                    value={passwordInput} 
-                    onChange={(e) => setPasswordInput(e.target.value)} 
-                    placeholder="Enter device passphrase"
+                {/* WiFi Router Credentials Configuration Card */}
+                <div className="glass-card">
+                  <h3><span className="icon">&#128246;</span> WiFi Router Credentials</h3>
+                  <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                    Update the SSID and Passphrase for the external wireless router. Gateway will store credentials to SPIFFS and auto-reboot to apply.
+                  </p>
+  
+                  <div className="input-group">
+                    <label>Router SSID</label>
+                    <input 
+                      type="text" 
+                      value={wifiRouterSsid} 
+                      onChange={(e) => setWifiRouterSsid(e.target.value)} 
+                      placeholder="SSID of Wireless Router" 
+                      disabled={!connection.type}
+                    />
+                  </div>
+  
+                  <div className="input-group">
+                    <label>Router Password</label>
+                    <input 
+                      type="password" 
+                      value={wifiRouterPass} 
+                      onChange={(e) => setWifiRouterPass(e.target.value)} 
+                      placeholder="Router WPA2 Passphrase"
+                      disabled={!connection.type}
+                    />
+                  </div>
+  
+                  <button 
+                    className="btn btn-accent" 
+                    onClick={applyWifiRouterSettings} 
                     disabled={!connection.type}
-                  />
-                </div>
-
-                <button 
-                  className="btn btn-primary" 
-                  onClick={applyDeviceSettings} 
-                  disabled={!connection.type}
-                  style={{ marginTop: '10px' }}
-                >
-                  Apply Credentials Update
-                </button>
-
-                <div style={{ marginTop: '20px', padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)', fontSize: '11px' }}>
-                  <span style={{ fontWeight: 'bold', display: 'block', color: 'var(--accent-pink)', marginBottom: '5px' }}>Current Sync Profile:</span>
-                  <span style={{ display: 'block', fontFamily: 'var(--font-mono)' }}>IMEI: {imei}</span>
-                  <span style={{ display: 'block', fontFamily: 'var(--font-mono)' }}>Password: {password}</span>
+                    style={{ marginTop: '10px' }}
+                  >
+                    Apply & Reboot Gateway
+                  </button>
                 </div>
               </div>
 
