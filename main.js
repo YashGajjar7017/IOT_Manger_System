@@ -164,6 +164,9 @@ function createWindow() {
 
   // Load the compiled React app served via local Express
   mainWindow.loadURL('http://localhost:8000');
+  
+  // Maximize the window on launch
+  mainWindow.maximize();
 }
 
 app.whenReady().then(() => {
@@ -351,7 +354,7 @@ ipcMain.on('connect-tcp', (event, { ip, port }) => {
           event.reply('control-payload-sync', payload);
         } else if (payload.type === 'pong') {
           event.reply('ping-pong-reply');
-        } else if (payload.status === 'BOOT_SUCCESS') {
+        } else if (payload.status === 'BOOT_SUCCESS' || payload.status === 'BOOT_PROGRESS') {
           event.reply('hardware-payload', payload);
         }
       } catch (e) {
@@ -400,9 +403,10 @@ ipcMain.on('disconnect-active', (event) => {
 // IPC Handlers: Wireless HTTP OTA Updates
 // -------------------------------------------------------------
 
-ipcMain.on('start-ota', (event, { filePath, ip }) => {
+ipcMain.on('start-ota', (event, { filePath, ip, target }) => {
   const gatewayIP = ip || '192.168.4.1';
-  event.reply('console-log', `[OTA] Streaming binary firmware to http://${gatewayIP}:8000/update...`);
+  const targetName = target || 'esp32';
+  event.reply('console-log', `[OTA] Streaming binary firmware for ${targetName.toUpperCase()} to http://${gatewayIP}:8000/update?target=${targetName}...`);
 
   if (!fs.existsSync(filePath)) {
     event.reply('ota-progress', { status: 'error', message: 'Binary file does not exist.' });
@@ -427,7 +431,7 @@ ipcMain.on('start-ota', (event, { filePath, ip }) => {
     const options = {
       hostname: gatewayIP,
       port: 8000,
-      path: '/update',
+      path: `/update?target=${targetName}`,
       method: 'POST',
       headers: {
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
@@ -444,8 +448,12 @@ ipcMain.on('start-ota', (event, { filePath, ip }) => {
       
       res.on('end', () => {
         if (res.statusCode === 200 && responseData.toUpperCase().includes('OK')) {
-          event.reply('ota-progress', { status: 'success', progress: 100 });
-          event.reply('console-log', '[OTA] Upgrade completed! Router reboot triggered.');
+          event.reply('ota-progress', { status: 'success', progress: 100, target: targetName });
+          if (targetName === 'esp32') {
+            event.reply('console-log', '[OTA] Upgrade completed! Router reboot triggered.');
+          } else {
+            event.reply('console-log', '[OTA] QCOM Co-processor flash update completed successfully!');
+          }
         } else {
           event.reply('ota-progress', { 
             status: 'error', 

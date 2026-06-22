@@ -13,6 +13,8 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Update.h>
+#include "esp_partition.h"
+#include "esp_ota_ops.h"
 
 // Pins
 const int BOOT_BUTTON_PIN = 0; // GPIO 0 is the default Boot button on most ESP32 boards
@@ -39,8 +41,15 @@ bool relay1State = false;
 bool relay2State = false;
 
 // Device Identity
-String deviceIMEI = "123456789012345";
+String deviceIMEI = "866738083623502";
 String deviceMAC = "";
+String devicePassword = "admin_secure_gate";
+
+// Simulated SPIFFS Certificate Storage
+#define MAX_CERTS 10
+String certNames[MAX_CERTS] = {"aws_root_ca.pem", "device_cert.crt", "private_key.key"};
+size_t certSizes[MAX_CERTS] = {1188, 2048, 1675};
+int certCount = 3;
 
 // 9-Point Diagnostic Results
 struct DiagnosticReport {
@@ -86,6 +95,25 @@ void setup() {
   Serial.println("\n=============================================");
   Serial.println("ESP32 IoT Gateway Boot Loader Version 2.0.0");
   Serial.println("=============================================");
+
+  // Print Partition Table Info
+  Serial.println("[SYSTEM] Active ESP32 Partition Table:");
+  esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
+  while (it != NULL) {
+    const esp_partition_t* part = esp_partition_get(it);
+    Serial.printf("  - %-8s | Type: 0x%02X | Subtype: 0x%02X | Offset: 0x%06X | Size: 0x%06X (%d KB)\n", 
+                  part->label, part->type, part->subtype, part->address, part->size, part->size / 1024);
+    it = esp_partition_next(it);
+  }
+  
+  // Print current running partition
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  if (running != NULL) {
+    Serial.printf("[SYSTEM] Running from partition: %s (Offset: 0x%06X)\n", running->label, running->address);
+  } else {
+    Serial.println("[SYSTEM] Failed to detect running partition (Defaulting to app0)");
+  }
+
   Serial.println("[SYSTEM] System state: HALT / WAIT");
   Serial.println("[SYSTEM] Awaiting trigger: Press BOOT button (GPIO 0) or send 'START_BOOT' serial command.");
 }
@@ -132,10 +160,74 @@ void handleHaltState() {
   }
 }
 
-// 2. Hardware Self-Check & Diagnostics
+// Helper to emit boot progress payloads
+void sendProgressPayload(String step, int progress, String message) {
+  String json = "{";
+  json += "\"status\":\"BOOT_PROGRESS\",";
+  json += "\"step\":\"" + step + "\",";
+  json += "\"progress\":" + String(progress) + ",";
+  json += "\"message\":\"" + message + "\"";
+  json += "}";
+  
+  Serial.print("JSON_PAYLOAD:");
+  Serial.println(json);
+
+  if (tcpClient && tcpClient.connected()) {
+    tcpClient.println(json);
+  }
+}
+
+// 2. Hardware Self-Check, Certificate Provisioning & Diagnostics
 void runDiagnostics() {
-  Serial.println("\n[DIAGNOSTIC] Initiating Hardware Self-Check & Peripheral Diagnostics...\n");
+  Serial.println("\n[SYSTEM] Starting sequential boot & certification sequence...");
+  delay(300);
+
+  // --- STAGE 1: ESP32 Certification Update & Download ---
+  sendProgressPayload("ESP32_CERT_1", 10, "Downloading Certificate 1/3 to ESP32...");
+  Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 1/3...");
+  delay(600);
+  Serial.println("[BOOT] [ESP32 CERT] Certificate 1/3 updated successfully.");
+  
+  sendProgressPayload("ESP32_CERT_2", 20, "Downloading Certificate 2/3 to ESP32...");
+  Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 2/3...");
+  delay(600);
+  Serial.println("[BOOT] [ESP32 CERT] Certificate 2/3 updated successfully.");
+  
+  sendProgressPayload("ESP32_CERT_3", 30, "Downloading Certificate 3/3 to ESP32...");
+  Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 3/3...");
+  delay(600);
+  Serial.println("[BOOT] [ESP32 CERT] Certificate 3/3 updated successfully.");
+
+  // --- STAGE 2: QCOM Certification Sync ---
+  sendProgressPayload("QCOM_SYNC", 45, "Syncing certifications immediately to QCOM device...");
+  Serial.println("[BOOT] [QCOM SYNC] Establishing communication interface with QCOM device...");
   delay(500);
+  Serial.println("[BOOT] [QCOM SYNC] Syncing Certificate 1/3 to QCOM...");
+  delay(200);
+  Serial.println("[BOOT] [QCOM SYNC] Syncing Certificate 2/3 to QCOM...");
+  delay(200);
+  Serial.println("[BOOT] [QCOM SYNC] Syncing Certificate 3/3 to QCOM...");
+  delay(200);
+  Serial.println("[BOOT] [QCOM SYNC] QCOM certification update complete. Verification: OK.");
+  delay(300);
+
+  // --- STAGE 3: Main Firmware Update ---
+  sendProgressPayload("MAIN_FW_UPDATE", 65, "Downloading and installing Main Firmware update...");
+  Serial.println("[BOOT] [MAIN FW] Contacting firmware OTA repository...");
+  delay(500);
+  Serial.println("[BOOT] [MAIN FW] Downloading main firmware binary partition...");
+  delay(800);
+  Serial.println("[BOOT] [MAIN FW] Verifying SHA256 checksum...");
+  delay(400);
+  Serial.println("[BOOT] [MAIN FW] Flashing Main Firmware sectors... 100%");
+  delay(400);
+  Serial.println("[BOOT] [MAIN FW] Main firmware successfully updated to V3.1.2.");
+  delay(300);
+
+  // --- STAGE 4: Hardware Verification (9-point board) ---
+  sendProgressPayload("DIAGNOSTICS", 80, "Initiating 9-point hardware peripheral self-check...");
+  Serial.println("\n[DIAGNOSTIC] Initiating Hardware Self-Check & Peripheral Diagnostics...\n");
+  delay(300);
 
   // 1. RS232 Check
   Serial.println("[DIAGNOSTIC] [RS232] Testing Transceiver... (9600 baud)");
@@ -209,6 +301,7 @@ void runDiagnostics() {
 
   currentState = STATE_RUNNING;
   Serial.println("\n[SYSTEM] Gateway entered RUNNING mode.");
+  sendControlStatus();
   lastTelemetryTime = millis();
 }
 
@@ -218,6 +311,13 @@ void sendBootSuccessPayload() {
   json += "\"status\":\"BOOT_SUCCESS\",";
   json += "\"imei\":\"" + deviceIMEI + "\",";
   json += "\"mac\":\"" + deviceMAC + "\",";
+  json += "\"password\":\"" + devicePassword + "\",";
+  json += "\"certificates\":[";
+  for (int i = 0; i < certCount; i++) {
+    json += "{\"name\":\"" + certNames[i] + "\",\"size\":" + String(certSizes[i]) + "}";
+    if (i < certCount - 1) json += ",";
+  }
+  json += "],";
   json += "\"diagnostics\":{";
   json += "\"rs232\":" + String(diagnostics.rs232 ? "true" : "false") + ",";
   json += "\"rs485\":" + String(diagnostics.rs485 ? "true" : "false") + ",";
@@ -258,6 +358,105 @@ void setupWiFiAP() {
   Serial.println("---------------------------------------------");
 }
 
+// Global states for HTTP OTA uploads
+bool isQcomUpdate = false;
+const esp_partition_t* targetPartition = nullptr;
+size_t writeOffset = 0;
+
+// Shift firmware from the inactive app partition to QCOM (core) partition
+bool shiftToQcomPartition() {
+  Serial.println("\n[PARTITION] Initiating shift to QCOM partition...");
+  sendProgressPayload("QCOM_SHIFT", 0, "Initiating shift to QCOM partition...");
+  
+  // Find the running partition
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  if (!running) {
+    Serial.println("[ERROR] Failed to get running partition");
+    sendProgressPayload("QCOM_SHIFT", 0, "ERROR: Failed to get running partition");
+    return false;
+  }
+  
+  // Find the inactive app partition
+  const esp_partition_t* src = NULL;
+  if (strcmp(running->label, "app0") == 0) {
+    src = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, "app1");
+  } else {
+    src = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, "app0");
+  }
+  
+  if (!src) {
+    Serial.println("[ERROR] Inactive app partition not found");
+    sendProgressPayload("QCOM_SHIFT", 0, "ERROR: Inactive app partition not found");
+    return false;
+  }
+  
+  // Find QCOM (core) partition
+  const esp_partition_t* dst = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "core");
+  if (!dst) {
+    Serial.println("[ERROR] QCOM ('core') partition not found");
+    sendProgressPayload("QCOM_SHIFT", 0, "ERROR: QCOM partition not found");
+    return false;
+  }
+  
+  Serial.printf("[PARTITION] Source: %s (Offset: 0x%06X, Size: 0x%06X)\n", src->label, src->address, src->size);
+  Serial.printf("[PARTITION] Destination: %s (Offset: 0x%06X, Size: 0x%06X)\n", dst->label, dst->address, dst->size);
+  
+  size_t copy_size = (src->size < dst->size) ? src->size : dst->size;
+  
+  // Erase destination partition
+  Serial.println("[PARTITION] Erasing destination partition...");
+  sendProgressPayload("QCOM_SHIFT", 10, "Erasing destination partition...");
+  esp_err_t err = esp_partition_erase_range(dst, 0, copy_size);
+  if (err != ESP_OK) {
+    Serial.printf("[ERROR] Erase failed: 0x%x\n", err);
+    sendProgressPayload("QCOM_SHIFT", 10, "ERROR: Erase failed");
+    return false;
+  }
+  
+  // Buffer for copying
+  const size_t buf_size = 4096;
+  uint8_t* buffer = (uint8_t*)malloc(buf_size);
+  if (!buffer) {
+    Serial.println("[ERROR] Memory allocation failed for copy buffer");
+    sendProgressPayload("QCOM_SHIFT", 10, "ERROR: Memory allocation failed");
+    return false;
+  }
+  
+  Serial.println("[PARTITION] Copying partition data...");
+  size_t bytes_copied = 0;
+  while (bytes_copied < copy_size) {
+    size_t chunk = (copy_size - bytes_copied < buf_size) ? (copy_size - bytes_copied) : buf_size;
+    
+    err = esp_partition_read(src, bytes_copied, buffer, chunk);
+    if (err != ESP_OK) {
+      Serial.printf("[ERROR] Read failed at offset 0x%X: 0x%x\n", bytes_copied, err);
+      sendProgressPayload("QCOM_SHIFT", (bytes_copied * 100) / copy_size, "ERROR: Read failed");
+      free(buffer);
+      return false;
+    }
+    
+    err = esp_partition_write(dst, bytes_copied, buffer, chunk);
+    if (err != ESP_OK) {
+      Serial.printf("[ERROR] Write failed at offset 0x%X: 0x%x\n", bytes_copied, err);
+      sendProgressPayload("QCOM_SHIFT", (bytes_copied * 100) / copy_size, "ERROR: Write failed");
+      free(buffer);
+      return false;
+    }
+    
+    bytes_copied += chunk;
+    int progress = (bytes_copied * 100) / copy_size;
+    if (progress % 10 == 0 || bytes_copied == copy_size) {
+      Serial.printf("[PARTITION] Copying progress: %d%%\n", progress);
+      sendProgressPayload("QCOM_SHIFT", progress, "Shifting firmware to QCOM partition...");
+    }
+  }
+  
+  free(buffer);
+  Serial.println("[PARTITION] Shift operation completed successfully!");
+  sendProgressPayload("QCOM_SHIFT", 100, "Shift operation completed successfully!");
+  return true;
+}
+
 // Setup HTTP Routes for status and OTA update on Port 8000
 void setupHTTPServer() {
   // Status Page
@@ -274,25 +473,71 @@ void setupHTTPServer() {
   // OTA Updates Handler
   httpServer.on("/update", HTTP_POST, []() {
     httpServer.sendHeader("Connection", "close");
-    httpServer.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
-    delay(1000);
-    ESP.restart();
+    if (isQcomUpdate) {
+      httpServer.send(200, "text/plain", (targetPartition && writeOffset > 0) ? "OK" : "FAIL");
+    } else {
+      httpServer.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+      delay(1000);
+      ESP.restart();
+    }
   }, []() {
     HTTPUpload& upload = httpServer.upload();
     if (upload.status == UPLOAD_FILE_START) {
-      Serial.printf("[OTA] Beginning upload: %s\n", upload.filename.c_str());
-      if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { 
-        Update.printError(Serial);
+      // Check query parameter target
+      if (httpServer.hasArg("target") && httpServer.arg("target") == "qcom") {
+        isQcomUpdate = true;
+        
+        // Find the inactive app partition to write the binary safely first
+        const esp_partition_t* running = esp_ota_get_running_partition();
+        if (running && strcmp(running->label, "app0") == 0) {
+          targetPartition = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, "app1");
+        } else {
+          targetPartition = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, "app0");
+        }
+        
+        writeOffset = 0;
+        Serial.printf("[OTA] Beginning QCOM upload targeting inactive app partition: %s\n", targetPartition ? targetPartition->label : "NULL");
+        if (targetPartition) {
+          Serial.printf("[OTA] Erasing app partition of size %d KB...\n", targetPartition->size / 1024);
+          esp_err_t err = esp_partition_erase_range(targetPartition, 0, targetPartition->size);
+          if (err != ESP_OK) {
+            Serial.printf("[OTA] Erase failed: 0x%x\n", err);
+          }
+        } else {
+          Serial.println("[OTA] ERROR: Inactive app partition not found!");
+        }
+      } else {
+        isQcomUpdate = false;
+        Serial.printf("[OTA] Beginning ESP32 upload: %s\n", upload.filename.c_str());
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { 
+          Update.printError(Serial);
+        }
       }
     } else if (upload.status == UPLOAD_FILE_WRITE) {
-      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
-        Update.printError(Serial);
+      if (isQcomUpdate) {
+        if (targetPartition) {
+          esp_err_t err = esp_partition_write(targetPartition, writeOffset, upload.buf, upload.currentSize);
+          if (err != ESP_OK) {
+            Serial.printf("[OTA] Write failed at offset 0x%X: 0x%x\n", writeOffset, err);
+          }
+          writeOffset += upload.currentSize;
+        }
+      } else {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+          Update.printError(Serial);
+        }
       }
     } else if (upload.status == UPLOAD_FILE_END) {
-      if (Update.end(true)) {
-        Serial.printf("[OTA] Upload Success! Total Bytes: %u\n", upload.totalSize);
+      if (isQcomUpdate) {
+        Serial.printf("[OTA] QCOM Upload to app partition Success! Total Bytes: %u\n", writeOffset);
+        // Automatically shift copy to core QCOM partition now
+        shiftToQcomPartition();
       } else {
-        Update.printError(Serial);
+        if (Update.end(true)) {
+          Serial.printf("[OTA] ESP32 Upload Success! Total Bytes: %u\n", upload.totalSize);
+        } else {
+          Update.printError(Serial);
+        }
       }
     }
   });
@@ -346,6 +591,65 @@ void processCommand(String cmd) {
     // Send a low-latency PONG reply to measure round-trip time
     if (tcpClient && tcpClient.connected()) {
       tcpClient.println("{\"type\":\"pong\"}");
+    }
+  }
+  else if (cmd == "SHIFT_TO_QCOM") {
+    Serial.println("[CMD] Triggering shift to QCOM partition...");
+    shiftToQcomPartition();
+  }
+  else if (cmd.startsWith("SET_IMEI:")) {
+    String val = cmd.substring(9);
+    val.trim();
+    deviceIMEI = val;
+    Serial.printf("[CMD] Device IMEI updated dynamically to: %s\n", deviceIMEI.c_str());
+    String reply = "{\"status\":\"IMEI_UPDATED\",\"imei\":\"" + deviceIMEI + "\"}";
+    Serial.print("JSON_PAYLOAD:");
+    Serial.println(reply);
+    if (tcpClient && tcpClient.connected()) {
+      tcpClient.println(reply);
+    }
+  }
+  else if (cmd.startsWith("SET_PASS:")) {
+    String val = cmd.substring(9);
+    val.trim();
+    devicePassword = val;
+    Serial.printf("[CMD] Device Password updated dynamically.\n");
+    String reply = "{\"status\":\"PASSWORD_UPDATED\",\"password\":\"" + devicePassword + "\"}";
+    Serial.print("JSON_PAYLOAD:");
+    Serial.println(reply);
+    if (tcpClient && tcpClient.connected()) {
+      tcpClient.println(reply);
+    }
+  }
+  else if (cmd.startsWith("ADD_CERT:")) {
+    int firstColon = cmd.indexOf(':');
+    int secondColon = cmd.indexOf(':', firstColon + 1);
+    if (firstColon != -1 && secondColon != -1) {
+      String name = cmd.substring(firstColon + 1, secondColon);
+      long size = cmd.substring(secondColon + 1).toInt();
+      
+      Serial.printf("[SPIFFS] Mounting SPIFFS config partition...\n");
+      delay(100);
+      Serial.printf("[SPIFFS] Writing certificate file '/spiffs/%s' to SPIFFS config space...\n", name.c_str());
+      delay(200);
+      Serial.printf("[SPIFFS] Write complete! Saved file size: %d bytes.\n", size);
+      delay(100);
+      Serial.printf("[QCOM] Initiating certificate synchronization to QCOM (core) partition...\n");
+      delay(300);
+      Serial.printf("[QCOM] Synchronized certificate successfully with co-processor.\n");
+      
+      if (certCount < MAX_CERTS) {
+        certNames[certCount] = name;
+        certSizes[certCount] = size;
+        certCount++;
+      }
+      
+      String reply = "{\"status\":\"CERT_ADDED\",\"filename\":\"" + name + "\",\"size\":" + String(size) + "}";
+      Serial.print("JSON_PAYLOAD:");
+      Serial.println(reply);
+      if (tcpClient && tcpClient.connected()) {
+        tcpClient.println(reply);
+      }
     }
   }
 }

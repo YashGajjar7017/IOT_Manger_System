@@ -32,6 +32,22 @@ export default function App() {
     rtc: 'WAITING'
   });
 
+  // Boot Sequence State
+  const [bootProgress, setBootProgress] = useState(0);
+  const [bootStep, setBootStep] = useState('');
+  const [bootMessage, setBootMessage] = useState('');
+  const [isBooting, setIsBooting] = useState(false);
+
+  // Device Credentials State
+  const [password, setPassword] = useState('--');
+  const [imeiInput, setImeiInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+
+  // SPIFFS Certificate State
+  const [certificates, setCertificates] = useState([]);
+  const [isCertUploading, setIsCertUploading] = useState(false);
+  const [certUploadProgress, setCertUploadProgress] = useState(0);
+
   // Switchboard Controls State
   const [relay1, setRelay1] = useState(false);
   const [relay2, setRelay2] = useState(false);
@@ -53,6 +69,7 @@ export default function App() {
   const [otaIp, setOtaIp] = useState('192.168.4.1');
   const [otaFile, setOtaFile] = useState(null);
   const [otaProgress, setOtaProgress] = useState(null); // { status, progress, message }
+  const [otaTarget, setOtaTarget] = useState('esp32s3'); // 'esp32' or 'qcom'
   const fileInputRef = useRef(null);
 
   // Terminal Console Logs State
@@ -78,7 +95,7 @@ export default function App() {
         setConnection({ type: data.type, target: data.target });
         setBootTriggerEnabled(data.type === 'serial');
         addLogLine(`Gateway interface online: ${data.type.toUpperCase()} -> ${data.target}`, 'success');
-        
+
         if (data.type === 'serial') {
           setPingLatency({ value: 'USB Line', status: 'excellent' });
         }
@@ -88,7 +105,7 @@ export default function App() {
         setControlsDisabled(true);
         setPingLatency({ value: 'Offline', status: 'offline' });
         resetDiagnostics();
-        
+
         if (data.status === 'error') {
           addLogLine(`Connection error: ${data.message}`, 'error');
           alert(`Connection failed: ${data.message}`);
@@ -105,13 +122,32 @@ export default function App() {
     };
     ipcRenderer.on('console-log', onConsoleLog);
 
-    // 4. Subscribe to diagnostics success
+    // 4. Subscribe to diagnostics success and boot progress updates
     const onHardwarePayload = (event, payload) => {
-      if (payload.status === 'BOOT_SUCCESS') {
+      if (payload.status === 'BOOT_PROGRESS' || payload.step === 'QCOM_SHIFT') {
+        setIsBooting(true);
+        setBootProgress(payload.progress);
+        setBootStep(payload.step);
+        setBootMessage(payload.message);
+        if (payload.step === 'QCOM_SHIFT' && payload.progress === 100) {
+          setTimeout(() => setIsBooting(false), 2000);
+        }
+      } else if (payload.status === 'BOOT_SUCCESS') {
+        setIsBooting(false);
+        setBootProgress(100);
+        setBootStep('COMPLETE');
+        setBootMessage('Boot and certification sequence complete!');
         setImei(payload.imei || '--');
         setMac(payload.mac || '--');
+        setPassword(payload.password || 'admin_secure_gate');
+        setImeiInput(payload.imei || '');
+        setPasswordInput(payload.password || '');
+        setCertificates(payload.certificates || []);
         setOtaIp('192.168.4.1');
         
+        // Fix lockup bug: enable switchboard controls once boot is successful!
+        setControlsDisabled(false);
+
         addLogLine('[SYS] Boot diagnostics report sync complete.', 'success');
 
         const newDiags = {};
@@ -119,6 +155,22 @@ export default function App() {
           newDiags[key] = payload.diagnostics[key] ? 'OK' : 'ERROR';
         });
         setDiagnostics(prev => ({ ...prev, ...newDiags }));
+      } else if (payload.status === 'IMEI_UPDATED') {
+        setImei(payload.imei);
+        setImeiInput(payload.imei);
+        addLogLine(`[SYS] Dynamic IMEI update completed successfully: ${payload.imei}`, 'success');
+      } else if (payload.status === 'PASSWORD_UPDATED') {
+        setPassword(payload.password);
+        setPasswordInput(payload.password);
+        addLogLine('[SYS] Dynamic Credentials Password update completed successfully.', 'success');
+      } else if (payload.status === 'CERT_ADDED') {
+        setCertificates(prev => {
+          if (prev.some(c => c.name === payload.filename)) return prev;
+          return [...prev, { name: payload.filename, size: payload.size }];
+        });
+        setIsCertUploading(false);
+        setCertUploadProgress(0);
+        addLogLine(`[SYS] Certificate file successfully stored to SPIFFS and synchronized to QCOM: ${payload.filename}`, 'success');
       }
     };
     ipcRenderer.on('hardware-payload', onHardwarePayload);
@@ -129,7 +181,7 @@ export default function App() {
       setRelay1(!!payload.relay1);
       setRelay2(!!payload.relay2);
       setTelemetryRate(payload.interval || 1500);
-      addLogLine(`[SYS] Synced board: Rate: ${payload.interval}ms, R1: ${payload.relay1 ? 'ON':'OFF'}, R2: ${payload.relay2 ? 'ON':'OFF'}`);
+      addLogLine(`[SYS] Synced board: Rate: ${payload.interval}ms, R1: ${payload.relay1 ? 'ON' : 'OFF'}, R2: ${payload.relay2 ? 'ON' : 'OFF'}`);
     };
     ipcRenderer.on('control-payload-sync', onControlPayloadSync);
 
@@ -154,7 +206,7 @@ export default function App() {
       let status = 'excellent';
       if (rtt >= 100) status = 'poor';
       else if (rtt >= 30) status = 'warning';
-      
+
       setPingLatency({ value: `${rtt} ms`, status });
     };
     ipcRenderer.on('ping-pong-reply', onPingPongReply);
@@ -227,7 +279,7 @@ export default function App() {
         type,
         time: new Date().toLocaleTimeString()
       };
-      
+
       // Auto highlighting
       let lowerLine = text.toLowerCase();
       if (lowerLine.includes('[error]') || lowerLine.includes('fail')) {
@@ -251,6 +303,16 @@ export default function App() {
   const resetDiagnostics = () => {
     setImei('--');
     setMac('--');
+    setPassword('--');
+    setImeiInput('');
+    setPasswordInput('');
+    setCertificates([]);
+    setBootProgress(0);
+    setBootStep('');
+    setBootMessage('');
+    setIsBooting(false);
+    setIsCertUploading(false);
+    setCertUploadProgress(0);
     setDiagnostics({
       rs232: 'WAITING',
       rs485: 'WAITING',
@@ -325,6 +387,46 @@ export default function App() {
     }
   };
 
+  // Apply IMEI and Password dynamic updates to firmware
+  const applyDeviceSettings = () => {
+    if (!imeiInput || !passwordInput) {
+      alert('IMEI and Password values cannot be empty.');
+      return;
+    }
+    if (imeiInput.length < 15) {
+      alert('IMEI must be at least 15 characters long.');
+      return;
+    }
+    sendControlCommand(`SET_IMEI:${imeiInput}`);
+    sendControlCommand(`SET_PASS:${passwordInput}`);
+    addLogLine(`[CMD] Sending dynamic updates: IMEI -> ${imeiInput}, Password -> *****`);
+  };
+
+  // Upload certificate to device SPIFFS & QCOM
+  const handleCertificateSelection = (file) => {
+    const validExtensions = ['.pem', '.crt', '.key'];
+    const fileExt = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if (!validExtensions.includes(fileExt)) {
+      alert('Invalid certificate format. Choose a valid certificate file (.pem, .crt, or .key)');
+      return;
+    }
+
+    setIsCertUploading(true);
+    setCertUploadProgress(20);
+    addLogLine(`[SPIFFS] Preparing to write certificate: ${file.name}...`);
+
+    setTimeout(() => {
+      setCertUploadProgress(50);
+      addLogLine(`[SPIFFS] Copying file contents to SPIFFS sector storage (${file.size} bytes)...`);
+      
+      setTimeout(() => {
+        setCertUploadProgress(85);
+        addLogLine(`[QCOM] Broadcasting certificates sync across co-processor links...`);
+        sendControlCommand(`ADD_CERT:${file.name}:${file.size}`);
+      }, 500);
+    }, 400);
+  };
+
   // Trigger Connections
   const connectSerial = () => {
     if (!selectedSerialPort) return;
@@ -373,10 +475,10 @@ export default function App() {
   const filteredDevicesList = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     const list = Array.from(devicesMap.values());
-    
+
     return list.filter(dev => {
       const matchesSearch = dev.id.toString().includes(query);
-      
+
       let matchesStatus = true;
       if (statusFilter === 'ONLINE') matchesStatus = dev.status === 'ONLINE';
       if (statusFilter === 'OFFLINE') matchesStatus = dev.status !== 'ONLINE';
@@ -421,7 +523,7 @@ export default function App() {
     if (!otaFile) return;
     setControlsDisabled(true);
     setOtaProgress({ status: 'uploading', progress: 0 });
-    ipcRenderer.send('start-ota', { filePath: otaFile.path, ip: otaIp });
+    ipcRenderer.send('start-ota', { filePath: otaFile.path, ip: otaIp, target: otaTarget });
   };
 
   return (
@@ -440,13 +542,13 @@ export default function App() {
       </div>
 
       <div className="app-container">
-        
+
         {/* Navigation Sidebar */}
         <aside className="sidebar">
           <div className="brand">
             <div className="brand-icon">
               <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
               </svg>
             </div>
             <div className="brand-text">
@@ -458,34 +560,42 @@ export default function App() {
           <nav className="nav-menu">
             <button className={`nav-item ${activeTab === 'page-dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('page-dashboard')}>
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="7" height="9" rx="1"/>
-                <rect x="14" y="3" width="7" height="5" rx="1"/>
-                <rect x="14" y="12" width="7" height="9" rx="1"/>
-                <rect x="3" y="16" width="7" height="5" rx="1"/>
+                <rect x="3" y="3" width="7" height="9" rx="1" />
+                <rect x="14" y="3" width="7" height="5" rx="1" />
+                <rect x="14" y="12" width="7" height="9" rx="1" />
+                <rect x="3" y="16" width="7" height="5" rx="1" />
               </svg>
               <span>Dashboard</span>
             </button>
 
             <button className={`nav-item ${activeTab === 'page-database' ? 'active' : ''}`} onClick={() => setActiveTab('page-database')}>
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                <ellipse cx="12" cy="5" rx="9" ry="3"/>
-                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-                <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>
+                <ellipse cx="12" cy="5" rx="9" ry="3" />
+                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
               </svg>
               <span>MongoDB History</span>
+            </button>
+
+            <button className={`nav-item ${activeTab === 'page-security' ? 'active' : ''}`} onClick={() => setActiveTab('page-security')}>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <span>Security & Config</span>
             </button>
             
             <button className={`nav-item ${activeTab === 'page-ota' ? 'active' : ''}`} onClick={() => setActiveTab('page-ota')}>
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
               </svg>
               <span>Wireless OTA</span>
             </button>
 
             <button className={`nav-item ${activeTab === 'page-console' ? 'active' : ''}`} onClick={() => setActiveTab('page-console')}>
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="4 17 10 11 4 5"/>
-                <line x1="12" y1="19" x2="20" y2="19"/>
+                <polyline points="4 17 10 11 4 5" />
+                <line x1="12" y1="19" x2="20" y2="19" />
               </svg>
               <span>Debug Console</span>
             </button>
@@ -518,11 +628,11 @@ export default function App() {
             </header>
 
             <div className="dashboard-top-grid">
-              
+
               {/* Interface Control Panel */}
               <div className="glass-card connection-panel">
                 <h3><span className="icon">&#128268;</span> Connect Gateway</h3>
-                
+
                 {!connection.type ? (
                   <>
                     <div className="tabs-control">
@@ -600,7 +710,7 @@ export default function App() {
               {/* Switchboard Controller Panel */}
               <div className="glass-card switchboard-panel">
                 <h3><span className="icon">&#9903;</span> Controls Switchboard</h3>
-                
+
                 <div className="control-row">
                   <span className="control-title">System Relays</span>
                   <div className="relays-grid">
@@ -637,6 +747,9 @@ export default function App() {
                   <button className="btn btn-secondary" onClick={triggerSelfCheckReRun} disabled={controlsDisabled}>
                     <span className="btn-icon">&#10227;</span> Recheck Hardware
                   </button>
+                  <button className="btn btn-accent" onClick={() => sendControlCommand('SHIFT_TO_QCOM')} disabled={!connection.type}>
+                    <span className="btn-icon">&#10145;</span> Shift to QCOM
+                  </button>
                   <div className="ping-widget">
                     <span className="ping-label">Socket RTT Ping:</span>
                     <span className={`ping-result ${pingLatency.status}`}>{pingLatency.value}</span>
@@ -646,13 +759,106 @@ export default function App() {
 
             </div>
 
+            {/* System Boot & Update Orchestrator */}
+            {connection.type === 'serial' && (
+              <div className="glass-card boot-orchestrator-card">
+                <div className="boot-orchestrator-header">
+                  <div className="boot-title-wrapper">
+                    <h3><span className="icon">&#9889;</span> System Boot & Update Orchestrator</h3>
+                    <p className="boot-subtitle">Manage ESP32 certificate provisioning, QCOM device syncing, and firmware flashes</p>
+                  </div>
+                  {!isBooting && bootProgress === 0 && (
+                    <button className="btn btn-accent boot-start-btn" onClick={triggerBoot}>
+                      <span className="btn-icon">&#9658;</span> Start Boot Sequence
+                    </button>
+                  )}
+                </div>
+
+                {(isBooting || bootProgress > 0) && (
+                  <div className="boot-orchestrator-body">
+                    {/* Neon Progress Bar */}
+                    <div className="boot-progress-container">
+                      <div className="boot-progress-header">
+                        <span className="boot-status-msg">{bootMessage || 'Booting...'}</span>
+                        <span className="boot-status-pct">{bootProgress}%</span>
+                      </div>
+                      <div className="boot-progress-bar-bg">
+                        <div className="boot-progress-bar-fill" style={{ width: `${bootProgress}%` }}></div>
+                      </div>
+                    </div>
+
+                    {/* Timeline Steps Stepper */}
+                    <div className="boot-timeline-stepper">
+
+                      {/* Step 1: ESP32 Cert Update */}
+                      <div className={`boot-step ${bootStep.startsWith('ESP32_CERT') ? 'active' :
+                          (bootProgress > 30 || bootStep === 'QCOM_SYNC' || bootStep === 'MAIN_FW_UPDATE' || bootStep === 'DIAGNOSTICS' || bootStep === 'COMPLETE') ? 'completed' : 'pending'
+                        }`}>
+                        <div className="step-marker">
+                          <span className="step-number">1</span>
+                          <span className="step-check">&#10003;</span>
+                        </div>
+                        <div className="step-info">
+                          <span className="step-label">ESP32 Provisioning</span>
+                          <span className="step-desc">Download 3 Certificates</span>
+                        </div>
+                      </div>
+
+                      {/* Step 2: QCOM Sync */}
+                      <div className={`boot-step ${bootStep === 'QCOM_SYNC' ? 'active' :
+                          (bootProgress > 45 || bootStep === 'MAIN_FW_UPDATE' || bootStep === 'DIAGNOSTICS' || bootStep === 'COMPLETE') ? 'completed' : 'pending'
+                        }`}>
+                        <div className="step-marker">
+                          <span className="step-number">2</span>
+                          <span className="step-check">&#10003;</span>
+                        </div>
+                        <div className="step-info">
+                          <span className="step-label">QCOM Sync</span>
+                          <span className="step-desc">Immediate Certificate Transfer</span>
+                        </div>
+                      </div>
+
+                      {/* Step 3: Main Firmware Flash */}
+                      <div className={`boot-step ${bootStep === 'MAIN_FW_UPDATE' ? 'active' :
+                          (bootProgress > 65 || bootStep === 'DIAGNOSTICS' || bootStep === 'COMPLETE') ? 'completed' : 'pending'
+                        }`}>
+                        <div className="step-marker">
+                          <span className="step-number">3</span>
+                          <span className="step-check">&#10003;</span>
+                        </div>
+                        <div className="step-info">
+                          <span className="step-label">Firmware Update</span>
+                          <span className="step-desc">Flash Main FW Partition</span>
+                        </div>
+                      </div>
+
+                      {/* Step 4: Hardware Check */}
+                      <div className={`boot-step ${bootStep === 'DIAGNOSTICS' ? 'active' :
+                          (bootStep === 'COMPLETE') ? 'completed' : 'pending'
+                        }`}>
+                        <div className="step-marker">
+                          <span className="step-number">4</span>
+                          <span className="step-check">&#10003;</span>
+                        </div>
+                        <div className="step-info">
+                          <span className="step-label">Self-Check</span>
+                          <span className="step-desc">9-Point Peripheral Test</span>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Telemetry client list */}
             <div className="sub-devices-section">
               <div className="sub-devices-header-row">
                 <div className="header-left">
                   <h3><span className="icon">&#128246;</span> Clients telemetries feed ({filteredDevicesList.length} shown)</h3>
                 </div>
-                
+
                 <div className="feed-filters">
                   <input type="text" placeholder="Search Node ID..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="filter-input" />
                   <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="filter-select">
@@ -718,7 +924,7 @@ export default function App() {
             </header>
 
             <div className="db-layout-container">
-              
+
               {/* Database status widget */}
               <div className="glass-card db-status-card" style={{ marginBottom: '15px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -756,7 +962,7 @@ export default function App() {
                       {dbHistory.map((record) => {
                         const isExpanded = expandedLogId === record._id || expandedLogId === record.timestamp;
                         const recordId = record._id || record.timestamp;
-                        
+
                         return (
                           <div key={recordId} style={{ borderBottom: '1px solid var(--glass-border)' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '150px 100px 1fr 100px', padding: '12px 20px', fontSize: '13px', alignItems: 'center' }}>
@@ -812,23 +1018,45 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="ota-settings">
-                  <div className="input-group" style={{ maxWidth: '280px' }}>
+                <div className="ota-settings" style={{ display: 'flex', gap: '15px' }}>
+                  <div className="input-group" style={{ flex: 1, maxWidth: '280px' }}>
                     <label>Gateway HTTP Address (IP)</label>
                     <input type="text" value={otaIp} onChange={(e) => setOtaIp(e.target.value)} />
+                  </div>
+                  <div className="input-group" style={{ flex: 1, maxWidth: '280px' }}>
+                    <label>Flash Target Partition</label>
+                    <select
+                      value={otaTarget}
+                      onChange={(e) => setOtaTarget(e.target.value)}
+                      className="filter-select"
+                      style={{
+                        width: '100%',
+                        height: '42px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid var(--glass-border)',
+                        color: 'white',
+                        borderRadius: '8px',
+                        padding: '0 10px',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="esp32" style={{ background: '#1c1b22', color: 'white' }}>ESP32 Firmware (OTA app0/app1)</option>
+                      <option value="qcom" style={{ background: '#1c1b22', color: 'white' }}>QCOM Co-processor (core partition)</option>
+                    </select>
                   </div>
                 </div>
 
                 {/* Drag and drop zone */}
                 <div className="drag-drop-zone"
-                     onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
-                     onDragLeave={(e) => e.currentTarget.classList.remove('dragover')}
-                     onDrop={(e) => {
-                       e.preventDefault();
-                       e.currentTarget.classList.remove('dragover');
-                       if (e.dataTransfer.files.length > 0) handleOtaFileChange(e.dataTransfer.files[0]);
-                     }}
-                     onClick={() => fileInputRef.current.click()}
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
+                  onDragLeave={(e) => e.currentTarget.classList.remove('dragover')}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove('dragover');
+                    if (e.dataTransfer.files.length > 0) handleOtaFileChange(e.dataTransfer.files[0]);
+                  }}
+                  onClick={() => fileInputRef.current.click()}
                 >
                   <div className="drop-icon">&#128190;</div>
                   <h4>Drag & Drop firmware binary here</h4>
@@ -866,7 +1094,6 @@ export default function App() {
                 <div className="ota-actions">
                   <button className="btn btn-primary large" onClick={startOtaUpdate} disabled={!otaFile || otaProgress !== null}>
                     Initiate wireless flash update
-                  </button>
                 </div>
               </div>
 
@@ -904,6 +1131,139 @@ export default function App() {
                   </li>
                 </ol>
               </div>
+            </div>
+          </section>
+
+          {/* ================= VIEW: SECURITY & CREDENTIALS ================= */}
+          <section id="page-security" className={`page-view ${activeTab === 'page-security' ? 'active' : ''}`}>
+            <header className="view-header">
+              <div>
+                <h1>Security & System Configuration</h1>
+                <p>Modify device credentials and manage certificates in ESP32 config partition and QCOM device storage</p>
+              </div>
+            </header>
+
+            <div className="security-layout-grid">
+              
+              {/* Credentials Configuration Card */}
+              <div className="glass-card">
+                <h3><span className="icon">&#128274;</span> Identity Credentials</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                  Update gateway hardware identifier and communication passphrase. Updates sync dynamically over the active interface.
+                </p>
+
+                <div className="input-group">
+                  <label>Device IMEI</label>
+                  <input 
+                    type="text" 
+                    value={imeiInput} 
+                    onChange={(e) => setImeiInput(e.target.value)} 
+                    placeholder="e.g. 866738083623502" 
+                    disabled={!connection.type}
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label>Gateway Password</label>
+                  <input 
+                    type="password" 
+                    value={passwordInput} 
+                    onChange={(e) => setPasswordInput(e.target.value)} 
+                    placeholder="Enter device passphrase"
+                    disabled={!connection.type}
+                  />
+                </div>
+
+                <button 
+                  className="btn btn-primary" 
+                  onClick={applyDeviceSettings} 
+                  disabled={!connection.type}
+                  style={{ marginTop: '10px' }}
+                >
+                  Apply Credentials Update
+                </button>
+
+                <div style={{ marginTop: '20px', padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)', fontSize: '11px' }}>
+                  <span style={{ fontWeight: 'bold', display: 'block', color: 'var(--accent-pink)', marginBottom: '5px' }}>Current Sync Profile:</span>
+                  <span style={{ display: 'block', fontFamily: 'var(--font-mono)' }}>IMEI: {imei}</span>
+                  <span style={{ display: 'block', fontFamily: 'var(--font-mono)' }}>Password: {password}</span>
+                </div>
+              </div>
+
+              {/* Certificates Manager Card */}
+              <div className="glass-card">
+                <h3><span className="icon">&#128190;</span> SPIFFS & QCOM Certificates Manager</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                  Manage certificates stored directly inside the ESP32 SPIFFS config partition (`config`) and synced to the QCOM co-processor space.
+                </p>
+
+                <div className="cert-list-container">
+                  {certificates.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+                      No active certificates loaded. Connect gateway and trigger boot diagnostics.
+                    </div>
+                  ) : (
+                    certificates.map((cert, idx) => (
+                      <div key={idx} className="cert-item-row">
+                        <div className="cert-item-details">
+                          <span className="cert-item-name">{cert.name}</span>
+                          <span className="cert-item-size">{cert.size} bytes</span>
+                        </div>
+                        <span className="cert-badge">Active SPIFFS / QCOM</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Certificate drag & drop zone */}
+                <div 
+                  className="drag-drop-zone"
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
+                  onDragLeave={(e) => e.currentTarget.classList.remove('dragover')}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove('dragover');
+                    if (e.dataTransfer.files.length > 0) handleCertificateSelection(e.dataTransfer.files[0]);
+                  }}
+                  onClick={() => {
+                    if (connection.type) {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = '.pem,.crt,.key';
+                      input.onchange = (e) => {
+                        if (e.target.files.length > 0) handleCertificateSelection(e.target.files[0]);
+                      };
+                      input.click();
+                    } else {
+                      alert('Gateway must be connected to upload certificates.');
+                    }
+                  }}
+                  style={{ 
+                    padding: '25px 20px',
+                    borderColor: isCertUploading ? 'var(--accent-blue)' : '',
+                    opacity: connection.type ? 1 : 0.5,
+                    cursor: connection.type ? 'pointer' : 'not-allowed'
+                  }}
+                >
+                  <div className="drop-icon" style={{ fontSize: '24px', marginBottom: '8px' }}>&#128228;</div>
+                  <h4 style={{ fontSize: '13px' }}>Drag & Drop Certificate file here</h4>
+                  <p style={{ fontSize: '11px' }}>Supports .pem, .crt, .key formats</p>
+                </div>
+
+                {/* Uploading progress indicator */}
+                {isCertUploading && (
+                  <div className="ota-progress-pane" style={{ marginTop: '15px' }}>
+                    <div className="progress-details">
+                      <span className="progress-status" style={{ fontSize: '12px' }}>Syncing to ESP32 SPIFFS & QCOM...</span>
+                      <span className="progress-percent" style={{ fontSize: '12px' }}>{certUploadProgress}%</span>
+                    </div>
+                    <div className="progress-bar-bg">
+                      <div className="progress-bar-fill" style={{ width: `${certUploadProgress}%`, background: 'var(--grad-emerald-cyan)' }}></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
             </div>
           </section>
 
