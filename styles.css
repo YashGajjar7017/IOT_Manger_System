@@ -1902,11 +1902,27 @@ input, select, textarea {
   text-shadow: 0 0 8px rgba(0, 255, 102, 0.3);
 }
 
-/* Override text selection for input fields to fix user typing write locks */
+/* Commented out to replace with a more robust set of overrides as per constraint */
+/*
 input, select, textarea {
   user-select: text !important;
   -webkit-user-select: text !important;
   cursor: text !important;
+}
+*/
+
+/* Enhanced overrides for interactive elements and text entry */
+input, select, textarea, button, .btn {
+  -webkit-app-region: no-drag !important;
+}
+input, select, textarea {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  cursor: text !important;
+}
+.console-terminal, .terminal-line, .console-box {
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 

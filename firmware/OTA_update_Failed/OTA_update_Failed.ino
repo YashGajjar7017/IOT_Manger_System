@@ -1,14 +1,18 @@
-/**
- * ESP32 Dedicated OTA Update Firmware
+/*
+ * =========================================================================
+ * NOTE: THIS FILE IS COMMENTED OUT TO PREVENT COMPILER REDEFINITION ERRORS.
  * 
- * Functions:
- * - Boots instantly into SoftAP mode with starting IP 192.168.4.1
- * - Broadcasts unique SSID: ESP32_OTA_GATEWAY_<MAC>
- * - Listens on Port 500 for HTTP POST firmware updates
- * - Handles auto-discovery via UDP on Port 5002
- * - Generates clear, detailed logs on the Serial interface at 115200 baud
+ * In Arduino/ESP32 build environments, all .ino files in the same directory
+ * (e.g. firmware/) are combined into a single translation unit during build.
+ * Having setup(), loop(), and other variables defined in both firmware.ino
+ * and OTA_update.ino in the same folder causes "redefinition" errors.
+ * 
+ * The active code has been relocated to its own separate project directory:
+ * firmware/OTA_update/OTA_update.ino
+ * =========================================================================
  */
 
+/*
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <WebServer.h>
@@ -177,3 +181,4 @@ void loop() {
   server.handleClient();
   handleUDPDiscovery();
 }
+*/

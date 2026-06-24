@@ -1,0 +1,447 @@
+/**
+ * ESP32 Dedicated OTA Update Firmware
+ * 
+ * Functions:
+ * - Boots instantly into SoftAP mode with starting IP 192.168.4.1
+ * - Broadcasts unique SSID: ESP32_OTA_GATEWAY_<MAC>
+ * - Listens on Port 500 for HTTP POST firmware updates
+ * - Handles auto-discovery via UDP on Port 5002
+ * - Generates clear, detailed logs on the Serial interface at 115200 baud
+ */
+
+#include <WiFi.h>
+#include <WiFiUdp.h>
+#include <WebServer.h>
+#include <Update.h>
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+
+// WebServer listening on port 500
+WebServer server(500);
+
+// UDP Discovery Responder
+WiFiUDP udpListener;
+const int UDP_PORT = 5002;
+
+// Device Identity
+String deviceMAC = "";
+String deviceIMEI = "866738083623502_OTA";
+
+/*
+// Original single-threaded implementation commented out to satisfy the constraint of preserving all code
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+
+  Serial.println("\n\n=============================================================");
+  Serial.println("       ESP32 OTA UPDATE FIRMWARE INITIALIZING                ");
+  Serial.println("=============================================================");
+  Serial.println("[SYSTEM] Baudrate configured at 115200 bps.");
+
+  // Get MAC Address
+  deviceMAC = WiFi.macAddress();
+  String apSsid = "ESP32_OTA_GATEWAY_" + deviceMAC;
+  apSsid.replace(":", "");
+
+  // Configure SoftAP starting IP address 192.168.4.1 explicitly
+  Serial.println("[WIFI AP] Configuring SoftAP radio transmitter details...");
+  IPAddress local_IP(192, 168, 4, 1);
+  IPAddress gateway(192, 168, 4, 1);
+  IPAddress subnet(255, 255, 255, 0);
+  WiFi.softAPConfig(local_IP, gateway, subnet);
+  
+  if (WiFi.softAP(apSsid.c_str())) {
+    Serial.println("[WIFI AP] SoftAP started successfully.");
+  } else {
+    Serial.println("[WIFI AP] ERROR: SoftAP configuration failed!");
+  }
+
+  IPAddress apIP = WiFi.softAPIP();
+  Serial.println("---------------------------------------------");
+  Serial.print("[WIFI AP] SoftAP SSID               : ");
+  Serial.println(apSsid);
+  Serial.print("[WIFI AP] SoftAP Gateway IP Address : ");
+  Serial.println(apIP.toString());
+  Serial.println("---------------------------------------------");
+
+  // Start UDP Discovery responder
+  Serial.printf("[UDP] Starting Discovery responder on port %d...\n", UDP_PORT);
+  udpListener.begin(UDP_PORT);
+  Serial.println("[UDP] Discovery responder ready.");
+
+  // Setup Web Server routes
+  server.on("/", HTTP_GET, []() {
+    String html = "<html><head><title>IoT OTA Portal</title>";
+    html += "<style>body{background:#03000a;color:#fff;font-family:sans-serif;text-align:center;padding:50px;}";
+    html += ".card{background:rgba(255,255,255,0.03);border:1px solid rgba(0,240,255,0.2);border-radius:12px;padding:30px;display:inline-block;width:400px;}";
+    html += "h1{color:#00f0ff;}p{color:#a0a0b0;}</style></head><body>";
+    html += "<div class='card'><h1>IoT OTA Portal (Port 500)</h1>";
+    html += "<p>Device MAC: " + WiFi.softAPmacAddress() + "</p>";
+    html += "<p>Use the desktop dashboard GUI to upload and flash firmware binaries.</p></div></body></html>";
+    server.send(200, "text/html", html);
+  });
+
+  // Setup HTTP POST Upload handler for /update
+  server.on("/update", HTTP_POST, []() {
+    server.sendHeader("Connection", "close");
+    if (Update.hasError()) {
+      Serial.println("[OTA ERROR] Flash update failed. Reporting failure to client...");
+      server.send(500, "text/plain", "FAIL");
+    } else {
+      Serial.println("[OTA SUCCESS] Flash complete! Rebooting device in 1 second...");
+      server.send(200, "text/plain", "OK");
+      delay(1000);
+      ESP.restart();
+    }
+  }, []() {
+    HTTPUpload& upload = server.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      Serial.println("\n---------------------------------------------");
+      Serial.printf("[OTA] Beginning firmware upload process...\n");
+      Serial.printf("[OTA] File Name: %s\n", upload.filename.c_str());
+
+      // Check running partition context
+      const esp_partition_t* running = esp_ota_get_running_partition();
+      if (running != NULL) {
+        Serial.printf("[OTA] Running App Partition: %s\n", running->label);
+      }
+
+      if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+        Serial.printf("[OTA ERROR] Update.begin failed: ");
+        Update.printError(Serial);
+      } else {
+        Serial.println("[OTA] Partition prepared. Streaming sectors to flash memory...");
+      }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      static int lastProgressPercent = -1;
+      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+        Serial.printf("[OTA ERROR] Sector write failed: ");
+        Update.printError(Serial);
+      } else {
+        // Log progress every 10%
+        int totalWritten = Update.progress();
+        int totalSize = upload.totalSize;
+        if (totalSize > 0) {
+          int progressPercent = (totalWritten * 100) / totalSize;
+          if (progressPercent % 10 == 0 && progressPercent != lastProgressPercent) {
+            Serial.printf("[OTA PROGRESS] Flashed: %d%%\n", progressPercent);
+            lastProgressPercent = progressPercent;
+          }
+        }
+      }
+    } else if (upload.status == UPLOAD_FILE_END) {
+      if (Update.end(true)) {
+        Serial.println("[OTA] Firmware file successfully downloaded and verified!");
+        Serial.printf("[OTA] Total bytes written: %u bytes.\n", upload.totalSize);
+        Serial.println("---------------------------------------------");
+      } else {
+        Serial.printf("[OTA ERROR] Update verification failed: ");
+        Update.printError(Serial);
+      }
+    }
+  });
+
+  server.begin();
+  Serial.println("[HTTP] WebServer started on Port 500.");
+  Serial.println("[SYSTEM] Ready to service firmware updates. Awaiting connection...\n");
+}
+
+void handleUDPDiscovery() {
+  int packetSize = udpListener.parsePacket();
+  if (packetSize) {
+    char packetBuffer[255];
+    int len = udpListener.read(packetBuffer, 255);
+    if (len > 0) {
+      packetBuffer[len] = 0;
+    }
+    String request = String(packetBuffer);
+    request.trim();
+    if (request == "DISCOVER_IOT_GATEWAY") {
+      udpListener.beginPacket(udpListener.remoteIP(), udpListener.remotePort());
+      
+      // Since OTA mode is SoftAP only, we reply with softAP IP (192.168.4.1)
+      String responseIP = WiFi.softAPIP().toString();
+      
+      String response = "{\"status\":\"ONLINE\",\"ip\":\"" +
+                        responseIP + "\",\"imei\":\"" +
+                        deviceIMEI + "\",\"mac\":\"" + deviceMAC + "\"}";
+
+      udpListener.print(response);
+      udpListener.endPacket();
+      Serial.printf("[UDP DISCOVERY] Responded to %s:%d with IP %s\n",
+                    udpListener.remoteIP().toString().c_str(),
+                    udpListener.remotePort(), responseIP.c_str());
+    }
+  }
+}
+
+void loop() {
+  server.handleClient();
+  handleUDPDiscovery();
+}
+*/
+
+// TCP Logging server on Port 9000
+WiFiServer tcpServer(9000);
+WiFiClient tcpClient;
+SemaphoreHandle_t logMutex = NULL;
+
+void logMsg(String msg) {
+  if (logMutex != NULL) {
+    if (xSemaphoreTake(logMutex, portMAX_DELAY) == pdTRUE) {
+      Serial.println(msg);
+      if (tcpClient && tcpClient.connected()) {
+        tcpClient.println("[OTA_FW] " + msg);
+      }
+      xSemaphoreGive(logMutex);
+    }
+  } else {
+    Serial.println(msg);
+    if (tcpClient && tcpClient.connected()) {
+      tcpClient.println("[OTA_FW] " + msg);
+    }
+  }
+}
+
+// Forward declarations of tasks
+void TaskHTTPServer(void *pvParameters);
+void TaskTCPServer(void *pvParameters);
+void TaskUDPDiscovery(void *pvParameters);
+
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+
+  logMutex = xSemaphoreCreateMutex();
+
+  logMsg("\n\n=============================================================");
+  logMsg("       ESP32 OTA UPDATE FIRMWARE INITIALIZING (MULTI-THREADED) ");
+  logMsg("=============================================================");
+  logMsg("[SYSTEM] Baudrate configured at 115200 bps.");
+
+  // Get MAC Address
+  deviceMAC = WiFi.macAddress();
+  String apSsid = "ESP32_OTA_GATEWAY_" + deviceMAC;
+  apSsid.replace(":", "");
+
+  // Configure SoftAP starting IP address 192.168.4.1 explicitly
+  logMsg("[WIFI AP] Configuring SoftAP radio transmitter details...");
+  IPAddress local_IP(192, 168, 4, 1);
+  IPAddress gateway(192, 168, 4, 1);
+  IPAddress subnet(255, 255, 255, 0);
+  WiFi.softAPConfig(local_IP, gateway, subnet);
+  
+  if (WiFi.softAP(apSsid.c_str())) {
+    logMsg("[WIFI AP] SoftAP started successfully.");
+  } else {
+    logMsg("[WIFI AP] ERROR: SoftAP configuration failed!");
+  }
+
+  IPAddress apIP = WiFi.softAPIP();
+  logMsg("---------------------------------------------");
+  logMsg("[WIFI AP] SoftAP SSID               : " + apSsid);
+  logMsg("[WIFI AP] SoftAP Gateway IP Address : " + apIP.toString());
+  logMsg("---------------------------------------------");
+
+  // Start UDP Discovery responder
+  logMsg("[UDP] Starting Discovery responder on port 5002...");
+  udpListener.begin(UDP_PORT);
+  logMsg("[UDP] Discovery responder ready.");
+
+  // Setup Web Server routes
+  server.on("/", HTTP_GET, []() {
+    String html = "<html><head><title>IoT OTA Portal</title>";
+    html += "<style>body{background:#03000a;color:#fff;font-family:sans-serif;text-align:center;padding:50px;}";
+    html += ".card{background:rgba(255,255,255,0.03);border:1px solid rgba(0,240,255,0.2);border-radius:12px;padding:30px;display:inline-block;width:400px;}";
+    html += "h1{color:#00f0ff;}p{color:#a0a0b0;}</style></head><body>";
+    html += "<div class='card'><h1>IoT OTA Portal (Port 500)</h1>";
+    html += "<p>Device MAC: " + WiFi.softAPmacAddress() + "</p>";
+    html += "<p>Use the desktop dashboard GUI to upload and flash firmware binaries.</p></div></body></html>";
+    server.send(200, "text/html", html);
+  });
+
+  // Setup HTTP POST Upload handler for /update
+  server.on("/update", HTTP_POST, []() {
+    server.sendHeader("Connection", "close");
+    if (Update.hasError()) {
+      logMsg("[OTA ERROR] Flash update failed. Reporting failure to client...");
+      server.send(500, "text/plain", "FAIL");
+    } else {
+      logMsg("[OTA SUCCESS] Flash complete! Rebooting device in 1 second...");
+      server.send(200, "text/plain", "OK");
+      delay(1000);
+      ESP.restart();
+    }
+  }, []() {
+    HTTPUpload& upload = server.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      logMsg("\n---------------------------------------------");
+      logMsg("[OTA] Beginning firmware upload process...");
+      logMsg("[OTA] File Name: " + String(upload.filename.c_str()));
+
+      // Check running partition context
+      const esp_partition_t* running = esp_ota_get_running_partition();
+      if (running != NULL) {
+        logMsg("[OTA] Running App Partition: " + String(running->label));
+      }
+
+      if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+        logMsg("[OTA ERROR] Update.begin failed!");
+      } else {
+        logMsg("[OTA] Partition prepared. Streaming sectors to flash memory...");
+      }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      static int lastProgressPercent = -1;
+      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+        logMsg("[OTA ERROR] Sector write failed!");
+      } else {
+        // Log progress every 10%
+        int totalWritten = Update.progress();
+        int totalSize = upload.totalSize;
+        if (totalSize > 0) {
+          int progressPercent = (totalWritten * 100) / totalSize;
+          if (progressPercent % 10 == 0 && progressPercent != lastProgressPercent) {
+            logMsg("[OTA PROGRESS] Flashed: " + String(progressPercent) + "%");
+            lastProgressPercent = progressPercent;
+          }
+        }
+      }
+    } else if (upload.status == UPLOAD_FILE_END) {
+      if (Update.end(true)) {
+        logMsg("[OTA] Firmware file successfully downloaded and verified!");
+        logMsg("[OTA] Total bytes written: " + String(upload.totalSize) + " bytes.");
+        logMsg("---------------------------------------------");
+      } else {
+        logMsg("[OTA ERROR] Update verification failed!");
+      }
+    }
+  });
+
+  server.begin();
+  logMsg("[HTTP] WebServer started on Port 500.");
+  logMsg("[SYSTEM] Ready to service firmware updates. Awaiting connection...\n");
+
+  // Create FreeRTOS Tasks
+  // TaskHTTPServer runs on Core 1, priority 2
+  xTaskCreatePinnedToCore(
+    TaskHTTPServer,
+    "TaskHTTPServer",
+    8192,
+    NULL,
+    2,
+    NULL,
+    1
+  );
+
+  // TaskTCPServer runs on Core 1, priority 1
+  xTaskCreatePinnedToCore(
+    TaskTCPServer,
+    "TaskTCPServer",
+    4096,
+    NULL,
+    1,
+    NULL,
+    1
+  );
+
+  // TaskUDPDiscovery runs on Core 0, priority 1
+  xTaskCreatePinnedToCore(
+    TaskUDPDiscovery,
+    "TaskUDPDiscovery",
+    4096,
+    NULL,
+    1,
+    NULL,
+    0
+  );
+}
+
+void handleUDPDiscovery() {
+  int packetSize = udpListener.parsePacket();
+  if (packetSize) {
+    char packetBuffer[255];
+    int len = udpListener.read(packetBuffer, 255);
+    if (len > 0) {
+      packetBuffer[len] = 0;
+    }
+    String request = String(packetBuffer);
+    request.trim();
+    if (request == "DISCOVER_IOT_GATEWAY") {
+      udpListener.beginPacket(udpListener.remoteIP(), udpListener.remotePort());
+      
+      // Since OTA mode is SoftAP only, we reply with softAP IP (192.168.4.1)
+      String responseIP = WiFi.softAPIP().toString();
+      
+      String response = "{\"status\":\"ONLINE\",\"ip\":\"" +
+                        responseIP + "\",\"imei\":\"" +
+                        deviceIMEI + "\",\"mac\":\"" + deviceMAC + "\"}";
+
+      udpListener.print(response);
+      udpListener.endPacket();
+      
+      logMsg("[UDP DISCOVERY] Responded to " + udpListener.remoteIP().toString() + 
+             ":" + String(udpListener.remotePort()) + " with IP " + responseIP);
+    }
+  }
+}
+
+void TaskHTTPServer(void *pvParameters) {
+  (void) pvParameters;
+  logMsg("[SYSTEM] TaskHTTPServer running on Core 1");
+  for (;;) {
+    server.handleClient();
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
+void TaskUDPDiscovery(void *pvParameters) {
+  (void) pvParameters;
+  logMsg("[SYSTEM] TaskUDPDiscovery running on Core 0");
+  for (;;) {
+    handleUDPDiscovery();
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
+}
+
+void TaskTCPServer(void *pvParameters) {
+  (void) pvParameters;
+  logMsg("[SYSTEM] TaskTCPServer running on Core 1");
+  tcpServer.begin();
+  for (;;) {
+    if (!tcpClient || !tcpClient.connected()) {
+      WiFiClient newClient = tcpServer.available();
+      if (newClient) {
+        if (logMutex != NULL) {
+          xSemaphoreTake(logMutex, portMAX_DELAY);
+        }
+        tcpClient = newClient;
+        Serial.println("[TCP] Client connected to Port 9000.");
+        tcpClient.println("[OTA_FW] Connected to ESP32 OTA Gateway.");
+        
+        // Send initial connection telemetry status packet so UI marks connection active
+        String responseIP = WiFi.softAPIP().toString();
+        String json = "{\"status\":\"ONLINE\",\"ip\":\"" + responseIP + 
+                      "\",\"imei\":\"" + deviceIMEI + "\",\"mac\":\"" + deviceMAC + "\"}";
+        tcpClient.println(json);
+        
+        if (logMutex != NULL) {
+          xSemaphoreGive(logMutex);
+        }
+      }
+    } else {
+      // Process simple PING keepalives
+      while (tcpClient.available()) {
+        String line = tcpClient.readStringUntil('\n');
+        line.trim();
+        if (line == "PING") {
+          tcpClient.println("{\"type\":\"pong\"}");
+        }
+      }
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+}
+
+void loop() {
+  vTaskDelay(pdMS_TO_TICKS(1000));
+}

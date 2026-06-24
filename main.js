@@ -214,6 +214,160 @@ function startExpressServer() {
     }
   });
 
+  // Express API: Simple HTTP endpoint to flash firmware from raw binary buffer (Port 500)
+  expressApp.post('/api/ota/upload', (req, res) => {
+    const filename = req.headers['x-filename'] || 'firmware.bin';
+    const fileSize = parseInt(req.headers['content-length']) || 0;
+    
+    let gatewayIP = '192.168.4.1';
+    if (activeTcpSocket && !activeTcpSocket.destroyed && activeTcpSocket.remoteAddress) {
+      gatewayIP = activeTcpSocket.remoteAddress;
+    }
+    
+    const otaPort = appConfig.otaPort || 500;
+    console.log(`[EXPRESS API] Proxied OTA upload starting. Size: ${fileSize} bytes. Target: http://${gatewayIP}:${otaPort}/update`);
+    
+    const boundary = '----WebKitFormBoundaryIoT' + Math.random().toString(36).substring(2);
+    const header = 
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="update"; filename="${filename}"\r\n` +
+      `Content-Type: application/octet-stream\r\n\r\n`;
+    const footer = `\r\n--${boundary}--\r\n`;
+    const totalLength = header.length + fileSize + footer.length;
+
+    const options = {
+      hostname: gatewayIP,
+      port: otaPort,
+      path: `/update?target=esp32`,
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': totalLength,
+        'Connection': 'close'
+      }
+    };
+
+    const proxyReq = http.request(options, (proxyRes) => {
+      let responseData = '';
+      proxyRes.on('data', (chunk) => { responseData += chunk.toString(); });
+      proxyRes.on('end', () => {
+        if (proxyRes.statusCode === 200 && responseData.toUpperCase().includes('OK')) {
+          res.json({ success: true, message: 'Flash completed successfully!' });
+        } else {
+          res.status(500).json({ error: `Flashing failed. Code ${proxyRes.statusCode}: ${responseData}` });
+        }
+      });
+    });
+
+    proxyReq.on('error', (err) => {
+      console.error('[EXPRESS API] OTA upload error:', err.message);
+      res.status(500).json({ error: err.message });
+    });
+
+    proxyReq.write(header);
+    
+    req.on('data', (chunk) => {
+      proxyReq.write(chunk);
+    });
+    
+    req.on('end', () => {
+      proxyReq.write(footer);
+      proxyReq.end();
+    });
+  });
+
+  // Express API: Simple HTTP endpoint to flash firmware from a remote URL
+  expressApp.post('/api/ota/flash-url', async (req, res) => {
+    const { url } = req.body;
+    if (!url) {
+      return res.status(400).json({ error: 'Missing remote url' });
+    }
+    
+    let gatewayIP = '192.168.4.1';
+    if (activeTcpSocket && !activeTcpSocket.destroyed && activeTcpSocket.remoteAddress) {
+      gatewayIP = activeTcpSocket.remoteAddress;
+    }
+    
+    const otaPort = appConfig.otaPort || 500;
+    console.log(`[EXPRESS API] Remote URL OTA requested: ${url} -> http://${gatewayIP}:${otaPort}/update`);
+    
+    const tempPath = path.join(__dirname, 'scratch', `api_remote_firmware_${Date.now()}.bin`);
+    if (!fs.existsSync(path.dirname(tempPath))) {
+      fs.mkdirSync(path.dirname(tempPath), { recursive: true });
+    }
+    
+    try {
+      const client = url.startsWith('https') ? require('https') : require('http');
+      const contentSize = await new Promise((resolve, reject) => {
+        client.get(url, (getRes) => {
+          if (getRes.statusCode !== 200) {
+            reject(new Error(`Failed to download firmware. HTTP Code: ${getRes.statusCode}`));
+            return;
+          }
+          const fileStream = fs.createWriteStream(tempPath);
+          getRes.pipe(fileStream);
+          fileStream.on('finish', () => {
+            fileStream.close();
+            resolve(fs.statSync(tempPath).size);
+          });
+          fileStream.on('error', err => reject(err));
+        }).on('error', err => reject(err));
+      });
+      
+      const boundary = '----WebKitFormBoundaryIoT' + Math.random().toString(36).substring(2);
+      const header = 
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="update"; filename="firmware.bin"\r\n` +
+        `Content-Type: application/octet-stream\r\n\r\n`;
+      const footer = `\r\n--${boundary}--\r\n`;
+      const totalLength = header.length + contentSize + footer.length;
+      
+      const options = {
+        hostname: gatewayIP,
+        port: otaPort,
+        path: `/update?target=esp32`,
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': totalLength,
+          'Connection': 'close'
+        }
+      };
+      
+      const proxyReq = http.request(options, (proxyRes) => {
+        let responseData = '';
+        proxyRes.on('data', (chunk) => { responseData += chunk.toString(); });
+        proxyRes.on('end', () => {
+          try { fs.unlinkSync(tempPath); } catch (e) {}
+          if (proxyRes.statusCode === 200 && responseData.toUpperCase().includes('OK')) {
+            res.json({ success: true, message: 'Flash completed successfully from remote URL!' });
+          } else {
+            res.status(500).json({ error: `Flashing failed. Code ${proxyRes.statusCode}: ${responseData}` });
+          }
+        });
+      });
+      
+      proxyReq.on('error', (err) => {
+        try { fs.unlinkSync(tempPath); } catch (e) {}
+        console.error('[EXPRESS API] OTA URL flash error:', err.message);
+        res.status(500).json({ error: err.message });
+      });
+      
+      proxyReq.write(header);
+      const readStream = fs.createReadStream(tempPath);
+      readStream.on('data', (chunk) => { proxyReq.write(chunk); });
+      readStream.on('end', () => {
+        proxyReq.write(footer);
+        proxyReq.end();
+      });
+      
+    } catch (err) {
+      try { fs.unlinkSync(tempPath); } catch (e) {}
+      console.error('[EXPRESS API] OTA URL exception:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Fallback to React index.html for single-page routing
   expressApp.get('*', (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
@@ -526,7 +680,9 @@ function startOtaLocalServer() {
     }
 
     if (mainWindow) {
-      mainWindow.webContents.send('console-log', `[OTA LOCAL] In-memory proxying of ${filename} (${Math.round(fileSize/1024)} KB) to target http://${gatewayIP}:8000/update...`);
+      // Old hardcoded port 8000 line commented out:
+      // mainWindow.webContents.send('console-log', `[OTA LOCAL] In-memory proxying of ${filename} (${Math.round(fileSize/1024)} KB) to target http://${gatewayIP}:8000/update...`);
+      mainWindow.webContents.send('console-log', `[OTA LOCAL] In-memory proxying of ${filename} (${Math.round(fileSize/1024)} KB) to target http://${gatewayIP}:${appConfig.otaPort || 500}/update...`);
       mainWindow.webContents.send('ota-progress', { status: 'uploading', progress: 10 });
     }
 
@@ -540,7 +696,9 @@ function startOtaLocalServer() {
 
     const options = {
       hostname: gatewayIP,
-      port: 8000,
+      // Old hardcoded port 8000 line commented out:
+      // port: 8000,
+      port: appConfig.otaPort || 500,
       path: `/update?target=esp32`,
       method: 'POST',
       headers: {
