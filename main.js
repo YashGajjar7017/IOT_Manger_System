@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -7,6 +7,7 @@ const express = require('express');
 const db = require('./database');
 const { SerialPort } = require('serialport');
 const dgram = require('dgram');
+const { Worker } = require('worker_threads');
 
 let mainWindow;
 let activeSerialPort = null;
@@ -14,6 +15,14 @@ let activeTcpSocket = null;
 let serialBuffer = '';
 let tcpBuffer = '';
 let expressServer = null;
+
+// ── Worker thread for off-main-thread JSON parsing + DB writes ──────────────
+let dataWorker = null;
+
+// ── Disk cache: persist last telemetry state across restarts ────────────────
+const CACHE_PATH = path.join(app.getPath('userData'), 'telemetry-cache.json');
+let telemetryCache = {}; // { deviceId -> device object }
+let cacheSaveTimer = null; // debounce timer for cache writes
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'app-config.json');
 
@@ -54,6 +63,59 @@ function saveConfig(newConfig) {
 
 // Load configurations immediately
 loadConfig();
+
+// ── Disk Cache Helpers ───────────────────────────────────────────────────────
+
+/**
+ * Load the last-known telemetry device states from disk on startup.
+ * This lets the dashboard show live-looking data immediately before
+ * the first device packet arrives over serial/TCP.
+ */
+function loadTelemetryCache() {
+  try {
+    if (fs.existsSync(CACHE_PATH)) {
+      const raw = fs.readFileSync(CACHE_PATH, 'utf8');
+      telemetryCache = JSON.parse(raw);
+      const count = Object.keys(telemetryCache).length;
+      console.log(`[CACHE] Loaded ${count} device(s) from disk cache: ${CACHE_PATH}`);
+    }
+  } catch (e) {
+    console.warn('[CACHE] Failed to load telemetry cache (starting fresh):', e.message);
+    telemetryCache = {};
+  }
+}
+
+/**
+ * Persist the current telemetry cache to disk (debounced — max once per 2s).
+ * Keeps only the most recent snapshot per device (keyed by device id).
+ */
+function scheduleCacheSave() {
+  if (cacheSaveTimer) return; // already scheduled
+  cacheSaveTimer = setTimeout(() => {
+    cacheSaveTimer = null;
+    try {
+      fs.writeFileSync(CACHE_PATH, JSON.stringify(telemetryCache, null, 2), 'utf8');
+    } catch (e) {
+      console.warn('[CACHE] Failed to write telemetry cache:', e.message);
+    }
+  }, 2000);
+}
+
+/**
+ * Update cache with an incoming telemetry payload and schedule a disk flush.
+ */
+function updateTelemetryCache(payload) {
+  if (!payload || !Array.isArray(payload.devices)) return;
+  payload.devices.forEach((dev) => {
+    if (dev && dev.id !== undefined) {
+      telemetryCache[String(dev.id)] = dev;
+    }
+  });
+  scheduleCacheSave();
+}
+
+// Load cache right away so it's ready when the renderer asks for it
+loadTelemetryCache();
 
 // 2. Start Express Web Server
 function startExpressServer() {
@@ -154,7 +216,7 @@ function startExpressServer() {
       const urlObj = new URL(fileUrl);
       const isHttps = urlObj.protocol === 'https:';
       const client = isHttps ? require('https') : require('http');
-      
+
       const getOptions = {
         hostname: urlObj.hostname,
         port: urlObj.port || (isHttps ? 443 : 80),
@@ -167,7 +229,7 @@ function startExpressServer() {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('console-log', `[CERT DOWNLOAD] Downloading from SCADA URL: ${fileUrl}`);
       }
-      
+
       client.get(getOptions, (res) => {
         if (res.statusCode !== 200) {
           reject(new Error(`Failed to download from SCADA, HTTP Code: ${res.statusCode}`));
@@ -397,17 +459,17 @@ function startExpressServer() {
   expressApp.post('/api/ota/upload', (req, res) => {
     const filename = req.headers['x-filename'] || 'firmware.bin';
     const fileSize = parseInt(req.headers['content-length']) || 0;
-    
+
     let gatewayIP = '192.168.4.1';
     if (activeTcpSocket && !activeTcpSocket.destroyed && activeTcpSocket.remoteAddress) {
       gatewayIP = activeTcpSocket.remoteAddress;
     }
-    
+
     const otaPort = appConfig.otaPort || 500;
     console.log(`[EXPRESS API] Proxied OTA upload starting. Size: ${fileSize} bytes. Target: http://${gatewayIP}:${otaPort}/update`);
-    
+
     const boundary = '----WebKitFormBoundaryIoT' + Math.random().toString(36).substring(2);
-    const header = 
+    const header =
       `--${boundary}\r\n` +
       `Content-Disposition: form-data; name="update"; filename="${filename}"\r\n` +
       `Content-Type: application/octet-stream\r\n\r\n`;
@@ -444,11 +506,11 @@ function startExpressServer() {
     });
 
     proxyReq.write(header);
-    
+
     req.on('data', (chunk) => {
       proxyReq.write(chunk);
     });
-    
+
     req.on('end', () => {
       proxyReq.write(footer);
       proxyReq.end();
@@ -461,20 +523,20 @@ function startExpressServer() {
     if (!url) {
       return res.status(400).json({ error: 'Missing remote url' });
     }
-    
+
     let gatewayIP = '192.168.4.1';
     if (activeTcpSocket && !activeTcpSocket.destroyed && activeTcpSocket.remoteAddress) {
       gatewayIP = activeTcpSocket.remoteAddress;
     }
-    
+
     const otaPort = appConfig.otaPort || 500;
     console.log(`[EXPRESS API] Remote URL OTA requested: ${url} -> http://${gatewayIP}:${otaPort}/update`);
-    
+
     const tempPath = path.join(__dirname, 'scratch', `api_remote_firmware_${Date.now()}.bin`);
     if (!fs.existsSync(path.dirname(tempPath))) {
       fs.mkdirSync(path.dirname(tempPath), { recursive: true });
     }
-    
+
     try {
       const client = url.startsWith('https') ? require('https') : require('http');
       const contentSize = await new Promise((resolve, reject) => {
@@ -492,15 +554,15 @@ function startExpressServer() {
           fileStream.on('error', err => reject(err));
         }).on('error', err => reject(err));
       });
-      
+
       const boundary = '----WebKitFormBoundaryIoT' + Math.random().toString(36).substring(2);
-      const header = 
+      const header =
         `--${boundary}\r\n` +
         `Content-Disposition: form-data; name="update"; filename="firmware.bin"\r\n` +
         `Content-Type: application/octet-stream\r\n\r\n`;
       const footer = `\r\n--${boundary}--\r\n`;
       const totalLength = header.length + contentSize + footer.length;
-      
+
       const options = {
         hostname: gatewayIP,
         port: otaPort,
@@ -512,12 +574,12 @@ function startExpressServer() {
           'Connection': 'close'
         }
       };
-      
+
       const proxyReq = http.request(options, (proxyRes) => {
         let responseData = '';
         proxyRes.on('data', (chunk) => { responseData += chunk.toString(); });
         proxyRes.on('end', () => {
-          try { fs.unlinkSync(tempPath); } catch (e) {}
+          try { fs.unlinkSync(tempPath); } catch (e) { }
           if (proxyRes.statusCode === 200 && responseData.toUpperCase().includes('OK')) {
             res.json({ success: true, message: 'Flash completed successfully from remote URL!' });
           } else {
@@ -525,13 +587,13 @@ function startExpressServer() {
           }
         });
       });
-      
+
       proxyReq.on('error', (err) => {
-        try { fs.unlinkSync(tempPath); } catch (e) {}
+        try { fs.unlinkSync(tempPath); } catch (e) { }
         console.error('[EXPRESS API] OTA URL flash error:', err.message);
         res.status(500).json({ error: err.message });
       });
-      
+
       proxyReq.write(header);
       const readStream = fs.createReadStream(tempPath);
       readStream.on('data', (chunk) => { proxyReq.write(chunk); });
@@ -539,9 +601,9 @@ function startExpressServer() {
         proxyReq.write(footer);
         proxyReq.end();
       });
-      
+
     } catch (err) {
-      try { fs.unlinkSync(tempPath); } catch (e) {}
+      try { fs.unlinkSync(tempPath); } catch (e) { }
       console.error('[EXPRESS API] OTA URL exception:', err.message);
       res.status(500).json({ error: err.message });
     }
@@ -552,10 +614,24 @@ function startExpressServer() {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 
-  // Create HTTP server wrapper
+  // Create HTTP server wrapper with EADDRINUSE fallback (Requirement 1)
   expressServer = http.createServer(expressApp);
-  expressServer.listen(appConfig.expressPort, '127.0.0.1', () => {
-    console.log(`[EXPRESS] Server running on http://127.0.0.1:${appConfig.expressPort}`);
+
+  return new Promise((resolve) => {
+    expressServer.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.warn(`[EXPRESS] Port ${appConfig.expressPort} is in use. Retrying on port ${appConfig.expressPort + 1}...`);
+        appConfig.expressPort += 1;
+        setTimeout(() => {
+          expressServer.listen(appConfig.expressPort, '127.0.0.1');
+        }, 100);
+      }
+    });
+
+    expressServer.listen(appConfig.expressPort, '127.0.0.1', () => {
+      console.log(`[EXPRESS] Server running on http://127.0.0.1:${appConfig.expressPort}`);
+      resolve();
+    });
   });
 }
 
@@ -612,13 +688,17 @@ function createWindow() {
       backgroundThrottling: false
     },
     titleBarStyle: 'hidden',
-    backgroundColor: '#03000a',
+    backgroundColor: '#070b16',
     icon: path.join(__dirname, 'icon/logo.png')
   });
 
   // Load the compiled React app served via local Express
-  mainWindow.loadURL(`http://localhost:${appConfig.expressPort}`);
-  
+  // mainWindow.loadURL(`http://localhost:${appConfig.expressPort}`);
+  mainWindow.loadURL(`http://127.0.0.1:${appConfig.expressPort}`);
+
+  // Open Developer Tools to debug why the GUI is not loading
+  // mainWindow.webContents.openDevTools();
+
   // Maximize the window automatically on load
   mainWindow.maximize();
 }
@@ -626,7 +706,7 @@ function createWindow() {
 let otaLocalServer = null;
 function startOtaLocalServer() {
   const expressApp = express();
-  
+
   expressApp.get('/', (req, res) => {
     res.send(`
       <!DOCTYPE html>
@@ -635,7 +715,7 @@ function startOtaLocalServer() {
         <title>IoT Gateway OTA Portal</title>
         <style>
           body {
-            background: #03000a;
+            background: #070b16;
             color: #ffffff;
             font-family: 'Outfit', sans-serif;
             display: flex;
@@ -646,15 +726,15 @@ function startOtaLocalServer() {
           }
           .card {
             background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 0, 127, 0.2);
+            border: 1px solid rgba(249, 83, 198, 0.2);
             border-radius: 12px;
             padding: 30px;
             width: 400px;
             text-align: center;
-            box-shadow: 0 8px 32px rgba(255, 0, 127, 0.1);
+            box-shadow: 0 8px 32px rgba(249, 83, 198, 0.1);
           }
           h2 {
-            color: #ff007f;
+            color: #f953c6;
             margin-bottom: 20px;
           }
           input[type="file"] {
@@ -662,7 +742,7 @@ function startOtaLocalServer() {
           }
           .file-label {
             display: inline-block;
-            background: linear-gradient(135deg, #ff007f 0%, #7f00ff 100%);
+            background: linear-gradient(135deg, #f953c6 0%, #7000ff 100%);
             color: white;
             padding: 10px 20px;
             border-radius: 6px;
@@ -672,8 +752,8 @@ function startOtaLocalServer() {
           }
           .btn {
             background: transparent;
-            border: 1px solid #00f0ff;
-            color: #00f0ff;
+            border: 1px solid #00c6ff;
+            color: #00c6ff;
             padding: 10px 20px;
             border-radius: 6px;
             cursor: pointer;
@@ -852,7 +932,7 @@ function startOtaLocalServer() {
   expressApp.post('/upload-ota', (req, res) => {
     const filename = req.headers['x-filename'] || 'firmware.bin';
     const fileSize = parseInt(req.headers['content-length']) || 0;
-    
+
     let gatewayIP = '192.168.4.1';
     if (activeTcpSocket && !activeTcpSocket.destroyed && activeTcpSocket.remoteAddress) {
       gatewayIP = activeTcpSocket.remoteAddress;
@@ -861,12 +941,12 @@ function startOtaLocalServer() {
     if (mainWindow) {
       // Old hardcoded port 8000 line commented out:
       // mainWindow.webContents.send('console-log', `[OTA LOCAL] In-memory proxying of ${filename} (${Math.round(fileSize/1024)} KB) to target http://${gatewayIP}:8000/update...`);
-      mainWindow.webContents.send('console-log', `[OTA LOCAL] In-memory proxying of ${filename} (${Math.round(fileSize/1024)} KB) to target http://${gatewayIP}:${appConfig.otaPort || 500}/update...`);
+      mainWindow.webContents.send('console-log', `[OTA LOCAL] In-memory proxying of ${filename} (${Math.round(fileSize / 1024)} KB) to target http://${gatewayIP}:${appConfig.otaPort || 500}/update...`);
       mainWindow.webContents.send('ota-progress', { status: 'uploading', progress: 10 });
     }
 
     const boundary = '----WebKitFormBoundaryIoT' + Math.random().toString(36).substring(2);
-    const header = 
+    const header =
       `--${boundary}\r\n` +
       `Content-Disposition: form-data; name="update"; filename="${filename}"\r\n` +
       `Content-Type: application/octet-stream\r\n\r\n`;
@@ -915,7 +995,7 @@ function startOtaLocalServer() {
 
     // Write multipart prefix header
     proxyReq.write(header);
-    
+
     // Pipe request chunks dynamically
     let uploadedBytes = 0;
     req.on('data', (chunk) => {
@@ -926,7 +1006,7 @@ function startOtaLocalServer() {
         mainWindow.webContents.send('ota-progress', { status: 'uploading', progress: 10 + progress });
       }
     });
-    
+
     req.on('end', () => {
       proxyReq.write(footer);
       proxyReq.end();
@@ -937,28 +1017,116 @@ function startOtaLocalServer() {
   const fallbackPort = 5000;
 
   otaLocalServer = http.createServer(expressApp);
-  
+
   otaLocalServer.on('error', (err) => {
     if (err.code === 'EACCES') {
       console.warn(`[OTA SERVER] Port ${primaryPort} requires administrator privileges. Falling back to port ${fallbackPort}.`);
-      otaLocalServer.listen(fallbackPort, '127.0.0.1', () => {
-        if (mainWindow) {
-          mainWindow.webContents.send('console-log', `[OTA LOCAL] Portal started: http://localhost:${fallbackPort} (Port 500 requires Admin privileges).`);
-        }
-      });
+      otaLocalServer.listen(fallbackPort, '127.0.0.1');
+    } else if (err.code === 'EADDRINUSE') {
+      const nextPort = fallbackPort + Math.floor(Math.random() * 100);
+      console.warn(`[OTA SERVER] Port in use. Retrying on port ${nextPort}...`);
+      otaLocalServer.listen(nextPort, '127.0.0.1');
     }
   });
 
-  otaLocalServer.listen(primaryPort, '127.0.0.1', () => {
-    if (mainWindow) {
-      mainWindow.webContents.send('console-log', `[OTA LOCAL] Portal started: http://localhost:${primaryPort}`);
+  otaLocalServer.on('listening', () => {
+    const boundAddress = otaLocalServer.address();
+    const boundPort = boundAddress ? boundAddress.port : primaryPort;
+    // console.log(`[OTA LOCAL] Portal started on http://localhost:${boundPort}`);
+    console.log(`[OTA LOCAL] Portal started on http://127.0.0.1:${boundPort}`);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      // mainWindow.webContents.send('console-log', `[OTA LOCAL] Portal started: http://localhost:${boundPort}`);
+      mainWindow.webContents.send('console-log', `[OTA LOCAL] Portal started: http://127.0.0.1:${boundPort}`);
     }
   });
+
+  otaLocalServer.listen(primaryPort, '127.0.0.1');
 }
 
-app.whenReady().then(() => {
-  db.connectDatabase(appConfig.mongoUri);
-  startExpressServer();
+const gotTheLock = app.requestSingleInstanceLock();
+
+app.on('second-instance', (event, commandLine, workingDirectory) => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
+
+app.whenReady().then(async () => {
+  if (!gotTheLock) {
+    console.warn('[SYSTEM] Another instance is already running. Quitting second instance.');
+    app.quit();
+    return;
+  }
+
+  // ── Start data worker thread (JSON parsing + DB writes off main thread) ────
+  try {
+    dataWorker = new Worker(path.join(__dirname, 'data-worker.js'), {
+      workerData: { mongoUri: appConfig.mongoUri }
+    });
+
+    dataWorker.on('message', (msg) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      const wc = mainWindow.webContents;
+
+      switch (msg.type) {
+        case 'TELEMETRY':
+          wc.send('telemetry-payload', msg.payload);
+          updateTelemetryCache(msg.payload);
+          break;
+        case 'HARDWARE':
+          wc.send('hardware-payload', msg.payload);
+          break;
+        case 'CONTROL_STATUS':
+          wc.send('control-payload-sync', msg.payload);
+          break;
+        case 'PONG':
+          wc.send('ping-pong-reply');
+          break;
+        case 'CONSOLE_LOG':
+          wc.send('console-log', msg.message);
+          break;
+        case 'DB_READY':
+          console.log(`[WORKER] DB ready signal received. Connected: ${msg.connected}`);
+          break;
+        case 'ERROR':
+          console.error('[WORKER ERROR]', msg.message);
+          wc.send('console-log', msg.message);
+          break;
+        default:
+          break;
+      }
+    });
+
+    dataWorker.on('error', (err) => {
+      console.error('[WORKER] Uncaught error in data worker:', err.message);
+    });
+
+    dataWorker.on('exit', (code) => {
+      console.warn(`[WORKER] Data worker exited with code ${code}. Restarting...`);
+      dataWorker = null;
+      // Auto-restart worker after 1 second if app is still running
+      setTimeout(() => {
+        if (!app.isReady() || !mainWindow || mainWindow.isDestroyed()) return;
+        try {
+          dataWorker = new Worker(path.join(__dirname, 'data-worker.js'), {
+            workerData: { mongoUri: appConfig.mongoUri }
+          });
+          console.log('[WORKER] Data worker restarted successfully.');
+        } catch (restartErr) {
+          console.error('[WORKER] Failed to restart worker:', restartErr.message);
+        }
+      }, 1000);
+    });
+
+    console.log('[WORKER] Data processing worker thread created.');
+  } catch (workerErr) {
+    console.error('[WORKER] Failed to create worker thread — falling back to main-thread processing:', workerErr.message);
+    // Fall back: connect DB on main thread if worker fails
+    db.connectDatabase(appConfig.mongoUri);
+  }
+
+  await startExpressServer();
   startOtaLocalServer();
   createWindow();
 
@@ -1007,19 +1175,19 @@ app.whenReady().then(() => {
     try {
       const ports = await SerialPort.list();
       // ESP32 usually has manufacturer containing 'Silicon Labs', 'WCH', 'Expressif', 'Arduino', or CH340
-      const espPort = ports.find(p => 
+      const espPort = ports.find(p =>
         (p.manufacturer && (
-          p.manufacturer.toLowerCase().includes('silicon') || 
-          p.manufacturer.toLowerCase().includes('wch') || 
-          p.manufacturer.toLowerCase().includes('usb') || 
-          p.manufacturer.toLowerCase().includes('espressif') || 
+          p.manufacturer.toLowerCase().includes('silicon') ||
+          p.manufacturer.toLowerCase().includes('wch') ||
+          p.manufacturer.toLowerCase().includes('usb') ||
+          p.manufacturer.toLowerCase().includes('espressif') ||
           p.manufacturer.toLowerCase().includes('arduino')
         )) || p.path.toLowerCase().includes('usb')
       ) || ports[0]; // fallback to first port if list is not empty
 
       const usbDetected = ports.length > 0;
       const currentPortPath = usbDetected ? (espPort ? espPort.path : ports[0].path) : null;
-      
+
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('usb-detect-status', {
           detected: usbDetected,
@@ -1041,6 +1209,23 @@ app.on('window-all-closed', () => {
   cleanupConnections();
   if (expressServer) {
     expressServer.close();
+  }
+  // Terminate the worker thread gracefully
+  if (dataWorker) {
+    try {
+      dataWorker.postMessage({ type: 'SHUTDOWN' });
+      setTimeout(() => {
+        if (dataWorker) dataWorker.terminate();
+      }, 500);
+    } catch (e) { /* ignore */ }
+  }
+  // Flush any pending cache write immediately
+  if (cacheSaveTimer) {
+    clearTimeout(cacheSaveTimer);
+    cacheSaveTimer = null;
+    try {
+      require('fs').writeFileSync(CACHE_PATH, JSON.stringify(telemetryCache, null, 2), 'utf8');
+    } catch (e) { /* ignore */ }
   }
   if (process.platform !== 'darwin') app.quit();
 });
@@ -1067,6 +1252,17 @@ ipcMain.on('window-close', () => {
 ipcMain.on('focus-window', () => {
   if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFocused()) {
     mainWindow.focus();
+  }
+});
+
+// IPC: Return cached telemetry device list to renderer for instant dashboard population
+ipcMain.handle('get-cached-telemetry', () => {
+  try {
+    const devices = Object.values(telemetryCache);
+    console.log(`[CACHE] Serving ${devices.length} device(s) from disk cache to renderer.`);
+    return { devices };
+  } catch (e) {
+    return { devices: [] };
   }
 });
 
@@ -1107,7 +1303,7 @@ function startBackgroundScanning(webContents) {
       socket.bind(0, () => {
         socket.setBroadcast(true);
         const message = Buffer.from('DISCOVER_IOT_GATEWAY');
-        
+
         // Target A: Subnet broadcast
         socket.send(message, 0, message.length, appConfig.udpPort, '255.255.255.255', (err) => {
           if (err) console.error('[UDP BG] Broadcast error:', err.message);
@@ -1125,7 +1321,7 @@ function startBackgroundScanning(webContents) {
           if (webContents && !webContents.isDestroyed()) {
             webContents.send('gateway-discovered', payload);
           }
-          try { socket.close(); } catch (e) {}
+          try { socket.close(); } catch (e) { }
         } catch (e) {
           console.error('[UDP BG] Parse error:', e);
         }
@@ -1136,7 +1332,7 @@ function startBackgroundScanning(webContents) {
           if (socket && !socket.closed) {
             socket.close();
           }
-        } catch (e) {}
+        } catch (e) { }
       }, 1500);
     } catch (e) {
       console.error('[UDP BG] Socket error:', e.message);
@@ -1218,37 +1414,42 @@ ipcMain.on('connect-serial', (event, { portPath, baudRate }) => {
 
       activeSerialPort.on('data', (chunk) => {
         serialBuffer += chunk.toString();
-        
+
         let lines = serialBuffer.split('\n');
         serialBuffer = lines.pop(); // Keep partial line
 
-        for (let line of lines) {
-          line = line.trim();
-          if (!line) continue;
+        const trimmedLines = lines.map(l => l.trim()).filter(Boolean);
+        if (trimmedLines.length === 0) return;
 
-          if (line.startsWith('JSON_PAYLOAD:')) {
-            const jsonStr = line.substring(13);
-            try {
-              const payload = JSON.parse(jsonStr);
-              if (payload.type === 'telemetry') {
-                event.reply('telemetry-payload', payload);
-                db.saveTelemetrySnapshot(payload);
-              } else {
-                event.reply('hardware-payload', payload);
+        // Route all lines through the worker thread (off main thread)
+        if (dataWorker) {
+          dataWorker.postMessage({ type: 'PARSE_LINES', lines: trimmedLines });
+        } else {
+          // Fallback: process on main thread if worker is unavailable
+          for (const line of trimmedLines) {
+            if (line.startsWith('JSON_PAYLOAD:')) {
+              try {
+                const payload = JSON.parse(line.substring(13));
+                if (payload.type === 'telemetry') {
+                  event.reply('telemetry-payload', payload);
+                  updateTelemetryCache(payload);
+                  db.saveTelemetrySnapshot(payload);
+                } else {
+                  event.reply('hardware-payload', payload);
+                }
+              } catch (e) {
+                event.reply('console-log', `[ERROR] Serial JSON parse failed: ${e.message}`);
               }
-            } catch (e) {
-              event.reply('console-log', `[ERROR] Failed to parse serial JSON: ${e.message}`);
+            } else if (line.startsWith('CONTROL_STATUS:')) {
+              try {
+                const payload = JSON.parse(line.substring(15));
+                event.reply('control-payload-sync', payload);
+              } catch (e) {
+                event.reply('console-log', `[ERROR] Control status parse failed: ${e.message}`);
+              }
+            } else {
+              event.reply('console-log', line);
             }
-          } else if (line.startsWith('CONTROL_STATUS:')) {
-            const jsonStr = line.substring(15);
-            try {
-              const payload = JSON.parse(jsonStr);
-              event.reply('control-payload-sync', payload);
-            } catch (e) {
-              event.reply('console-log', `[ERROR] Failed to parse control status: ${e.message}`);
-            }
-          } else {
-            event.reply('console-log', line);
           }
         }
       });
@@ -1306,26 +1507,31 @@ ipcMain.on('connect-tcp', (event, { ip, port }) => {
     let lines = tcpBuffer.split('\n');
     tcpBuffer = lines.pop();
 
-    for (let line of lines) {
-      line = line.trim();
-      if (!line) continue;
+    const trimmedLines = lines.map(l => l.trim()).filter(Boolean);
+    if (trimmedLines.length === 0) return;
 
-      try {
-        const payload = JSON.parse(line);
-        if (payload.type === 'telemetry') {
-          event.reply('telemetry-payload', payload);
-          
-          // Auto-save incoming telemetry packet to MongoDB / memory database
-          db.saveTelemetrySnapshot(payload);
-        } else if (payload.type === 'control_status') {
-          event.reply('control-payload-sync', payload);
-        } else if (payload.type === 'pong') {
-          event.reply('ping-pong-reply');
-        } else if (payload.status) {
-          event.reply('hardware-payload', payload);
+    // Route all lines through the worker thread (off main thread)
+    if (dataWorker) {
+      dataWorker.postMessage({ type: 'PARSE_LINES', lines: trimmedLines });
+    } else {
+      // Fallback: process on main thread if worker is unavailable
+      for (const line of trimmedLines) {
+        try {
+          const payload = JSON.parse(line);
+          if (payload.type === 'telemetry') {
+            event.reply('telemetry-payload', payload);
+            updateTelemetryCache(payload);
+            db.saveTelemetrySnapshot(payload);
+          } else if (payload.type === 'control_status') {
+            event.reply('control-payload-sync', payload);
+          } else if (payload.type === 'pong') {
+            event.reply('ping-pong-reply');
+          } else if (payload.status) {
+            event.reply('hardware-payload', payload);
+          }
+        } catch (e) {
+          event.reply('console-log', `[TCP RX] ${line}`);
         }
-      } catch (e) {
-        event.reply('console-log', `[TCP RX] ${line}`);
       }
     }
   });
@@ -1563,15 +1769,15 @@ ipcMain.on('start-ota', (event, { fileBuffer, filename, ip, port, target }) => {
 const streamFirmwareToESP32 = (buffer, options, filename, event, targetName) => {
   return new Promise((resolve, reject) => {
     const boundary = '----WebKitFormBoundaryIoT' + Math.random().toString(36).substring(2);
-    const header = 
+    const header =
       `--${boundary}\r\n` +
       `Content-Disposition: form-data; name="update"; filename="${filename || 'firmware.bin'}"\r\n` +
       `Content-Type: application/octet-stream\r\n\r\n`;
     const footer = `\r\n--${boundary}--\r\n`;
-    
+
     const fileSize = buffer.length;
     const totalLength = header.length + fileSize + footer.length;
-    
+
     const requestOptions = {
       ...options,
       headers: {
@@ -1580,54 +1786,95 @@ const streamFirmwareToESP32 = (buffer, options, filename, event, targetName) => 
         'Connection': 'close'
       }
     };
-    
+
+    // Fix Issue 2: Track upload completion to distinguish ECONNRESET after full write (ESP32 reboot) vs real errors
+    let uploadedBytes = 0;
+    let uploadCompleted = false;
+    const isAddressMode = options.path && options.path.includes('address=');
+
+    let responseReceived = false;
+    let responseFailed = false;
+    let responseStatus = 200;
+    let responseBody = '';
+
     const req = http.request(requestOptions, (res) => {
-      let responseData = '';
-      res.on('data', (chunk) => { responseData += chunk.toString(); });
+      responseReceived = true;
+      responseStatus = res.statusCode;
+      if (res.statusCode !== 200) {
+        responseFailed = true;
+      }
+      res.on('data', (chunk) => { responseBody += chunk.toString(); });
       res.on('end', () => {
-        if (res.statusCode === 200 && responseData.toUpperCase().includes('OK')) {
-          resolve(responseData);
+        // Standard OTA returns OK text; address-mode flash may not return a body if ESP32 already rebooted
+        if (res.statusCode === 200 && (responseBody.toUpperCase().includes('OK') || isAddressMode)) {
+          resolve(responseBody || 'OK');
         } else {
-          reject(new Error(`Flashing failed. Code ${res.statusCode}: ${responseData}`));
+          reject(new Error(`Flashing failed. Code ${res.statusCode}: ${responseBody}`));
         }
       });
     });
-    
+
     req.on('error', (err) => {
-      reject(err);
+      if (responseFailed) {
+        reject(new Error(`Flashing failed. Code ${responseStatus}: ${responseBody || err.message}`));
+        return;
+      }
+      if (responseReceived && !isAddressMode) {
+        const isOk = responseStatus === 200 && responseBody.toUpperCase().includes('OK');
+        if (!isOk) {
+          reject(new Error(`Flashing failed. Code ${responseStatus}: ${responseBody || 'Server rejected the binary'}`));
+          return;
+        }
+      }
+
+      const isResetError = err.code === 'ECONNRESET' || 
+                           err.code === 'EPIPE' || 
+                           (err.message && err.message.includes('ECONNRESET')) ||
+                           (err.message && err.message.includes('EPIPE'));
+      
+      const percentSent = fileSize > 0 ? (offset / fileSize) : 0;
+      // If we got a connection reset/broken pipe after sending at least 95% of the firmware,
+      // it is a success (ESP32 finished flashing and instantly rebooted, closing the SoftAP/socket).
+      if (isResetError && (uploadCompleted || percentSent >= 0.95)) {
+        resolve('OK (ESP32 rebooted after successful write)');
+      } else {
+        reject(err);
+      }
     });
-    
+
     req.write(header);
-    
+
     const chunkSize = 16384; // 16KB chunk size (optimized for ESP32 receive buffer)
     let offset = 0;
-    
+
     const writeNextChunk = () => {
       let canWrite = true;
       while (offset < fileSize && canWrite) {
         const nextOffset = Math.min(offset + chunkSize, fileSize);
         const chunk = buffer.subarray(offset, nextOffset);
         offset = nextOffset;
-        
+
         canWrite = req.write(chunk);
-        
+
         const progress = Math.round((offset / fileSize) * 100);
         event.reply('ota-progress', { status: 'uploading', progress: progress });
       }
-      
+
       if (offset >= fileSize) {
         req.write(footer);
+        uploadCompleted = true; // Mark that all bytes have been sent before calling end()
         req.end();
       } else if (!canWrite) {
         // Wait for drain before writing more to prevent packet overflow on the ESP32
         req.once('drain', writeNextChunk);
       }
     };
-    
+
     writeNextChunk();
   });
 };
 
+/*
 ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, filePath }) => {
   const gatewayIP = ip || '192.168.4.1';
   const gatewayPort = parseInt(port) || 8000;
@@ -1665,58 +1912,120 @@ ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, 
     event.reply('console-log', `[OTA EXCEPTION] ${err.message}`);
   }
 });
+*/
 
-// IPC Handler: upload-certificate to ESP32 WebServer via HTTP POST
-ipcMain.on('upload-certificate', (event, { filePath, ip }) => {
+ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, filePath, address, reboot }) => {
   const gatewayIP = ip || '192.168.4.1';
-  event.reply('console-log', `[SPIFFS] Uploading certificate ${path.basename(filePath)} to http://${gatewayIP}:8000/upload_cert...`);
-  
+  const gatewayPort = parseInt(port) || 8000;
+  const targetName = target || 'esp32';
+  const localSourcePath = filePath || filename || 'firmware.bin';
+
+  let otaPath = `/update?target=${targetName}`;
+  if (address) {
+    otaPath += `&address=${encodeURIComponent(address)}`;
+  }
+  if (reboot !== undefined) {
+    otaPath += `&reboot=${reboot ? 'true' : 'false'}`;
+  }
+
+  event.reply('console-log', `[OTA] Source File (Where bin is loaded from): ${localSourcePath}`);
+  event.reply('console-log', `[OTA] Target Flashing Destination: http://${gatewayIP}:${gatewayPort}${otaPath}`);
+  event.reply('console-log', `[OTA] Starting optimized chunked buffer upload to ESP32...`);
+
+  if (!fileBuffer) {
+    event.reply('ota-progress', { status: 'error', message: 'Binary file buffer is empty.' });
+    return;
+  }
+
+  try {
+    const buffer = Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer);
+    const options = {
+      hostname: gatewayIP,
+      port: gatewayPort,
+      path: otaPath,
+      method: 'POST'
+    };
+
+    await streamFirmwareToESP32(buffer, options, filename, event, targetName);
+
+    event.reply('ota-progress', { status: 'success', progress: 100, target: targetName });
+    if (targetName === 'esp32') {
+      if (reboot !== false) {
+        event.reply('console-log', '[OTA] Upgrade completed! Router reboot triggered.');
+      } else {
+        event.reply('console-log', '[OTA] Partition flashed successfully! Reboot bypassed.');
+      }
+    } else {
+      event.reply('console-log', '[OTA] QCOM Co-processor flash update completed successfully!');
+    }
+  } catch (err) {
+    event.reply('ota-progress', { status: 'error', message: err.message });
+    event.reply('console-log', `[OTA EXCEPTION] ${err.message}`);
+  }
+});
+
+// IPC Handler: upload-certificate to ESP32 WebServer via HTTP POST with dynamic fallback
+ipcMain.on('upload-certificate', async (event, { filePath, ip, port }) => {
+  const gatewayIP = ip || '192.168.4.1';
+  const targetPort1 = parseInt(port) || 8000;
+  const targetPort2 = targetPort1 === 8000 ? (appConfig.otaPort || 500) : 8000;
+
+  event.reply('console-log', `[SPIFFS] Uploading certificate ${path.basename(filePath)} to http://${gatewayIP}:${targetPort1}/upload_cert...`);
+
   if (!fs.existsSync(filePath)) {
     event.reply('console-log', `[ERROR] Certificate file not found: ${filePath}`);
     event.reply('hardware-payload', { status: 'CERT_ERROR', filename: path.basename(filePath), message: 'File not found' });
     return;
   }
-  
+
   try {
     const content = fs.readFileSync(filePath, 'utf8');
     const filename = path.basename(filePath);
-    
-    const options = {
-      hostname: gatewayIP,
-      port: 8000,
-      path: `/upload_cert?filename=${encodeURIComponent(filename)}`,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain',
-        'Content-Length': Buffer.byteLength(content)
-      }
+    const contentBytes = Buffer.byteLength(content);
+
+    const uploadToPort = (portNum) => {
+      return new Promise((resolve, reject) => {
+        const options = {
+          hostname: gatewayIP,
+          port: portNum,
+          path: `/upload_cert?filename=${encodeURIComponent(filename)}`,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'text/plain',
+            'Content-Length': contentBytes
+          }
+        };
+
+        const req = http.request(options, (res) => {
+          let responseData = '';
+          res.on('data', (chunk) => { responseData += chunk.toString(); });
+          res.on('end', () => {
+            if (res.statusCode === 200) resolve();
+            else reject(new Error(`Status: ${res.statusCode} - ${responseData}`));
+          });
+        });
+
+        req.on('error', (err) => reject(err));
+        req.write(content);
+        req.end();
+      });
     };
-    
-    const req = http.request(options, (res) => {
-      let responseData = '';
-      res.on('data', (chunk) => {
-        responseData += chunk.toString();
-      });
-      res.on('end', () => {
-        if (res.statusCode === 200) {
-          event.reply('console-log', `[SPIFFS] Certificate ${filename} uploaded successfully to gateway.`);
-          // The gateway will also broadcast its CERT_ADDED JSON payload over the socket,
-          // but we can reply with confirmation here as a fallback or extra validation.
-        } else {
-          event.reply('console-log', `[ERROR] Certificate upload failed. Status: ${res.statusCode} - ${responseData}`);
-          event.reply('hardware-payload', { status: 'CERT_ERROR', filename, message: `Upload failed: status ${res.statusCode}` });
-        }
-      });
-    });
-    
-    req.on('error', (err) => {
-      event.reply('console-log', `[ERROR] Certificate upload HTTP error: ${err.message}`);
-      event.reply('hardware-payload', { status: 'CERT_ERROR', filename, message: err.message });
-    });
-    
-    req.write(content);
-    req.end();
-    
+
+    try {
+      await uploadToPort(targetPort1);
+      event.reply('console-log', `[SPIFFS] Certificate ${filename} uploaded successfully to gateway on Port ${targetPort1}.`);
+      event.reply('hardware-payload', { status: 'CERT_ADDED', filename, size: contentBytes });
+    } catch (err1) {
+      event.reply('console-log', `[SPIFFS] Port ${targetPort1} upload failed: ${err1.message}. Retrying on fallback Port ${targetPort2}...`);
+      try {
+        await uploadToPort(targetPort2);
+        event.reply('console-log', `[SPIFFS] Certificate ${filename} uploaded successfully to gateway on Fallback Port ${targetPort2}.`);
+        event.reply('hardware-payload', { status: 'CERT_ADDED', filename, size: contentBytes });
+      } catch (err2) {
+        event.reply('console-log', `[ERROR] Certificate upload failed on all attempts: ${err2.message}`);
+        event.reply('hardware-payload', { status: 'CERT_ERROR', filename, message: err2.message });
+      }
+    }
   } catch (err) {
     event.reply('console-log', `[EXCEPTION] Failed to upload certificate: ${err.message}`);
     event.reply('hardware-payload', { status: 'CERT_ERROR', filename: path.basename(filePath), message: err.message });
@@ -1773,11 +2082,11 @@ ipcMain.on('enter-bootloader', (event) => {
 ipcMain.on('start-udp-discovery', (event) => {
   event.reply('console-log', '[UDP] Scanning network for IoT Gateway devices...');
   const socket = dgram.createSocket('udp4');
-  
+
   socket.bind(0, () => {
     socket.setBroadcast(true);
     const message = Buffer.from('DISCOVER_IOT_GATEWAY');
-    
+
     // Broadcast on default interface
     socket.send(message, 0, message.length, appConfig.udpPort, '255.255.255.255', (err) => {
       if (err) {
@@ -1798,7 +2107,7 @@ ipcMain.on('start-udp-discovery', (event) => {
       const payload = JSON.parse(msg.toString());
       event.reply('gateway-discovered', payload);
       event.reply('console-log', `[UDP] Discovered gateway at ${payload.ip} (IMEI: ${payload.imei})`);
-      try { socket.close(); } catch (e) {}
+      try { socket.close(); } catch (e) { }
     } catch (e) {
       console.error('[UDP] Failed to parse reply:', e);
     }
@@ -1811,7 +2120,7 @@ ipcMain.on('start-udp-discovery', (event) => {
         event.reply('console-log', '[UDP] Discovery scan complete.');
         event.reply('discovery-timeout');
       }
-    } catch (e) {}
+    } catch (e) { }
   }, 3000);
 });
 
@@ -2061,10 +2370,13 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
 });
 */
 
-ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
+ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port }) => {
   const gatewayIP = ip || '192.168.4.1';
+  const targetPort1 = parseInt(port) || 8000;
+  const targetPort2 = targetPort1 === 8000 ? (appConfig.otaPort || 500) : 8000;
+
   event.reply('console-log', `[CERTS] Starting step-by-step certificate provisioning process...`);
-  
+
   const scratchDir = path.join(__dirname, 'scratch', 'certs');
   if (!fs.existsSync(scratchDir)) {
     fs.mkdirSync(scratchDir, { recursive: true });
@@ -2072,20 +2384,20 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
 
   try {
     const files = Object.keys(urls);
-    
+
     // Step 1: Download all files locally first (with TLS verification bypass)
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const fileUrl = urls[file];
       const localFilePath = path.join(scratchDir, file);
-      
+
       event.reply('console-log', `[CERTS] [STEP 1/3] Downloading ${file} locally from: ${fileUrl}...`);
-      
+
       const content = await new Promise((resolve, reject) => {
         const urlObj = new URL(fileUrl);
         const isHttps = urlObj.protocol === 'https:';
         const client = isHttps ? require('https') : require('http');
-        
+
         const getOptions = {
           hostname: urlObj.hostname,
           port: urlObj.port || (isHttps ? 443 : 80),
@@ -2093,7 +2405,7 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
           method: 'GET',
           rejectUnauthorized: false // Ignore self-signed or invalid SSL cert validation (Requirement 1)
         };
-        
+
         client.get(getOptions, (res) => {
           if (res.statusCode !== 200) {
             reject(new Error(`Failed to download ${file}, HTTP Code: ${res.statusCode}`));
@@ -2104,81 +2416,61 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
           res.on('end', () => resolve(data));
         }).on('error', err => reject(err));
       });
-      
+
       fs.writeFileSync(localFilePath, content, 'utf8');
       event.reply('console-log', `[CERTS] Downloaded locally to: scratch/certs/${file} (Size: ${Buffer.byteLength(content)} bytes).`);
     }
-    
+
     // Step 2: Upload locally stored files to ESP32 SPIFFS with Port Fallback
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const localFilePath = path.join(scratchDir, file);
-      
+
       event.reply('console-log', `[CERTS] [STEP 2/3] Uploading ${file} from local storage to ESP32 SPIFFS...`);
-      
+
       const content = fs.readFileSync(localFilePath, 'utf8');
       const contentBytes = Buffer.byteLength(content);
-      
-      // Attempt 1: Upload to Port 8000
+
+      const uploadToPort = (portNum) => {
+        return new Promise((resolve, reject) => {
+          const options = {
+            hostname: gatewayIP,
+            port: portNum,
+            path: `/upload_cert?filename=${encodeURIComponent(file)}`,
+            method: 'POST',
+            headers: {
+              'Content-Type': 'text/plain',
+              'Content-Length': contentBytes
+            }
+          };
+
+          const req = http.request(options, (res) => {
+            let responseData = '';
+            res.on('data', (chunk) => { responseData += chunk.toString(); });
+            res.on('end', () => {
+              if (res.statusCode === 200) resolve();
+              else reject(new Error(`Upload failed. Code ${res.statusCode}: ${responseData}`));
+            });
+          });
+          req.on('error', err => reject(err));
+          req.write(content);
+          req.end();
+        });
+      };
+
+      // Attempt 1: Upload to primary target port
       try {
-        await new Promise((resolve, reject) => {
-          const options = {
-            hostname: gatewayIP,
-            port: 8000,
-            path: `/upload_cert?filename=${encodeURIComponent(file)}`,
-            method: 'POST',
-            headers: {
-              'Content-Type': 'text/plain',
-              'Content-Length': contentBytes
-            }
-          };
-          
-          const req = http.request(options, (res) => {
-            let responseData = '';
-            res.on('data', (chunk) => { responseData += chunk.toString(); });
-            res.on('end', () => {
-              if (res.statusCode === 200) resolve();
-              else reject(new Error(`Upload failed. Code ${res.statusCode}: ${responseData}`));
-            });
-          });
-          req.on('error', err => reject(err));
-          req.write(content);
-          req.end();
-        });
-        event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on Port 8000.`);
-      } catch (err8000) {
-        const otaPort = appConfig.otaPort || 500;
-        event.reply('console-log', `[WIFI] Port 8000 upload failed: ${err8000.message}. Retrying on OTA Port ${otaPort}...`);
-        
-        // Attempt 2: Fallback to Port 500
-        await new Promise((resolve, reject) => {
-          const options = {
-            hostname: gatewayIP,
-            port: otaPort,
-            path: `/upload_cert?filename=${encodeURIComponent(file)}`,
-            method: 'POST',
-            headers: {
-              'Content-Type': 'text/plain',
-              'Content-Length': contentBytes
-            }
-          };
-          
-          const req = http.request(options, (res) => {
-            let responseData = '';
-            res.on('data', (chunk) => { responseData += chunk.toString(); });
-            res.on('end', () => {
-              if (res.statusCode === 200) resolve();
-              else reject(new Error(`Upload failed. Code ${res.statusCode}: ${responseData}`));
-            });
-          });
-          req.on('error', err => reject(err));
-          req.write(content);
-          req.end();
-        });
-        event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on OTA Port ${otaPort}.`);
+        await uploadToPort(targetPort1);
+        event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on Port ${targetPort1}.`);
+      } catch (err1) {
+        event.reply('console-log', `[WIFI] Port ${targetPort1} upload failed: ${err1.message}. Retrying on fallback Port ${targetPort2}...`);
+
+        // Attempt 2: Fallback to secondary port
+        await uploadToPort(targetPort2);
+        event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on fallback Port ${targetPort2}.`);
       }
     }
-    
+
     // Step 3: Sync to QCOM via serial channel
     event.reply('console-log', '[CERTS] [STEP 3/3] Initiating sync from ESP32 to QCOM co-processor storage...');
     if (activeTcpSocket && !activeTcpSocket.destroyed) {
@@ -2186,7 +2478,7 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
     } else if (activeSerialPort && activeSerialPort.isOpen) {
       activeSerialPort.write('SYNC_CERTS_TO_QCOM\n');
     }
-    
+
     event.reply('console-log', '[CERTS] All certificates successfully provisioned from URL -> Local -> ESP32 -> QCOM channel.');
     event.reply('provision-certs-status', { status: 'success' });
   } catch (err) {
@@ -2200,14 +2492,14 @@ ipcMain.on('download-and-flash-firmware', async (event, { firmwareUrl, ip, port,
   const gatewayIP = ip || '192.168.4.1';
   const gatewayPort = parseInt(port) || 8000;
   const targetName = target || 'esp32';
-  
+
   event.reply('console-log', `[OTA] [STEP 1/2] Initiating firmware download from: ${firmwareUrl}...`);
-  
+
   const tempPath = path.join(__dirname, 'scratch', `remote_firmware_${Date.now()}.bin`);
   if (!fs.existsSync(path.dirname(tempPath))) {
     fs.mkdirSync(path.dirname(tempPath), { recursive: true });
   }
-  
+
   try {
     // 1. Download file to local storage
     const contentSize = await new Promise((resolve, reject) => {
@@ -2217,33 +2509,33 @@ ipcMain.on('download-and-flash-firmware', async (event, { firmwareUrl, ip, port,
           reject(new Error(`Failed to download firmware. HTTP Code: ${res.statusCode}`));
           return;
         }
-        
+
         const fileStream = fs.createWriteStream(tempPath);
         res.pipe(fileStream);
-        
+
         fileStream.on('finish', () => {
           fileStream.close();
           resolve(fs.statSync(tempPath).size);
         });
-        
+
         fileStream.on('error', err => reject(err));
       }).on('error', err => reject(err));
     });
-    
-    event.reply('console-log', `[OTA] Firmware downloaded locally to: scratch/ (Size: ${Math.round(contentSize/1024)} KB)`);
+
+    event.reply('console-log', `[OTA] Firmware downloaded locally to: scratch/ (Size: ${Math.round(contentSize / 1024)} KB)`);
     event.reply('console-log', `[OTA] [STEP 2/2] Streaming locally stored firmware to gateway http://${gatewayIP}:${gatewayPort}/update...`);
-    
+
     // 2. Perform upload from local temporary file
     const boundary = '----WebKitFormBoundaryIoT' + Math.random().toString(36).substring(2);
     const filename = 'firmware.bin';
-    
-    const header = 
+
+    const header =
       `--${boundary}\r\n` +
       `Content-Disposition: form-data; name="update"; filename="${filename}"\r\n` +
       `Content-Type: application/octet-stream\r\n\r\n`;
     const footer = `\r\n--${boundary}--\r\n`;
     const totalLength = header.length + contentSize + footer.length;
-    
+
     const options = {
       hostname: gatewayIP,
       port: gatewayPort,
@@ -2255,15 +2547,15 @@ ipcMain.on('download-and-flash-firmware', async (event, { firmwareUrl, ip, port,
         'Connection': 'close'
       }
     };
-    
+
     event.reply('ota-progress', { status: 'uploading', progress: 0 });
-    
+
     const proxyReq = http.request(options, (res) => {
       let responseData = '';
       res.on('data', (chunk) => { responseData += chunk.toString(); });
       res.on('end', () => {
-        try { fs.unlinkSync(tempPath); } catch (e) {}
-        
+        try { fs.unlinkSync(tempPath); } catch (e) { }
+
         if (res.statusCode === 200 && responseData.toUpperCase().includes('OK')) {
           event.reply('ota-progress', { status: 'success', progress: 100, target: targetName });
           event.reply('console-log', `[OTA] Flash succeeded. Gateway processed ${targetName.toUpperCase()} firmware update.`);
@@ -2272,14 +2564,14 @@ ipcMain.on('download-and-flash-firmware', async (event, { firmwareUrl, ip, port,
         }
       });
     });
-    
+
     proxyReq.on('error', (err) => {
-      try { fs.unlinkSync(tempPath); } catch (e) {}
+      try { fs.unlinkSync(tempPath); } catch (e) { }
       event.reply('ota-progress', { status: 'error', message: err.message });
     });
-    
+
     proxyReq.write(header);
-    
+
     // Original streaming code commented out as per constraint:
     /*
     const fileStream = fs.createReadStream(tempPath, { highWaterMark: 32768 });
@@ -2297,16 +2589,16 @@ ipcMain.on('download-and-flash-firmware', async (event, { firmwareUrl, ip, port,
       proxyReq.end();
     });
     */
-    
+
     const fileStream = fs.createReadStream(tempPath, { highWaterMark: 16384 });
     let bytesSent = 0;
-    
+
     fileStream.on('data', (chunk) => {
       const canWrite = proxyReq.write(chunk);
       bytesSent += chunk.length;
       const progress = Math.round((bytesSent / contentSize) * 100);
       event.reply('ota-progress', { status: 'uploading', progress: progress });
-      
+
       if (!canWrite) {
         fileStream.pause();
         proxyReq.once('drain', () => {
@@ -2314,14 +2606,14 @@ ipcMain.on('download-and-flash-firmware', async (event, { firmwareUrl, ip, port,
         });
       }
     });
-    
+
     fileStream.on('end', () => {
       proxyReq.write(footer);
       proxyReq.end();
     });
-    
+
   } catch (err) {
-    try { fs.unlinkSync(tempPath); } catch (e) {}
+    try { fs.unlinkSync(tempPath); } catch (e) { }
     event.reply('ota-progress', { status: 'error', message: err.message });
     event.reply('console-log', `[OTA ERROR] Failed URL flash update: ${err.message}`);
   }
@@ -2330,10 +2622,10 @@ ipcMain.on('download-and-flash-firmware', async (event, { firmwareUrl, ip, port,
 // Database dynamic reconnection IPC listener (Requirement 6)
 ipcMain.on('reconnect-database', (event, { uri }) => {
   event.reply('console-log', `[DATABASE] Reconnect request received for: ${uri}`);
-  
+
   // Save URI to persistent config
   saveConfig({ mongoUri: uri });
-  
+
   db.connectDatabase(uri);
   setTimeout(() => {
     event.reply('database-connection-result', {
@@ -2352,5 +2644,86 @@ ipcMain.on('save-app-config', (event, newConfig) => {
   saveConfig(newConfig);
   event.reply('console-log', '[CONFIG] App configuration updated successfully.');
   event.reply('app-config-saved', appConfig);
+});
+
+// IPC Handler: Retrieve ESP32 SPIFFS Storage data (Requirement 4 & 5)
+ipcMain.on('get-spiffs-storage', (event, { ip, port }) => {
+  const gatewayIP = ip || '192.168.4.1';
+  // Fix Issue 1: Safely parse port - ensure it is a valid integer between 1-65535
+  const parsedPort = parseInt(port);
+  const gatewayPort = (!isNaN(parsedPort) && parsedPort > 0 && parsedPort < 65536) ? parsedPort : 8000;
+
+  event.reply('console-log', `[SPIFFS] Querying storage details from http://${gatewayIP}:${gatewayPort}/api/storage...`);
+
+  const options = {
+    hostname: gatewayIP,
+    port: gatewayPort,
+    path: '/api/storage',
+    method: 'GET',
+    timeout: 3000
+  };
+
+  const req = http.request(options, (res) => {
+    let data = '';
+    res.on('data', chunk => data += chunk.toString());
+    res.on('end', () => {
+      if (res.statusCode === 200) {
+        try {
+          const storageInfo = JSON.parse(data);
+          event.reply('spiffs-storage-info', { success: true, ...storageInfo });
+        } catch (e) {
+          event.reply('spiffs-storage-info', { success: false, error: 'Invalid JSON response from gateway' });
+          event.reply('console-log', `[SPIFFS ERROR] Failed to parse JSON storage response.`);
+        }
+      } else {
+        event.reply('spiffs-storage-info', { success: false, error: `HTTP status ${res.statusCode}` });
+        event.reply('console-log', `[SPIFFS ERROR] HTTP query failed with status code ${res.statusCode}`);
+      }
+    });
+  });
+
+  req.on('error', (err) => {
+    event.reply('spiffs-storage-info', { success: false, error: err.message });
+    event.reply('console-log', `[SPIFFS ERROR] HTTP request failed: ${err.message}`);
+  });
+
+  req.end();
+});
+
+// IPC Handler: Delete file from ESP32 SPIFFS Storage (Requirement 4 & 5)
+ipcMain.on('delete-spiffs-file', (event, { ip, port, filename }) => {
+  const gatewayIP = ip || '192.168.4.1';
+  const gatewayPort = parseInt(port) || 8000;
+
+  event.reply('console-log', `[SPIFFS] Requesting deletion of '${filename}' from http://${gatewayIP}:${gatewayPort}...`);
+
+  const options = {
+    hostname: gatewayIP,
+    port: gatewayPort,
+    path: `/api/storage/delete?filename=${encodeURIComponent(filename)}`,
+    method: 'POST',
+    timeout: 3000
+  };
+
+  const req = http.request(options, (res) => {
+    let data = '';
+    res.on('data', chunk => data += chunk.toString());
+    res.on('end', () => {
+      if (res.statusCode === 200) {
+        event.reply('spiffs-delete-result', { success: true, filename });
+        event.reply('console-log', `[SPIFFS] Successfully deleted file: ${filename}`);
+      } else {
+        event.reply('spiffs-delete-result', { success: false, filename, error: data });
+        event.reply('console-log', `[SPIFFS ERROR] Failed to delete ${filename}. Code ${res.statusCode}: ${data}`);
+      }
+    });
+  });
+
+  req.on('error', (err) => {
+    event.reply('spiffs-delete-result', { success: false, filename, error: err.message });
+    event.reply('console-log', `[SPIFFS ERROR] Deletion request failed: ${err.message}`);
+  });
+
+  req.end();
 });
 

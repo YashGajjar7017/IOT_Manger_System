@@ -87,11 +87,18 @@ export default function App() {
   // OTA Updates State
   const [otaIp, setOtaIp] = useState('192.168.4.1');
   const [otaPort, setOtaPort] = useState('8000');
+  const [otaAddress, setOtaAddress] = useState(''); // Optional: flash to specific address offset (standard mode)
   const [firmwareUrl, setFirmwareUrl] = useState('');
   const [otaFile, setOtaFile] = useState(null);
   const [otaProgress, setOtaProgress] = useState(null); // { status, progress, message }
-  const [otaTarget, setOtaTarget] = useState('esp32s3'); // 'esp32' or 'qcom'
+  const [otaTarget, setOtaTarget] = useState('esp32'); // 'esp32' or 'qcom'
   const fileInputRef = useRef(null);
+
+  // Sync refs to bypass stale React closures in async/event listener callbacks
+  const otaIpRef = useRef(otaIp);
+  const otaPortRef = useRef(otaPort);
+  useEffect(() => { otaIpRef.current = otaIp; }, [otaIp]);
+  useEffect(() => { otaPortRef.current = otaPort; }, [otaPort]);
 
   // Network Scanning & Cert Downloader State
   const [isScanningNetwork, setIsScanningNetwork] = useState(false);
@@ -106,6 +113,24 @@ export default function App() {
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [certHistoryLogs, setCertHistoryLogs] = useState([]);
 
+  // Advanced Multi-File Flashing states
+  const [otaMode, setOtaMode] = useState('standard');
+  const [otaSlots, setOtaSlots] = useState([
+    { id: 1, label: 'Bootloader', address: '0x0', checked: true, file: null, status: 'idle', progress: 0 },
+    { id: 2, label: 'Partitions', address: '0x8000', checked: true, file: null, status: 'idle', progress: 0 },
+    { id: 3, label: 'Boot App0', address: '0xe000', checked: true, file: null, status: 'idle', progress: 0 },
+    { id: 4, label: 'App Firmware', address: '0x10000', checked: true, file: null, status: 'idle', progress: 0 },
+  ]);
+  const [isFlashingAdvanced, setIsFlashingAdvanced] = useState(false);
+  const [autoRebootAdvanced, setAutoRebootAdvanced] = useState(true);
+  const flashingQueueRef = useRef([]);
+  const currentSlotRef = useRef(null);
+
+  // ESP32 SPIFFS Storage states
+  const [spiffsStorage, setSpiffsStorage] = useState({ totalBytes: 0, usedBytes: 0, files: [] });
+  const [isFetchingStorage, setIsFetchingStorage] = useState(false);
+  const [storageError, setStorageError] = useState(null);
+
   // Auto-fill values when device connects/boots
   useEffect(() => {
     if (imei && imei !== '--') {
@@ -119,42 +144,43 @@ export default function App() {
     }
   }, [imei, password, wifiIp]);
 
-  // Fix for text selection & typing issues in Electron frameless window (Requirement 3)
-  /*
+  // Fix for text input not responding to keyboard on first click in Electron frameless window.
+  // Root cause: body has user-select:none + -webkit-app-region:drag bleeds into inputs.
+  // Fix: Stop propagation on input mousedown so the drag region doesn't steal it,
+  // then synchronously focus the element (no setTimeout race condition).
   useEffect(() => {
     const handleGlobalMouseDown = (e) => {
-      const tag = e.target.tagName ? e.target.tagName.toLowerCase() : '';
-      if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.closest('input, textarea, select')) {
-        if (ipcRenderer) {
-          ipcRenderer.send('focus-window');
-        }
-      }
-    };
-    document.addEventListener('mousedown', handleGlobalMouseDown);
-    return () => document.removeEventListener('mousedown', handleGlobalMouseDown);
-  }, []);
-  */
-  useEffect(() => {
-    const handleGlobalMouseDown = (e) => {
-      const target = e.target.closest('input, textarea, select') || 
-                     ((e.target.tagName && ['input', 'textarea', 'select'].includes(e.target.tagName.toLowerCase())) ? e.target : null);
+      const target = e.target.closest('input, textarea, select') ||
+        (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) ? e.target : null);
+
       if (target) {
+        // Prevent the titlebar drag-region from absorbing this mousedown
+        e.stopPropagation();
+
+        // Tell Electron main process to grant OS keyboard focus to the window
         if (ipcRenderer) {
           ipcRenderer.send('focus-window');
         }
-        // Programmatically focus the element after a brief delay to ensure window focus has registered
-        setTimeout(() => {
-          try {
-            target.focus();
-          } catch (err) {
-            console.error('Failed to focus target element:', err);
+
+        // Synchronously focus — no setTimeout, so the first keydown is captured
+        try {
+          target.focus();
+          // Select-all on text inputs so the user can immediately replace value
+          if (target.tagName === 'INPUT' && target.type !== 'checkbox' && target.type !== 'radio') {
+            requestAnimationFrame(() => {
+              try { target.select(); } catch (_) {}
+            });
           }
-        }, 30);
+        } catch (err) {
+          // Silently ignore — element may have been removed from DOM
+        }
       }
     };
-    document.addEventListener('mousedown', handleGlobalMouseDown);
-    return () => document.removeEventListener('mousedown', handleGlobalMouseDown);
+
+    document.addEventListener('mousedown', handleGlobalMouseDown, true); // capture phase
+    return () => document.removeEventListener('mousedown', handleGlobalMouseDown, true);
   }, []);
+
 
   const fetchCertProvisionHistory = async () => {
     try {
@@ -457,16 +483,45 @@ export default function App() {
 
     // 8. Subscribe to OTA flashing status
     const onOtaProgress = (event, update) => {
-      setOtaProgress(update);
-      if (update.status === 'success') {
-        addLogLine('[OTA] SUCCESS: Firmware flash verification succeeded.', 'success');
-        alert('Firmware flash completed successfully!');
-        setOtaFile(null);
-        setOtaProgress(null);
-      } else if (update.status === 'error') {
-        addLogLine(`[OTA ERROR] Flashing failed: ${update.message}`, 'error');
-        alert(`OTA Update Failed:\n${update.message}`);
-        setOtaProgress(null);
+      // If we are doing advanced flashing
+      if (flashingQueueRef.current.length > 0 && currentSlotRef.current) {
+        const slotId = currentSlotRef.current.id;
+        
+        if (update.status === 'uploading') {
+          setOtaSlots(prev => prev.map(s => s.id === slotId ? { ...s, progress: update.progress } : s));
+        } else if (update.status === 'success') {
+          setOtaSlots(prev => prev.map(s => s.id === slotId ? { ...s, status: 'success', progress: 100 } : s));
+          addLogLine(`[OTA] Slot "${currentSlotRef.current.label}" flashed successfully.`, 'success');
+          
+          // Pop completed slot from queue
+          flashingQueueRef.current.shift();
+          currentSlotRef.current = null;
+          
+          // Proceed to next
+          setTimeout(flashNextSlot, 500);
+        } else if (update.status === 'error') {
+          setOtaSlots(prev => prev.map(s => s.id === slotId ? { ...s, status: 'error' } : s));
+          addLogLine(`[OTA ERROR] Slot "${currentSlotRef.current.label}" failed: ${update.message}`, 'error');
+          alert(`OTA Flashing Failed at slot "${currentSlotRef.current.label}":\n${update.message}`);
+          
+          // Clear remaining queue
+          flashingQueueRef.current = [];
+          currentSlotRef.current = null;
+          setIsFlashingAdvanced(false);
+          setControlsDisabled(false);
+        }
+      } else {
+        setOtaProgress(update);
+        if (update.status === 'success') {
+          addLogLine('[OTA] SUCCESS: Firmware flash verification succeeded.', 'success');
+          alert('Firmware flash completed successfully!');
+          setOtaFile(null);
+          setOtaProgress(null);
+        } else if (update.status === 'error') {
+          addLogLine(`[OTA ERROR] Flashing failed: ${update.message}`, 'error');
+          alert(`OTA Update Failed:\n${update.message}`);
+          setOtaProgress(null);
+        }
       }
     };
     ipcRenderer.on('ota-progress', onOtaProgress);
@@ -527,6 +582,35 @@ export default function App() {
     };
     ipcRenderer.on('database-connection-result', onDbConnectionResult);
 
+    const onSpiffsStorageInfo = (event, result) => {
+      setIsFetchingStorage(false);
+      if (result.success) {
+        setSpiffsStorage({
+          totalBytes: result.totalBytes,
+          usedBytes: result.usedBytes,
+          files: result.files || []
+        });
+        setStorageError(null);
+        addLogLine('[SPIFFS] Storage information retrieved successfully.', 'success');
+      } else {
+        setStorageError(result.error);
+        addLogLine(`[SPIFFS ERROR] Failed to fetch storage: ${result.error}`, 'error');
+      }
+    };
+    ipcRenderer.on('spiffs-storage-info', onSpiffsStorageInfo);
+
+    const onSpiffsDeleteResult = (event, result) => {
+      if (result.success) {
+        addLogLine(`[SPIFFS] Deleted file ${result.filename} successfully.`, 'success');
+        alert(`File ${result.filename} deleted successfully.`);
+        ipcRenderer.send('get-spiffs-storage', { ip: otaIpRef.current, port: otaPortRef.current });
+      } else {
+        addLogLine(`[SPIFFS ERROR] Failed to delete file ${result.filename}: ${result.error}`, 'error');
+        alert(`Delete Failed:\n${result.error}`);
+      }
+    };
+    ipcRenderer.on('spiffs-delete-result', onSpiffsDeleteResult);
+
     // Fetch initial app configuration (Requirement 6)
     ipcRenderer.invoke('get-app-config').then((config) => {
       if (config) {
@@ -553,8 +637,38 @@ export default function App() {
       ipcRenderer.off('discovery-timeout', onDiscoveryTimeout);
       ipcRenderer.off('provision-certs-status', onProvisionCertsStatus);
       ipcRenderer.off('database-connection-result', onDbConnectionResult);
+      ipcRenderer.off('spiffs-storage-info', onSpiffsStorageInfo);
+      ipcRenderer.off('spiffs-delete-result', onSpiffsDeleteResult);
     };
   }, []);
+
+  // Pre-populate device map from disk cache on startup for instant dashboard rendering.
+  // This runs once on mount so the Telemetry Grid shows last-known device states
+  // immediately — even before the device sends its first live packet.
+  useEffect(() => {
+    ipcRenderer.invoke('get-cached-telemetry')
+      .then((result) => {
+        if (result && Array.isArray(result.devices) && result.devices.length > 0) {
+          setDevicesMap(prevMap => {
+            const nextMap = new Map(prevMap);
+            result.devices.forEach(dev => {
+              if (dev && dev.id !== undefined) {
+                // Mark as cached so live data can overwrite without flickering
+                nextMap.set(dev.id, { ...dev, _fromCache: true });
+              }
+            });
+            return nextMap;
+          });
+          addLogLine(`[CACHE] ⚡ Loaded ${result.devices.length} device(s) from disk cache — dashboard ready instantly.`, 'system');
+        }
+      })
+      .catch((err) => {
+        // Cache miss is fine — not an error
+        console.log('[CACHE] No disk cache available on startup:', err.message);
+      });
+  }, []);
+
+
 
   // Ping Loop for WiFi TCP Socket
   useEffect(() => {
@@ -749,8 +863,8 @@ export default function App() {
     setCertUploadProgress(10);
     addLogLine(`[SPIFFS] Initiating HTTP upload of certificate: ${file.name}...`);
 
-    // Send file path and IP to Electron uploader IPC
-    ipcRenderer.send('upload-certificate', { filePath: file.path, ip: otaIp });
+    // Send file path, IP, and Port to Electron uploader IPC
+    ipcRenderer.send('upload-certificate', { filePath: file.path, ip: otaIp, port: otaPort });
 
     // Update progress feedback for UI rendering
     setTimeout(() => setCertUploadProgress(40), 200);
@@ -831,7 +945,8 @@ export default function App() {
         'device_cert.crt': formatUrl(certDeviceCertUrl),
         'private_key.key': formatUrl(certPrivateKeyUrl)
       },
-      ip: wifiIp
+      ip: wifiIp,
+      port: otaPort
     });
   };
 
@@ -992,7 +1107,12 @@ export default function App() {
     
     const localSourcePath = otaFile.path || otaFile.name;
     addLogLine(`[OTA] Source File (Where bin is loaded from): ${localSourcePath}`);
-    addLogLine(`[OTA] Target Flashing Partition: ${otaTarget === 'esp32' ? 'ESP32 App Partition (Target app0/app1 dynamic switch)' : 'QCOM Co-processor Partition'}`);
+    // Fix Issue 3: Log if address mode is active in standard OTA
+    if (otaAddress && otaAddress.trim()) {
+      addLogLine(`[OTA] Standard Mode - Targeted Address Flash: ${otaAddress.trim()} (no full erase)`, 'system');
+    } else {
+      addLogLine(`[OTA] Target Flashing Partition: ${otaTarget === 'esp32' ? 'ESP32 App Partition (Target app0/app1 dynamic switch)' : 'QCOM Co-processor Partition'}`);
+    }
     addLogLine(`[OTA] Reading local binary file: ${otaFile.name}...`);
 
     const reader = new FileReader();
@@ -1004,7 +1124,9 @@ export default function App() {
         ip: otaIp,
         port: otaPort,
         target: otaTarget,
-        filePath: localSourcePath
+        filePath: localSourcePath,
+        // Fix Issue 3: Pass address only if user specified one; otherwise standard OTA will use normal partitioning
+        ...(otaAddress && otaAddress.trim() ? { address: otaAddress.trim(), reboot: true } : {})
       });
     };
     reader.onerror = (err) => {
@@ -1014,6 +1136,87 @@ export default function App() {
     };
     reader.readAsArrayBuffer(otaFile);
   };
+
+  const flashNextSlot = () => {
+    if (flashingQueueRef.current.length === 0) {
+      setIsFlashingAdvanced(false);
+      setControlsDisabled(false);
+      addLogLine('[OTA] Advanced Sequential Flashing Complete!', 'success');
+      alert('All selected partitions flashed successfully!');
+      return;
+    }
+
+    const nextSlot = flashingQueueRef.current[0];
+    currentSlotRef.current = nextSlot;
+
+    setOtaSlots(prev => prev.map(s => s.id === nextSlot.id ? { ...s, status: 'uploading', progress: 0 } : s));
+    addLogLine(`[OTA] Flashing slot "${nextSlot.label}" to address ${nextSlot.address}...`);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const isLast = flashingQueueRef.current.length === 1;
+      const shouldReboot = isLast ? autoRebootAdvanced : false;
+
+      ipcRenderer.send('start-ota', {
+        fileBuffer: reader.result,
+        filename: nextSlot.file.name,
+        ip: otaIpRef.current,
+        port: otaPortRef.current,
+        target: 'esp32',
+        filePath: nextSlot.file.path || nextSlot.file.name,
+        address: nextSlot.address,
+        reboot: shouldReboot
+      });
+    };
+    reader.onerror = (err) => {
+      addLogLine(`[OTA] FileReader error for "${nextSlot.label}": ${err.message}`, 'error');
+      setOtaSlots(prev => prev.map(s => s.id === nextSlot.id ? { ...s, status: 'error' } : s));
+      flashingQueueRef.current = [];
+      currentSlotRef.current = null;
+      setIsFlashingAdvanced(false);
+      setControlsDisabled(false);
+    };
+    reader.readAsArrayBuffer(nextSlot.file);
+  };
+
+  const startAdvancedOtaUpdate = () => {
+    const activeSlots = otaSlots.filter(s => s.checked && s.file);
+    if (activeSlots.length === 0) {
+      alert('Please check at least one slot and select a valid .bin file.');
+      return;
+    }
+
+    setOtaSlots(prev => prev.map(s => {
+      if (s.checked && s.file) {
+        return { ...s, status: 'pending', progress: 0 };
+      }
+      return s;
+    }));
+
+    setControlsDisabled(true);
+    setIsFlashingAdvanced(true);
+
+    flashingQueueRef.current = activeSlots;
+    flashNextSlot();
+  };
+
+  const refreshSpiffsStorage = () => {
+    setIsFetchingStorage(true);
+    setStorageError(null);
+    ipcRenderer.send('get-spiffs-storage', { ip: otaIp, port: otaPort });
+  };
+
+  const handleDeleteSpiffsFile = (filename) => {
+    if (confirm(`Are you sure you want to delete ${filename} from ESP32 SPIFFS storage?`)) {
+      ipcRenderer.send('delete-spiffs-file', { ip: otaIp, port: otaPort, filename });
+    }
+  };
+
+  useEffect(() => {
+    if (connection.type === 'tcp' && otaIp) {
+      ipcRenderer.send('get-spiffs-storage', { ip: otaIp, port: otaPort });
+    }
+  }, [connection.type, otaIp, otaPort]);
 
   const startOtaUrlUpdate = () => {
     if (!firmwareUrl) {
@@ -1269,7 +1472,7 @@ export default function App() {
                         {connection.type && diagnostics[key] !== 'TESTING' && (
                           <button
                             className="btn btn-secondary small"
-                            style={{ padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', margin: 0, border: '1px solid rgba(255, 0, 127, 0.3)', cursor: 'pointer' }}
+                            style={{ padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', margin: 0, border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
                             onClick={() => testModule(key)}
                           >
                             Test
@@ -1663,7 +1866,7 @@ export default function App() {
                     <label>Port ID</label>
                     <input type="text" value={otaPort} onChange={(e) => setOtaPort(e.target.value)} placeholder="8000" />
                   </div>
-                  <div className="input-group" style={{ flex: 1, minWidth: '220px', maxWidth: '280px' }}>
+                  <div className="input-group" style={{ flex: 1, minWidth: '200px', maxWidth: '250px' }}>
                     <label>Flash Target Partition</label>
                     <select
                       value={otaTarget}
@@ -1685,124 +1888,391 @@ export default function App() {
                       <option value="qcom" style={{ background: '#1c1b22', color: 'white' }}>QCOM Co-processor (core partition)</option>
                     </select>
                   </div>
-                </div>
-
-                {otaTarget === 'esp32' && (
-                  <div className="partition-memory-map" style={{
-                    marginTop: '10px',
-                    padding: '15px',
-                    background: 'rgba(0, 240, 255, 0.03)',
-                    border: '1px dashed rgba(0, 240, 255, 0.25)',
-                    borderRadius: '10px',
-                    fontSize: '12px'
-                  }}>
-                    <span style={{ color: 'var(--accent-blue)', fontWeight: '800', display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      ESP32 Custom Partition Memory Layout (partitions.csv)
-                    </span>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontFamily: 'monospace' }}>
-                      <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
-                        <strong style={{ color: 'white' }}>bootloader</strong><br/>
-                        Offset: 0x0000<br/>
-                        Size: 32KB
-                      </div>
-                      <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
-                        <strong style={{ color: 'white' }}>partitions</strong><br/>
-                        Offset: 0x8000<br/>
-                        Size: 4KB
-                      </div>
-                      <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
-                        <strong style={{ color: 'white' }}>otadata</strong><br/>
-                        Offset: 0xe000<br/>
-                        Size: 8KB
-                      </div>
-                      <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(0, 240, 255, 0.05)', borderRadius: '6px', border: '1px solid rgba(0, 240, 255, 0.15)' }}>
-                        <strong style={{ color: 'var(--accent-blue)' }}>app0 (OTA update)</strong><br/>
-                        Offset: 0x10000<br/>
-                        Size: 1408KB
-                      </div>
-                      <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255, 0, 127, 0.05)', borderRadius: '6px', border: '1px solid rgba(255, 0, 127, 0.15)' }}>
-                        <strong style={{ color: 'var(--accent-pink)' }}>app1 (Main application)</strong><br/>
-                        Offset: 0x170000<br/>
-                        Size: 1408KB
-                      </div>
-                    </div>
-                    <div style={{ marginTop: '10px', color: 'var(--text-dim)', fontSize: '11px', lineHeight: '1.4' }}>
-                      <strong>Active Destination Target:</strong> Writes (pastes) the bin file to the inactive partition (writes to <strong>app1 at 0x170000</strong> if running the loader on app0, or writes to <strong>app0 at 0x10000</strong> if running the application on app1) and switches boot target.
-                    </div>
-                  </div>
-                )}
-
-                {/* Drag and drop zone */}
-                <div className="drag-drop-zone"
-                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
-                  onDragLeave={(e) => e.currentTarget.classList.remove('dragover')}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.currentTarget.classList.remove('dragover');
-                    if (e.dataTransfer.files.length > 0) handleOtaFileChange(e.dataTransfer.files[0]);
-                  }}
-                  onClick={() => fileInputRef.current.click()}
-                >
-                  <div className="drop-icon">&#128190;</div>
-                  <h4>Drag & Drop firmware binary here</h4>
-                  <p>or</p>
-                  <button className="btn btn-secondary" onClick={(e) => { e.stopPropagation(); fileInputRef.current.click(); }}>Browse files</button>
-                  <input type="file" accept=".bin" style={{ display: 'none' }} ref={fileInputRef} onChange={(e) => {
-                    if (e.target.files.length > 0) handleOtaFileChange(e.target.files[0]);
-                  }} />
-
-                  {otaFile && (
-                    <div className="selected-file-display" onClick={(e) => e.stopPropagation()}>
-                      <span className="file-name" style={{ wordBreak: 'break-all' }}>{otaFile.path || otaFile.name}</span>
-                      <span className="file-size">{Math.round(otaFile.size / 1024)} KB</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Progress bar */}
-                {otaProgress && (
-                  <div className="ota-progress-pane">
-                    <div className="progress-details">
-                      <span className="progress-status">Uploading binary...</span>
-                      <span className="progress-percent">{otaProgress.progress}%</span>
-                    </div>
-                    <div className="progress-bar-bg">
-                      <div className="progress-bar-fill" style={{ width: `${otaProgress.progress}%` }}></div>
-                    </div>
-                    <div className="ota-speed-info">
-                      <span>Writing sectors to winbond flash...</span>
-                      <span className="pulse-dot loading"></span>
-                    </div>
-                  </div>
-                )}
-
-                <div className="ota-actions" style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <button className="btn btn-primary large" onClick={startOtaUpdate} disabled={!otaFile || otaProgress !== null}>
-                    Initiate local file flash update
-                  </button>
-
-                  {/* Remote flasher URL section (Requirement 3) */}
-                  <div style={{ marginTop: '10px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
-                    <h4 style={{ fontSize: '13px', color: 'var(--accent-pink)', marginBottom: '10px' }}>Flash from remote Firmware URL / API</h4>
-                    <div className="input-group">
-                      <label>Remote Binary URL (.bin)</label>
-                      <input
-                        type="text"
-                        value={firmwareUrl}
-                        onChange={(e) => setFirmwareUrl(e.target.value)}
-                        placeholder="e.g. http://127.0.0.1:8000/firmware.bin"
-                      />
-                    </div>
-                    <button
-                      className="btn btn-accent"
-                      onClick={startOtaUrlUpdate}
-                      disabled={!firmwareUrl || otaProgress !== null}
-                      style={{ marginTop: '10px', width: '100%', height: '40px' }}
+                  <div className="input-group" style={{ flex: 1, minWidth: '180px', maxWidth: '220px' }}>
+                    <label>Flashing Mode</label>
+                    <select
+                      value={otaMode}
+                      onChange={(e) => setOtaMode(e.target.value)}
+                      className="filter-select"
+                      style={{
+                        width: '100%',
+                        height: '42px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid var(--glass-border)',
+                        color: 'white',
+                        borderRadius: '8px',
+                        padding: '0 10px',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
                     >
-                      Fetch, Download & Flash Remote Firmware
+                      <option value="standard" style={{ background: '#1c1b22', color: 'white' }}>Standard Full OTA</option>
+                      <option value="advanced" style={{ background: '#1c1b22', color: 'white' }}>Advanced Multi-File</option>
+                    </select>
+                  </div>
+                </div>
+
+                {otaMode === 'advanced' ? (
+                  <div className="advanced-ota-layout" style={{ marginTop: '20px' }}>
+                    <div style={{
+                      background: 'rgba(0, 240, 255, 0.02)',
+                      border: '1px dashed rgba(0, 240, 255, 0.2)',
+                      padding: '15px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      marginBottom: '15px',
+                      lineHeight: '1.4'
+                    }}>
+                      <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>
+                        ADVANCED SEQUENTIAL FLASHING CONTROLS (NO FULL ERASE)
+                      </span>
+                      Write compiled binary segments at arbitrary address offsets. Only checked slots with chosen files will be updated. The device will dynamically erase only the required sectors.
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {otaSlots.map((slot) => (
+                        <div key={slot.id} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          background: 'rgba(255,255,255,0.01)',
+                          border: '1px solid var(--glass-border)',
+                          padding: '10px 15px',
+                          borderRadius: '8px',
+                          flexWrap: 'wrap'
+                        }}>
+                          {/* Checked Menu (Requirement 3) */}
+                          <input
+                            type="checkbox"
+                            checked={slot.checked}
+                            onChange={() => {
+                              setOtaSlots(prev => prev.map(s => s.id === slot.id ? { ...s, checked: !s.checked } : s));
+                            }}
+                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                          />
+
+                          <input
+                            type="text"
+                            value={slot.label}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setOtaSlots(prev => prev.map(s => s.id === slot.id ? { ...s, label: val } : s));
+                            }}
+                            placeholder="Slot Label"
+                            style={{
+                              flex: '1 1 120px',
+                              height: '32px',
+                              background: 'transparent',
+                              border: 'none',
+                              borderBottom: '1px solid rgba(255,255,255,0.1)',
+                              color: 'white',
+                              fontSize: '13px',
+                              outline: 'none'
+                            }}
+                          />
+
+                          {/* Address input */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Offset:</span>
+                            <input
+                              type="text"
+                              value={slot.address}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setOtaSlots(prev => prev.map(s => s.id === slot.id ? { ...s, address: val } : s));
+                              }}
+                              placeholder="e.g. 0x10000"
+                              style={{
+                                width: '90px',
+                                height: '32px',
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '4px',
+                                color: 'white',
+                                fontFamily: 'monospace',
+                                fontSize: '12px',
+                                textAlign: 'center',
+                                outline: 'none'
+                              }}
+                            />
+                          </div>
+
+                          {/* File input / chosen file display */}
+                          <div style={{ flex: '2 2 200px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button
+                              className="btn btn-secondary small-btn"
+                              onClick={() => {
+                                const input = document.createElement('input');
+                                input.type = 'file';
+                                input.accept = '.bin';
+                                input.onchange = (e) => {
+                                  if (e.target.files.length > 0) {
+                                    const file = e.target.files[0];
+                                    setOtaSlots(prev => prev.map(s => s.id === slot.id ? { ...s, file: file } : s));
+                                  }
+                                };
+                                input.click();
+                              }}
+                              style={{ height: '32px', padding: '0 12px', fontSize: '11px' }}
+                            >
+                              Choose Bin
+                            </button>
+                            <span style={{ fontSize: '12px', color: slot.file ? '#fff' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>
+                              {slot.file ? slot.file.name : 'No file selected'}
+                            </span>
+                          </div>
+
+                          {/* Slot Progress / Status display */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '100px' }}>
+                            {slot.status === 'uploading' && (
+                              <span style={{ color: 'var(--accent-blue)', fontSize: '11px', fontWeight: 'bold' }}>
+                                Flashing: {slot.progress || 0}%
+                              </span>
+                            )}
+                            {slot.status === 'success' && (
+                              <span style={{ color: 'var(--accent-emerald)', fontSize: '11px', fontWeight: 'bold' }}>
+                                &#10004; Success
+                              </span>
+                            )}
+                            {slot.status === 'error' && (
+                              <span style={{ color: 'var(--accent-pink)', fontSize: '11px', fontWeight: 'bold' }}>
+                                &#10008; Fail
+                              </span>
+                            )}
+                            {slot.status === 'pending' && (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                                Pending...
+                              </span>
+                            )}
+                            {slot.status === 'idle' && (
+                              <span style={{ color: 'var(--text-dim)', fontSize: '11px' }}>
+                                Ready
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Remove button (custom only) */}
+                          {slot.id > 10 && (
+                            <button
+                              onClick={() => {
+                                setOtaSlots(prev => prev.filter(s => s.id !== slot.id));
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'rgba(255,255,255,0.3)',
+                                fontSize: '14px',
+                                cursor: 'pointer',
+                                padding: '4px'
+                              }}
+                            >
+                              &#x2715;
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setOtaSlots(prev => [...prev, {
+                            id: Date.now(),
+                            label: 'Custom Block',
+                            address: '0x170000',
+                            file: null,
+                            checked: true,
+                            progress: null,
+                            status: 'idle'
+                          }]);
+                        }}
+                        style={{ height: '36px', padding: '0 15px', fontSize: '12px' }}
+                      >
+                        + Add Flashing Slot
+                      </button>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+                        <input
+                          type="checkbox"
+                          id="autoRebootCheck"
+                          checked={autoRebootAdvanced}
+                          onChange={(e) => setAutoRebootAdvanced(e.target.checked)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <label htmlFor="autoRebootCheck" style={{ fontSize: '12px', cursor: 'pointer', color: 'var(--text-dim)' }}>
+                          Reboot device when complete
+                        </label>
+                      </div>
+                    </div>
+
+                    <button
+                      className="btn btn-primary large"
+                      onClick={startAdvancedOtaUpdate}
+                      disabled={isFlashingAdvanced || controlsDisabled}
+                      style={{ marginTop: '20px', width: '100%' }}
+                    >
+                      {isFlashingAdvanced ? 'Sequential Flashing...' : 'Flash Checked Binaries'}
                     </button>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    {otaTarget === 'esp32' && (
+                      <div className="partition-memory-map" style={{
+                        marginTop: '10px',
+                        padding: '15px',
+                        background: 'rgba(0, 240, 255, 0.03)',
+                        border: '1px dashed rgba(0, 240, 255, 0.25)',
+                        borderRadius: '10px',
+                        fontSize: '12px'
+                      }}>
+                        <span style={{ color: 'var(--accent-blue)', fontWeight: '800', display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          ESP32 Custom Partition Memory Layout (partitions.csv)
+                        </span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontFamily: 'monospace' }}>
+                          <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                            <strong style={{ color: 'white' }}>bootloader</strong><br/>
+                            Offset: 0x0000<br/>
+                            Size: 32KB
+                          </div>
+                          <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                            <strong style={{ color: 'white' }}>partitions</strong><br/>
+                            Offset: 0x8000<br/>
+                            Size: 4KB
+                          </div>
+                          <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                            <strong style={{ color: 'white' }}>otadata</strong><br/>
+                            Offset: 0xe000<br/>
+                            Size: 8KB
+                          </div>
+                          <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(0, 240, 255, 0.05)', borderRadius: '6px', border: '1px solid rgba(0, 240, 255, 0.15)' }}>
+                            <strong style={{ color: 'var(--accent-blue)' }}>app0 (OTA update)</strong><br/>
+                            Offset: 0x10000<br/>
+                            Size: 1408KB
+                          </div>
+                          <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(249, 83, 198, 0.05)', borderRadius: '6px', border: '1px solid rgba(249, 83, 198, 0.15)' }}>
+                            <strong style={{ color: 'var(--accent-pink)' }}>app1 (Main application)</strong><br/>
+                            Offset: 0x170000<br/>
+                            Size: 1408KB
+                          </div>
+                        </div>
+                        <div style={{ marginTop: '10px', color: 'var(--text-dim)', fontSize: '11px', lineHeight: '1.4' }}>
+                          <strong>Active Destination Target:</strong> Writes (pastes) the bin file to the inactive partition (writes to <strong>app1 at 0x170000</strong> if running the loader on app0, or writes to <strong>app0 at 0x10000</strong> if running the application on app1) and switches boot target.
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Fix Issue 3: Optional Target Address field for Standard OTA mode */}
+                    <div style={{ marginTop: '15px', padding: '14px', background: 'rgba(0, 240, 255, 0.02)', border: '1px solid rgba(0, 240, 255, 0.15)', borderRadius: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: '220px' }}>
+                          <label style={{ fontSize: '11px', color: 'var(--accent-blue)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }}>
+                            Target Flash Address (Optional)
+                          </label>
+                          <input
+                            type="text"
+                            value={otaAddress}
+                            onChange={(e) => setOtaAddress(e.target.value)}
+                            placeholder="e.g. 0x10000 (leave blank for standard OTA)"
+                            style={{
+                              width: '100%',
+                              height: '36px',
+                              background: 'rgba(255,255,255,0.04)',
+                              border: '1px solid var(--glass-border)',
+                              borderRadius: '6px',
+                              color: 'white',
+                              fontFamily: 'monospace',
+                              fontSize: '13px',
+                              padding: '0 10px',
+                              outline: 'none',
+                              boxSizing: 'border-box'
+                            }}
+                          />
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-dim)', maxWidth: '280px', lineHeight: '1.5' }}>
+                          If set, writes binary <strong>only to this flash address</strong> without erasing the whole device. Leave blank to use the standard OTA partition switching mechanism.
+                        </div>
+                      </div>
+                      {otaAddress && otaAddress.trim() && (
+                        <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--accent-blue)', fontFamily: 'monospace' }}>
+                          ⚡ Targeted flash mode active → Writing to address <strong>{otaAddress.trim()}</strong>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Drag and drop zone */}
+                    <div className="drag-drop-zone"
+                      onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
+                      onDragLeave={(e) => e.currentTarget.classList.remove('dragover')}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.remove('dragover');
+                        if (e.dataTransfer.files.length > 0) handleOtaFileChange(e.dataTransfer.files[0]);
+                      }}
+                      onClick={() => fileInputRef.current.click()}
+                    >
+                      <div className="drop-icon">&#128190;</div>
+                      <h4>Drag & Drop firmware binary here</h4>
+                      <p>or</p>
+                      <button className="btn btn-secondary" onClick={(e) => { e.stopPropagation(); fileInputRef.current.click(); }}>Browse files</button>
+                      <input type="file" accept=".bin" style={{ display: 'none' }} ref={fileInputRef} onChange={(e) => {
+                        if (e.target.files.length > 0) handleOtaFileChange(e.target.files[0]);
+                      }} />
+
+                      {otaFile && (
+                        <div className="selected-file-display" onClick={(e) => e.stopPropagation()}>
+                          <span className="file-name" style={{ wordBreak: 'break-all' }}>{otaFile.path || otaFile.name}</span>
+                          <span className="file-size">{Math.round(otaFile.size / 1024)} KB</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Progress bar */}
+                    {otaProgress && (
+                      <div className="ota-progress-pane">
+                        <div className="progress-details">
+                          <span className="progress-status">Uploading binary...</span>
+                          <span className="progress-percent">{otaProgress.progress}%</span>
+                        </div>
+                        <div className="progress-bar-bg">
+                          <div className="progress-bar-fill" style={{ width: `${otaProgress.progress}%` }}></div>
+                        </div>
+                        <div className="ota-speed-info">
+                          <span>Writing sectors to winbond flash...</span>
+                          <span className="pulse-dot loading"></span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="ota-actions" style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                      <button className="btn btn-primary large" onClick={startOtaUpdate} disabled={!otaFile || otaProgress !== null}>
+                        Initiate local file flash update
+                      </button>
+
+                      {/* Remote flasher URL section (Requirement 3) */}
+                      <div style={{ marginTop: '10px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
+                        <h4 style={{ fontSize: '13px', color: 'var(--accent-pink)', marginBottom: '10px' }}>Flash from remote Firmware URL / API</h4>
+                        <div className="input-group">
+                          <label>Remote Binary URL (.bin)</label>
+                          <input
+                            type="text"
+                            value={firmwareUrl}
+                            onChange={(e) => setFirmwareUrl(e.target.value)}
+                            placeholder="e.g. http://127.0.0.1:8000/firmware.bin"
+                          />
+                        </div>
+                        <button
+                          className="btn btn-accent"
+                          onClick={startOtaUrlUpdate}
+                          disabled={!firmwareUrl || otaProgress !== null}
+                          style={{ marginTop: '10px', width: '100%', height: '40px' }}
+                        >
+                          Fetch, Download & Flash Remote Firmware
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Guide card */}
@@ -1972,6 +2442,7 @@ export default function App() {
               </div>
 
               {/* Certificates Manager Card */}
+              {/* Commented out to preserve history:
               <div className="glass-card">
                 <h3><span className="icon">&#128190;</span> SPIFFS & QCOM Certificates Manager</h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
@@ -1994,6 +2465,84 @@ export default function App() {
                       </div>
                     ))
                   )}
+                </div>
+              </div>
+              */}
+
+              <div className="glass-card">
+                <h3><span className="icon">&#128190;</span> ESP32 SPIFFS Storage & File Inspector</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                  Inspect space utilization and manage active configuration / certificate files stored directly in the ESP32 SPIFFS filesystem.
+                </p>
+
+                {spiffsStorage.totalBytes > 0 && (
+                  <div className="storage-utilization" style={{
+                    background: 'rgba(255,255,255,0.02)',
+                    padding: '12px 15px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--glass-border)',
+                    marginBottom: '15px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}>
+                      <span style={{ color: 'var(--text-dim)' }}>Used Storage: <strong style={{ color: '#fff' }}>{Math.round(spiffsStorage.usedBytes / 1024)} KB</strong> / {Math.round(spiffsStorage.totalBytes / 1024)} KB</span>
+                      <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold' }}>{Math.round((spiffsStorage.totalBytes - spiffsStorage.usedBytes) / 1024)} KB Free</span>
+                    </div>
+                    <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${Math.min(100, (spiffsStorage.usedBytes * 100) / spiffsStorage.totalBytes)}%`,
+                        background: 'linear-gradient(90deg, var(--accent-blue), var(--accent-pink))',
+                        boxShadow: '0 0 8px rgba(0, 240, 255, 0.4)'
+                      }}></div>
+                    </div>
+                  </div>
+                )}
+
+                {storageError && (
+                  <div style={{ color: 'var(--accent-pink)', fontSize: '11px', marginBottom: '10px', fontFamily: 'var(--font-mono)' }}>
+                    Failed to communicate with storage API: {storageError}
+                  </div>
+                )}
+
+                <div className="cert-list-container" style={{ maxHeight: '180px', overflowY: 'auto', marginBottom: '15px' }}>
+                  {spiffsStorage.files.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+                      No SPIFFS data queried yet. Use the refresh button below to scan ESP32.
+                    </div>
+                  ) : (
+                    spiffsStorage.files.map((file, idx) => {
+                      const cleanName = file.name.startsWith('/') ? file.name.substring(1) : file.name;
+                      return (
+                        <div key={idx} className="cert-item-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'rgba(255,255,255,0.01)', borderBottom: '1px solid rgba(255,255,255,0.03)', borderRadius: '6px', marginBottom: '4px' }}>
+                          <div className="cert-item-details" style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span className="cert-item-name" style={{ fontWeight: 'bold', color: 'white', fontSize: '12px' }}>{cleanName}</span>
+                            <span className="cert-item-size" style={{ fontSize: '10px', color: 'var(--text-dim)' }}>{file.size} bytes</span>
+                          </div>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => handleDeleteSpiffsFile(file.name)}
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '10px',
+                              height: '24px',
+                              background: 'rgba(255, 0, 85, 0.1)',
+                              border: '1px solid rgba(255, 0, 85, 0.3)',
+                              color: '#ff0055',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                  <button className="btn btn-secondary" onClick={refreshSpiffsStorage} disabled={isFetchingStorage} style={{ flex: 1, height: '36px', fontSize: '12px' }}>
+                    {isFetchingStorage ? 'Querying Filesystem...' : 'Refresh Storage Inspector'}
+                  </button>
                 </div>
 
                 {/* Certificate drag & drop zone */}

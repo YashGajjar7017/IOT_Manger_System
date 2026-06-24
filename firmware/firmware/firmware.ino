@@ -1277,6 +1277,54 @@ void setupHTTPServer() {
     handleCertUploadDirect("/private_key.key", "Private Key");
   });
 
+  // Storage check and filesystem manager (Requirement 4 & 5)
+  httpServer.on("/api/storage", HTTP_GET, []() {
+    size_t total = SPIFFS.totalBytes();
+    size_t used = SPIFFS.usedBytes();
+    
+    String json = "{";
+    json += "\"totalBytes\":" + String(total) + ",";
+    json += "\"usedBytes\":" + String(used) + ",";
+    json += "\"files\":[";
+    
+    File root = SPIFFS.open("/");
+    File file = root.openNextFile();
+    bool first = true;
+    while (file) {
+      if (!first) {
+        json += ",";
+      }
+      first = false;
+      String nameStr = String(file.name());
+      json += "{";
+      json += "\"name\":\"" + nameStr + "\",";
+      json += "\"size\":" + String(file.size());
+      json += "}";
+      file = root.openNextFile();
+    }
+    json += "]}";
+    
+    httpServer.send(200, "application/json", json);
+  });
+
+  httpServer.on("/api/storage/delete", HTTP_POST, []() {
+    if (httpServer.hasArg("filename")) {
+      String filename = httpServer.arg("filename");
+      if (!filename.startsWith("/")) {
+        filename = "/" + filename;
+      }
+      if (SPIFFS.exists(filename)) {
+        SPIFFS.remove(filename);
+        Serial.println("[SPIFFS] Deleted file: " + filename);
+        httpServer.send(200, "text/plain", "DELETED");
+      } else {
+        httpServer.send(404, "text/plain", "FILE_NOT_FOUND");
+      }
+    } else {
+      httpServer.send(400, "text/plain", "MISSING_FILENAME");
+    }
+  });
+
   httpServer.begin();
   Serial.println("[HTTP] OTA Server started on port 8000.");
 }

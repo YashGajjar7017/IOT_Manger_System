@@ -2,42 +2,42 @@
    NEBULA CYBER-NEON COLOR SYSTEM & VARIABLES
    ========================================================================== */
 :root {
-  --bg-space: #050212;
-  --bg-terminal: #020106;
+  --bg-space: #070b16;
+  --bg-terminal: #04060b;
   
-  /* Vibrant Cyberpunk Accents */
-  --accent-blue: #00f0ff;      /* Electric Cyan */
-  --accent-pink: #ff007f;      /* Neon Pink */
-  --accent-purple: #9d00ff;    /* Cyber Purple */
-  --accent-emerald: #00ff66;   /* Acid Green */
-  --accent-orange: #ff9900;    /* Toxic Orange */
-  --accent-red: #ff3333;       /* Warning Red */
+  /* Vibrant Cyber-Neon Accents Overhauled to Quantum Indigo */
+  --accent-blue: #00c6ff;      /* Electric Sapphire */
+  --accent-pink: #f953c6;      /* Lustrous Rose Orchid */
+  --accent-purple: #7000ff;    /* Quantum Violet */
+  --accent-emerald: #00e676;   /* Mint Emerald */
+  --accent-orange: #ff7300;    /* Sunset Orange */
+  --accent-red: #ff4e50;       /* Coral Warning Red */
   
   /* Text colors */
   --text-white: #ffffff;
-  --text-cyan: #e0faff;
-  --text-dim: #8b85a3;
-  --text-muted: #524c6e;
+  --text-cyan: #e3f2fd;        /* Soft Blue-White */
+  --text-dim: #94a3b8;         /* Modern Slate */
+  --text-muted: #475569;       /* Muted Charcoal */
   
   /* Borders and Backgrounds */
-  --glass-bg: rgba(25, 12, 60, 0.22);
-  --glass-border: rgba(255, 255, 255, 0.12);
-  --glass-border-hover: rgba(0, 240, 255, 0.45);
-  --input-bg: rgba(10, 5, 28, 0.45);
+  --glass-bg: rgba(13, 20, 38, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-hover: rgba(0, 198, 255, 0.4);
+  --input-bg: rgba(6, 10, 20, 0.6);
   
   /* Gradients */
   --grad-pink-blue: linear-gradient(135deg, var(--accent-pink) 0%, var(--accent-blue) 100%);
   --grad-cyan-purple: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
   --grad-emerald-cyan: linear-gradient(135deg, var(--accent-emerald) 0%, var(--accent-blue) 100%);
   --grad-orange-pink: linear-gradient(135deg, var(--accent-orange) 0%, var(--accent-pink) 100%);
-  --grad-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%);
+  --grad-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
   
   /* Intense Glowing Box Shadows */
-  --glow-blue: 0 0 20px rgba(0, 240, 255, 0.35), inset 0 0 10px rgba(0, 240, 255, 0.1);
-  --glow-pink: 0 0 20px rgba(255, 0, 127, 0.35), inset 0 0 10px rgba(255, 0, 127, 0.1);
-  --glow-emerald: 0 0 20px rgba(0, 255, 102, 0.35), inset 0 0 10px rgba(0, 255, 102, 0.1);
-  --glow-purple: 0 0 25px rgba(157, 0, 255, 0.25);
-  --shadow-card: 0 8px 32px 0 rgba(3, 0, 10, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.15), inset 0 -1px 0 0 rgba(0, 0, 0, 0.2);
+  --glow-blue: 0 0 20px rgba(0, 198, 255, 0.3), inset 0 0 10px rgba(0, 198, 255, 0.1);
+  --glow-pink: 0 0 20px rgba(249, 83, 198, 0.3), inset 0 0 10px rgba(249, 83, 198, 0.1);
+  --glow-emerald: 0 0 20px rgba(0, 230, 118, 0.3), inset 0 0 10px rgba(0, 230, 118, 0.1);
+  --glow-purple: 0 0 25px rgba(112, 0, 255, 0.25);
+  --shadow-card: 0 8px 32px 0 rgba(4, 6, 11, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 0 rgba(0, 0, 0, 0.2);
   
   /* Fonts */
   --font-sans: 'Outfit', sans-serif;
@@ -57,10 +57,10 @@ body {
   font-family: var(--font-sans);
   background-color: var(--bg-space);
   background-image: 
-    radial-gradient(circle at 10% 20%, rgba(255, 0, 127, 0.28) 0%, transparent 50%),
-    radial-gradient(circle at 90% 80%, rgba(0, 240, 255, 0.24) 0%, transparent 50%),
-    radial-gradient(circle at 50% 50%, rgba(157, 0, 255, 0.18) 0%, transparent 60%),
-    radial-gradient(circle at 80% 15%, rgba(127, 0, 255, 0.15) 0%, transparent 45%);
+    radial-gradient(circle at 15% 15%, rgba(0, 198, 255, 0.12) 0%, transparent 50%),
+    radial-gradient(circle at 85% 85%, rgba(112, 0, 255, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(249, 83, 198, 0.05) 0%, transparent 60%),
+    radial-gradient(circle at 80% 20%, rgba(112, 0, 255, 0.1) 0%, transparent 40%);
   background-attachment: fixed;
   color: var(--text-cyan);
   height: 100vh;
@@ -68,6 +68,25 @@ body {
   display: flex;
   flex-direction: column;
   user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ============================================================
+   FIX: Allow text selection and keyboard input in form fields
+   In Electron frameless windows, body user-select:none and
+   -webkit-app-region:drag can block typing in inputs.
+   ============================================================ */
+input,
+textarea,
+select {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -webkit-app-region: no-drag !important;
+  cursor: text;
+}
+
+select {
+  cursor: pointer;
 }
 
 /* Custom Frameless Window Titlebar */
@@ -84,6 +103,13 @@ body {
   -webkit-app-region: drag;
   z-index: 2000;
   flex-shrink: 0;
+}
+
+/* Ensure titlebar drag doesn't propagate to interactive children */
+.window-titlebar button,
+.window-titlebar input,
+.window-titlebar select {
+  -webkit-app-region: no-drag;
 }
 
 .titlebar-logo {
@@ -126,14 +152,14 @@ body {
 }
 
 .win-btn:hover {
-  background-color: rgba(255, 0, 127, 0.1);
+  background-color: rgba(249, 83, 198, 0.1);
   color: var(--text-white);
 }
 
 .win-btn.close:hover {
   background-color: var(--accent-pink);
   color: white;
-  box-shadow: 0 0 15px rgba(255, 0, 127, 0.8);
+  box-shadow: 0 0 15px rgba(249, 83, 198, 0.6);
 }
 
 /* Base structural layout */
@@ -226,10 +252,10 @@ body {
 }
 
 .nav-item:hover {
-  background-color: rgba(255, 0, 127, 0.04);
-  border-color: rgba(255, 0, 127, 0.15);
+  background-color: rgba(249, 83, 198, 0.04);
+  border-color: rgba(249, 83, 198, 0.15);
   color: var(--text-white);
-  box-shadow: 0 0 10px rgba(255, 0, 127, 0.1);
+  box-shadow: 0 0 10px rgba(249, 83, 198, 0.1);
 }
 
 .nav-item:hover svg {
@@ -250,12 +276,12 @@ body {
 }
 
 .sidebar-status-box {
-  background: rgba(3, 0, 10, 0.4);
+  background: rgba(13, 20, 38, 0.4);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
   padding: 14px;
   margin-top: auto;
-  box-shadow: inset 0 0 15px rgba(255, 0, 127, 0.05);
+  box-shadow: inset 0 0 15px rgba(249, 83, 198, 0.05);
 }
 
 .status-indicator {
@@ -404,7 +430,7 @@ body {
   content: '';
   position: absolute;
   top: 0; left: 0; width: 100%; height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(255, 0, 127, 0.5), rgba(0, 240, 255, 0.5), transparent);
+  background: linear-gradient(90deg, transparent, rgba(249, 83, 198, 0.5), rgba(0, 198, 255, 0.5), transparent);
   opacity: 0.5;
 }
 
@@ -570,9 +596,9 @@ body {
 }
 
 .btn-secondary:hover {
-  background-color: rgba(255, 0, 127, 0.08);
+  background-color: rgba(249, 83, 198, 0.08);
   border-color: var(--accent-pink);
-  box-shadow: 0 0 10px rgba(255, 0, 127, 0.2);
+  box-shadow: 0 0 10px rgba(249, 83, 198, 0.2);
 }
 
 .btn-secondary.small {
@@ -1470,7 +1496,7 @@ input:disabled + .switch-slider {
 
 .terminal-line.error {
   color: var(--accent-pink);
-  text-shadow: 0 0 4px rgba(255, 0, 127, 0.3);
+  text-shadow: 0 0 4px rgba(249, 83, 198, 0.3);
 }
 
 .terminal-line.tx {
@@ -1539,7 +1565,7 @@ input:disabled + .switch-slider {
 }
 
 .db-table-row:hover {
-  background: rgba(255, 0, 127, 0.02);
+  background: rgba(249, 83, 198, 0.02);
 }
 
 /* ==========================================================================
@@ -1894,7 +1920,7 @@ input, select, textarea {
 
 .spec-value.highlight-pink {
   color: var(--accent-pink);
-  text-shadow: 0 0 8px rgba(255, 0, 127, 0.3);
+  text-shadow: 0 0 8px rgba(249, 83, 198, 0.3);
 }
 
 .spec-value.highlight-emerald {

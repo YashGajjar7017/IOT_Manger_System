@@ -18,6 +18,14 @@
 #include "FS.h"
 #include "SPIFFS.h"
 
+extern "C" {
+  esp_err_t spi_flash_erase_range(size_t start_addr, size_t size);
+  esp_err_t spi_flash_write(size_t dest_addr, const void *src, size_t size);
+}
+
+// Global flash error flag for raw address writing (Requirement 3)
+bool globalFlashError = false;
+
 // WebServer listening on port 500
 WebServer server(500);
 
@@ -29,159 +37,7 @@ const int UDP_PORT = 5002;
 String deviceMAC = "";
 String deviceIMEI = "866738083623502_OTA";
 
-/*
-// Original single-threaded implementation commented out to satisfy the constraint of preserving all code
-void setup() {
-  Serial.begin(115200);
-  delay(500);
-
-  Serial.println("\n\n=============================================================");
-  Serial.println("       ESP32 OTA UPDATE FIRMWARE INITIALIZING                ");
-  Serial.println("=============================================================");
-  Serial.println("[SYSTEM] Baudrate configured at 115200 bps.");
-
-  // Get MAC Address
-  deviceMAC = WiFi.macAddress();
-  String apSsid = "ESP32_OTA_GATEWAY_" + deviceMAC;
-  apSsid.replace(":", "");
-
-  // Configure SoftAP starting IP address 192.168.4.1 explicitly
-  Serial.println("[WIFI AP] Configuring SoftAP radio transmitter details...");
-  IPAddress local_IP(192, 168, 4, 1);
-  IPAddress gateway(192, 168, 4, 1);
-  IPAddress subnet(255, 255, 255, 0);
-  WiFi.softAPConfig(local_IP, gateway, subnet);
-  
-  if (WiFi.softAP(apSsid.c_str())) {
-    Serial.println("[WIFI AP] SoftAP started successfully.");
-  } else {
-    Serial.println("[WIFI AP] ERROR: SoftAP configuration failed!");
-  }
-
-  IPAddress apIP = WiFi.softAPIP();
-  Serial.println("---------------------------------------------");
-  Serial.print("[WIFI AP] SoftAP SSID               : ");
-  Serial.println(apSsid);
-  Serial.print("[WIFI AP] SoftAP Gateway IP Address : ");
-  Serial.println(apIP.toString());
-  Serial.println("---------------------------------------------");
-
-  // Start UDP Discovery responder
-  Serial.printf("[UDP] Starting Discovery responder on port %d...\n", UDP_PORT);
-  udpListener.begin(UDP_PORT);
-  Serial.println("[UDP] Discovery responder ready.");
-
-  // Setup Web Server routes
-  server.on("/", HTTP_GET, []() {
-    String html = "<html><head><title>IoT OTA Portal</title>";
-    html += "<style>body{background:#03000a;color:#fff;font-family:sans-serif;text-align:center;padding:50px;}";
-    html += ".card{background:rgba(255,255,255,0.03);border:1px solid rgba(0,240,255,0.2);border-radius:12px;padding:30px;display:inline-block;width:400px;}";
-    html += "h1{color:#00f0ff;}p{color:#a0a0b0;}</style></head><body>";
-    html += "<div class='card'><h1>IoT OTA Portal (Port 500)</h1>";
-    html += "<p>Device MAC: " + WiFi.softAPmacAddress() + "</p>";
-    html += "<p>Use the desktop dashboard GUI to upload and flash firmware binaries.</p></div></body></html>";
-    server.send(200, "text/html", html);
-  });
-
-  // Setup HTTP POST Upload handler for /update
-  server.on("/update", HTTP_POST, []() {
-    server.sendHeader("Connection", "close");
-    if (Update.hasError()) {
-      Serial.println("[OTA ERROR] Flash update failed. Reporting failure to client...");
-      server.send(500, "text/plain", "FAIL");
-    } else {
-      Serial.println("[OTA SUCCESS] Flash complete! Rebooting device in 1 second...");
-      server.send(200, "text/plain", "OK");
-      delay(1000);
-      ESP.restart();
-    }
-  }, []() {
-    HTTPUpload& upload = server.upload();
-    if (upload.status == UPLOAD_FILE_START) {
-      Serial.println("\n---------------------------------------------");
-      Serial.printf("[OTA] Beginning firmware upload process...\n");
-      Serial.printf("[OTA] File Name: %s\n", upload.filename.c_str());
-
-      // Check running partition context
-      const esp_partition_t* running = esp_ota_get_running_partition();
-      if (running != NULL) {
-        Serial.printf("[OTA] Running App Partition: %s\n", running->label);
-      }
-
-      if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
-        Serial.printf("[OTA ERROR] Update.begin failed: ");
-        Update.printError(Serial);
-      } else {
-        Serial.println("[OTA] Partition prepared. Streaming sectors to flash memory...");
-      }
-    } else if (upload.status == UPLOAD_FILE_WRITE) {
-      static int lastProgressPercent = -1;
-      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
-        Serial.printf("[OTA ERROR] Sector write failed: ");
-        Update.printError(Serial);
-      } else {
-        // Log progress every 10%
-        int totalWritten = Update.progress();
-        int totalSize = upload.totalSize;
-        if (totalSize > 0) {
-          int progressPercent = (totalWritten * 100) / totalSize;
-          if (progressPercent % 10 == 0 && progressPercent != lastProgressPercent) {
-            Serial.printf("[OTA PROGRESS] Flashed: %d%%\n", progressPercent);
-            lastProgressPercent = progressPercent;
-          }
-        }
-      }
-    } else if (upload.status == UPLOAD_FILE_END) {
-      if (Update.end(true)) {
-        Serial.println("[OTA] Firmware file successfully downloaded and verified!");
-        Serial.printf("[OTA] Total bytes written: %u bytes.\n", upload.totalSize);
-        Serial.println("---------------------------------------------");
-      } else {
-        Serial.printf("[OTA ERROR] Update verification failed: ");
-        Update.printError(Serial);
-      }
-    }
-  });
-
-  server.begin();
-  Serial.println("[HTTP] WebServer started on Port 500.");
-  Serial.println("[SYSTEM] Ready to service firmware updates. Awaiting connection...\n");
-}
-
-void handleUDPDiscovery() {
-  int packetSize = udpListener.parsePacket();
-  if (packetSize) {
-    char packetBuffer[255];
-    int len = udpListener.read(packetBuffer, 255);
-    if (len > 0) {
-      packetBuffer[len] = 0;
-    }
-    String request = String(packetBuffer);
-    request.trim();
-    if (request == "DISCOVER_IOT_GATEWAY") {
-      udpListener.beginPacket(udpListener.remoteIP(), udpListener.remotePort());
-      
-      // Since OTA mode is SoftAP only, we reply with softAP IP (192.168.4.1)
-      String responseIP = WiFi.softAPIP().toString();
-      
-      String response = "{\"status\":\"ONLINE\",\"ip\":\"" +
-                        responseIP + "\",\"imei\":\"" +
-                        deviceIMEI + "\",\"mac\":\"" + deviceMAC + "\"}";
-
-      udpListener.print(response);
-      udpListener.endPacket();
-      Serial.printf("[UDP DISCOVERY] Responded to %s:%d with IP %s\n",
-                    udpListener.remoteIP().toString().c_str(),
-                    udpListener.remotePort(), responseIP.c_str());
-    }
-  }
-}
-
-void loop() {
-  server.handleClient();
-  handleUDPDiscovery();
-}
-*/
+// [Legacy single-threaded implementation removed]
 
 // TCP Logging server on Port 9000
 WiFiServer tcpServer(9000);
@@ -356,90 +212,175 @@ void setup() {
     server.send(200, "text/html", html);
   });
 
-  // Setup HTTP POST Upload handler for /update
+// [Legacy commented handler removed]
+
   server.on("/update", HTTP_POST, []() {
     server.sendHeader("Connection", "close");
-    if (Update.hasError()) {
-      logMsg("[OTA ERROR] Flash update failed. Reporting failure to client...");
-      server.send(500, "text/plain", "FAIL");
+    
+    bool isRaw = server.hasArg("address");
+    bool shouldReboot = true;
+    if (server.hasArg("reboot") && server.arg("reboot") == "false") {
+      shouldReboot = false;
+    }
+
+    if (isRaw) {
+      if (globalFlashError) {
+        logMsg("[OTA ERROR] Raw flash write failed! Reporting failure...");
+        server.send(500, "text/plain", "FAIL");
+      } else {
+        logMsg("[OTA SUCCESS] Raw flash write complete.");
+        if (shouldReboot) {
+          logMsg("[OTA] Rebooting device in 1 second...");
+          server.send(200, "text/plain", "OK");
+          delay(1000);
+          ESP.restart();
+        } else {
+          logMsg("[OTA] Reboot bypassed (reboot=false).");
+          server.send(200, "text/plain", "OK");
+        }
+      }
     } else {
-      logMsg("[OTA SUCCESS] Flash complete! Rebooting device in 1 second...");
-      server.send(200, "text/plain", "OK");
-      delay(1000);
-      ESP.restart();
+      if (Update.hasError()) {
+        logMsg("[OTA ERROR] Standard flash update failed! Reporting failure...");
+        server.send(500, "text/plain", "FAIL");
+      } else {
+        logMsg("[OTA SUCCESS] Standard flash update complete.");
+        if (shouldReboot) {
+          logMsg("[OTA] Rebooting device in 1 second...");
+          server.send(200, "text/plain", "OK");
+          delay(1000);
+          ESP.restart();
+        } else {
+          logMsg("[OTA] Reboot bypassed (reboot=false).");
+          server.send(200, "text/plain", "OK");
+        }
+      }
     }
   }, []() {
     HTTPUpload& upload = server.upload();
+    
+    // Static state variables for OTA upload processing
+    static bool isRawAddress = false;
+    static uint32_t targetAddress = 0;
+    static uint32_t writeOffset = 0;
+    static uint32_t lastErasedSector = 0xFFFFFFFF;
+    static int lastProgressPercent = -1;
+
     if (upload.status == UPLOAD_FILE_START) {
+      writeOffset = 0;
+      lastErasedSector = 0xFFFFFFFF;
+      isRawAddress = false;
+      globalFlashError = false;
+      lastProgressPercent = -1;
+
+      if (server.hasArg("address")) {
+        String addrStr = server.arg("address");
+        if (addrStr.length() > 0) {
+          isRawAddress = true;
+          if (addrStr.startsWith("0x") || addrStr.startsWith("0X")) {
+            targetAddress = strtoul(addrStr.c_str(), NULL, 16);
+          } else {
+            targetAddress = strtoul(addrStr.c_str(), NULL, 10);
+          }
+        }
+      }
+
       logMsg("\n---------------------------------------------");
       logMsg("[OTA] Beginning firmware upload process...");
       logMsg("[OTA] File Name: " + String(upload.filename.c_str()));
-
-      // Check running partition context
-      // Original code commented out as per constraint:
-      /*
-      const esp_partition_t* running = esp_ota_get_running_partition();
-      if (running != NULL) {
-        logMsg("[OTA] Running App Partition: " + String(running->label));
-      }
-
-      if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
-        logMsg("[OTA ERROR] Update.begin failed!");
+      
+      if (isRawAddress) {
+        logMsg("[OTA] Mode: RAW FLASH OFFSET WRITE (Requirement 3)");
+        logMsg("[OTA] Target Flash Address: 0x" + String(targetAddress, HEX));
       } else {
-        logMsg("[OTA] Partition prepared. Streaming sectors to flash memory...");
-      }
-      */
-      const esp_partition_t* running = esp_ota_get_running_partition();
-      if (running != NULL) {
-        logMsg("[OTA] Running App Partition: " + String(running->label) + " (Address: 0x" + String(running->address, HEX) + ")");
-      }
-      const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
-      if (update_partition != NULL) {
-        logMsg("[OTA] Target/Destination Flash Partition (Where bin gets written): " + String(update_partition->label) + " (Starting Flash Address: 0x" + String(update_partition->address, HEX) + ")");
-      } else {
-        logMsg("[OTA WARNING] Target update partition not found! Flashing to default app partition...");
-      }
+        logMsg("[OTA] Mode: STANDARD APP PARTITION SWITCH");
+        const esp_partition_t* running = esp_ota_get_running_partition();
+        if (running != NULL) {
+          logMsg("[OTA] Running App Partition: " + String(running->label) + " (Address: 0x" + String(running->address, HEX) + ")");
+        }
+        const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
+        if (update_partition != NULL) {
+          logMsg("[OTA] Target/Destination Flash Partition (Where bin gets written): " + String(update_partition->label) + " (Starting Flash Address: 0x" + String(update_partition->address, HEX) + ")");
+        } else {
+          logMsg("[OTA WARNING] Target update partition not found! Flashing to default app partition...");
+        }
 
-      if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
-        logMsg("[OTA ERROR] Update.begin failed!");
-      } else {
-        logMsg("[OTA] Partition prepared. Streaming sectors to flash memory...");
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+          logMsg("[OTA ERROR] Update.begin failed!");
+        } else {
+          logMsg("[OTA] Partition prepared. Streaming sectors to flash memory...");
+        }
       }
     } else if (upload.status == UPLOAD_FILE_WRITE) {
-      static int lastProgressPercent = -1;
-      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
-        logMsg("[OTA ERROR] Sector write failed!");
-      } else {
-        // Log progress every 10%
-        int totalWritten = Update.progress();
+      if (isRawAddress) {
+        size_t chunkSize = upload.currentSize;
+        uint32_t addr = targetAddress + writeOffset;
+        
+        // Dynamically erase 4KB sectors as chunks cross boundaries (without erasing other portions)
+        uint32_t startSector = addr / 4096;
+        uint32_t endSector = (addr + chunkSize - 1) / 4096;
+        for (uint32_t s = startSector; s <= endSector; s++) {
+          if (lastErasedSector == 0xFFFFFFFF || s > lastErasedSector) {
+            logMsg("[FLASH ERASE] Erasing 4KB sector " + String(s) + " at 0x" + String(s * 4096, HEX));
+            esp_err_t eraseErr = spi_flash_erase_range(s * 4096, 4096);
+            if (eraseErr != ESP_OK) {
+              logMsg("[FLASH ERASE ERROR] Failed to erase sector " + String(s) + ", code: " + String(eraseErr));
+              globalFlashError = true;
+            }
+            lastErasedSector = s;
+          }
+        }
+        
+        if (!globalFlashError) {
+          esp_err_t writeErr = spi_flash_write(addr, upload.buf, chunkSize);
+          if (writeErr != ESP_OK) {
+            logMsg("[FLASH WRITE ERROR] Failed to write chunk at 0x" + String(addr, HEX) + ", code: " + String(writeErr));
+            globalFlashError = true;
+          }
+        }
+        
+        writeOffset += chunkSize;
+        
         int totalSize = upload.totalSize;
         if (totalSize > 0) {
-          int progressPercent = (totalWritten * 100) / totalSize;
+          int progressPercent = (writeOffset * 100) / totalSize;
           if (progressPercent % 10 == 0 && progressPercent != lastProgressPercent) {
             logMsg("[OTA PROGRESS] Flashed: " + String(progressPercent) + "%");
             lastProgressPercent = progressPercent;
           }
         }
+      } else {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+          logMsg("[OTA ERROR] Sector write failed!");
+        } else {
+          int totalWritten = Update.progress();
+          int totalSize = upload.totalSize;
+          if (totalSize > 0) {
+            int progressPercent = (totalWritten * 100) / totalSize;
+            if (progressPercent % 10 == 0 && progressPercent != lastProgressPercent) {
+              logMsg("[OTA PROGRESS] Flashed: " + String(progressPercent) + "%");
+              lastProgressPercent = progressPercent;
+            }
+          }
+        }
       }
     } else if (upload.status == UPLOAD_FILE_END) {
-      if (Update.end(true)) {
-        logMsg("[OTA] Firmware file successfully downloaded and verified!");
-        logMsg("[OTA] Total bytes written: " + String(upload.totalSize) + " bytes.");
-        
-        // Explicitly configure boot partition target to the inactive partition we just updated
-        const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
-        if (update_partition != NULL) {
-          logMsg("[OTA] Explicitly setting boot partition to: " + String(update_partition->label));
-          esp_err_t err = esp_ota_set_boot_partition(update_partition);
-          if (err == ESP_OK) {
-            logMsg("[OTA] Boot partition configured successfully!");
-          } else {
-            logMsg("[OTA ERROR] Failed to configure boot partition: " + String(esp_err_to_name(err)));
-          }
+      if (isRawAddress) {
+        if (globalFlashError) {
+          logMsg("[OTA ERROR] Raw flash write completed with errors.");
+        } else {
+          logMsg("[OTA] Raw firmware binary partition written successfully!");
+          logMsg("[OTA] Total bytes written: " + String(writeOffset) + " bytes.");
         }
         logMsg("---------------------------------------------");
       } else {
-        logMsg("[OTA ERROR] Update verification failed!");
+        if (Update.end(true)) {
+          logMsg("[OTA] Firmware file successfully downloaded and verified!");
+          logMsg("[OTA] Total bytes written: " + String(upload.totalSize) + " bytes.");
+          logMsg("---------------------------------------------");
+        } else {
+          logMsg("[OTA ERROR] Update verification failed!");
+        }
       }
     }
   });
@@ -464,6 +405,54 @@ void setup() {
   });
   server.on("/api/upload_key", HTTP_POST, []() {
     handleCertUploadDirect("/private_key.key", "Private Key");
+  });
+
+  // Storage check and filesystem manager (Requirement 4 & 5)
+  server.on("/api/storage", HTTP_GET, []() {
+    size_t total = SPIFFS.totalBytes();
+    size_t used = SPIFFS.usedBytes();
+    
+    String json = "{";
+    json += "\"totalBytes\":" + String(total) + ",";
+    json += "\"usedBytes\":" + String(used) + ",";
+    json += "\"files\":[";
+    
+    File root = SPIFFS.open("/");
+    File file = root.openNextFile();
+    bool first = true;
+    while (file) {
+      if (!first) {
+        json += ",";
+      }
+      first = false;
+      String nameStr = String(file.name());
+      json += "{";
+      json += "\"name\":\"" + nameStr + "\",";
+      json += "\"size\":" + String(file.size());
+      json += "}";
+      file = root.openNextFile();
+    }
+    json += "]}";
+    
+    server.send(200, "application/json", json);
+  });
+
+  server.on("/api/storage/delete", HTTP_POST, []() {
+    if (server.hasArg("filename")) {
+      String filename = server.arg("filename");
+      if (!filename.startsWith("/")) {
+        filename = "/" + filename;
+      }
+      if (SPIFFS.exists(filename)) {
+        SPIFFS.remove(filename);
+        logMsg("[SPIFFS] Deleted file: " + filename);
+        server.send(200, "text/plain", "DELETED");
+      } else {
+        server.send(404, "text/plain", "FILE_NOT_FOUND");
+      }
+    } else {
+      server.send(400, "text/plain", "MISSING_FILENAME");
+    }
   });
 
   server.begin();
