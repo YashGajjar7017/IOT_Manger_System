@@ -5,3 +5,4 @@ node_modules
 /.vscode
 /installer-release
 /frontend-build
+/iot-monitor-release

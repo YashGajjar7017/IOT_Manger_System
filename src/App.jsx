@@ -119,6 +119,43 @@ export default function App() {
     }
   }, [imei, password, wifiIp]);
 
+  // Fix for text selection & typing issues in Electron frameless window (Requirement 3)
+  /*
+  useEffect(() => {
+    const handleGlobalMouseDown = (e) => {
+      const tag = e.target.tagName ? e.target.tagName.toLowerCase() : '';
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.closest('input, textarea, select')) {
+        if (ipcRenderer) {
+          ipcRenderer.send('focus-window');
+        }
+      }
+    };
+    document.addEventListener('mousedown', handleGlobalMouseDown);
+    return () => document.removeEventListener('mousedown', handleGlobalMouseDown);
+  }, []);
+  */
+  useEffect(() => {
+    const handleGlobalMouseDown = (e) => {
+      const target = e.target.closest('input, textarea, select') || 
+                     ((e.target.tagName && ['input', 'textarea', 'select'].includes(e.target.tagName.toLowerCase())) ? e.target : null);
+      if (target) {
+        if (ipcRenderer) {
+          ipcRenderer.send('focus-window');
+        }
+        // Programmatically focus the element after a brief delay to ensure window focus has registered
+        setTimeout(() => {
+          try {
+            target.focus();
+          } catch (err) {
+            console.error('Failed to focus target element:', err);
+          }
+        }, 30);
+      }
+    };
+    document.addEventListener('mousedown', handleGlobalMouseDown);
+    return () => document.removeEventListener('mousedown', handleGlobalMouseDown);
+  }, []);
+
   const fetchCertProvisionHistory = async () => {
     try {
       const res = await fetch('/api/certificates/history');
@@ -770,10 +807,20 @@ export default function App() {
       return;
     }
 
+    /*
+    // Original formatUrl commented out as per constraint:
     const formatUrl = (url) => {
       return url
         .replace(/\{IMEI\}/gi, imeiInput)
         .replace(/\{PASSWORD\}/gi, passwordInput);
+    };
+    */
+    const formatUrl = (url) => {
+      return url
+        .replace(/\{IMEI\}/gi, imeiInput)
+        .replace(/\{IEMI\}/gi, imeiInput) // Handle IMEI vs IEMI typo
+        .replace(/\{PASSWORD\}/gi, passwordInput)
+        .replace(/\{PASS\}/gi, passwordInput); // Handle PASS vs PASSWORD template
     };
 
     setIsDownloadingCerts(true);
@@ -910,6 +957,8 @@ export default function App() {
   };
   */
 
+  // Original startOtaUpdate commented out as per constraint:
+  /*
   const startOtaUpdate = () => {
     if (!otaFile) return;
     setControlsDisabled(true);
@@ -925,6 +974,37 @@ export default function App() {
         ip: otaIp,
         port: otaPort,
         target: otaTarget
+      });
+    };
+    reader.onerror = (err) => {
+      addLogLine(`[OTA] FileReader error: ${err.message}`, 'error');
+      setOtaProgress({ status: 'error', message: 'Failed to read local binary file.' });
+      setControlsDisabled(false);
+    };
+    reader.readAsArrayBuffer(otaFile);
+  };
+  */
+
+  const startOtaUpdate = () => {
+    if (!otaFile) return;
+    setControlsDisabled(true);
+    setOtaProgress({ status: 'uploading', progress: 0 });
+    
+    const localSourcePath = otaFile.path || otaFile.name;
+    addLogLine(`[OTA] Source File (Where bin is loaded from): ${localSourcePath}`);
+    addLogLine(`[OTA] Target Flashing Partition: ${otaTarget === 'esp32' ? 'ESP32 App Partition (Target app0/app1 dynamic switch)' : 'QCOM Co-processor Partition'}`);
+    addLogLine(`[OTA] Reading local binary file: ${otaFile.name}...`);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      // Electron IPC automatically serializes ArrayBuffer as Buffer
+      ipcRenderer.send('start-ota', {
+        fileBuffer: reader.result,
+        filename: otaFile.name,
+        ip: otaIp,
+        port: otaPort,
+        target: otaTarget,
+        filePath: localSourcePath
       });
     };
     reader.onerror = (err) => {
@@ -1606,6 +1686,51 @@ export default function App() {
                     </select>
                   </div>
                 </div>
+
+                {otaTarget === 'esp32' && (
+                  <div className="partition-memory-map" style={{
+                    marginTop: '10px',
+                    padding: '15px',
+                    background: 'rgba(0, 240, 255, 0.03)',
+                    border: '1px dashed rgba(0, 240, 255, 0.25)',
+                    borderRadius: '10px',
+                    fontSize: '12px'
+                  }}>
+                    <span style={{ color: 'var(--accent-blue)', fontWeight: '800', display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      ESP32 Custom Partition Memory Layout (partitions.csv)
+                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontFamily: 'monospace' }}>
+                      <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                        <strong style={{ color: 'white' }}>bootloader</strong><br/>
+                        Offset: 0x0000<br/>
+                        Size: 32KB
+                      </div>
+                      <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                        <strong style={{ color: 'white' }}>partitions</strong><br/>
+                        Offset: 0x8000<br/>
+                        Size: 4KB
+                      </div>
+                      <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                        <strong style={{ color: 'white' }}>otadata</strong><br/>
+                        Offset: 0xe000<br/>
+                        Size: 8KB
+                      </div>
+                      <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(0, 240, 255, 0.05)', borderRadius: '6px', border: '1px solid rgba(0, 240, 255, 0.15)' }}>
+                        <strong style={{ color: 'var(--accent-blue)' }}>app0 (OTA update)</strong><br/>
+                        Offset: 0x10000<br/>
+                        Size: 1408KB
+                      </div>
+                      <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255, 0, 127, 0.05)', borderRadius: '6px', border: '1px solid rgba(255, 0, 127, 0.15)' }}>
+                        <strong style={{ color: 'var(--accent-pink)' }}>app1 (Main application)</strong><br/>
+                        Offset: 0x170000<br/>
+                        Size: 1408KB
+                      </div>
+                    </div>
+                    <div style={{ marginTop: '10px', color: 'var(--text-dim)', fontSize: '11px', lineHeight: '1.4' }}>
+                      <strong>Active Destination Target:</strong> Writes (pastes) the bin file to the inactive partition (writes to <strong>app1 at 0x170000</strong> if running the loader on app0, or writes to <strong>app0 at 0x10000</strong> if running the application on app1) and switches boot target.
+                    </div>
+                  </div>
+                )}
 
                 {/* Drag and drop zone */}
                 <div className="drag-drop-zone"

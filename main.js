@@ -105,6 +105,8 @@ function startExpressServer() {
   });
 
   // Helper to download certificate from SCADA and POST upload it directly to ESP32
+  /*
+  // Original downloadAndUploadCert commented out as per constraint:
   const downloadAndUploadCert = (fileUrl, uploadUrl) => {
     return new Promise((resolve, reject) => {
       const client = fileUrl.startsWith('https') ? require('https') : require('http');
@@ -145,8 +147,84 @@ function startExpressServer() {
       }).on('error', err => reject(err));
     });
   };
+  */
+
+  const downloadAndUploadCert = (fileUrl, uploadUrl) => {
+    return new Promise((resolve, reject) => {
+      const urlObj = new URL(fileUrl);
+      const isHttps = urlObj.protocol === 'https:';
+      const client = isHttps ? require('https') : require('http');
+      
+      const getOptions = {
+        hostname: urlObj.hostname,
+        port: urlObj.port || (isHttps ? 443 : 80),
+        path: urlObj.pathname + urlObj.search,
+        method: 'GET',
+        rejectUnauthorized: false // Ignore self-signed or invalid SSL certificates from SCADA API (Requirement 1)
+      };
+
+      console.log(`[CERT DOWNLOAD] Downloading from SCADA URL: ${fileUrl}`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('console-log', `[CERT DOWNLOAD] Downloading from SCADA URL: ${fileUrl}`);
+      }
+      
+      client.get(getOptions, (res) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Failed to download from SCADA, HTTP Code: ${res.statusCode}`));
+          return;
+        }
+        let content = '';
+        res.on('data', chunk => content += chunk.toString());
+        res.on('end', () => {
+          const byteLength = Buffer.byteLength(content);
+          console.log(`[CERT DOWNLOAD] Success! Downloaded ${byteLength} bytes from SCADA.`);
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('console-log', `[CERT DOWNLOAD] Success! Downloaded ${byteLength} bytes from SCADA.`);
+          }
+
+          const uploadUrlObj = new URL(uploadUrl);
+          const uploadOptions = {
+            hostname: uploadUrlObj.hostname,
+            port: uploadUrlObj.port || 80,
+            path: uploadUrlObj.pathname + uploadUrlObj.search,
+            method: 'POST',
+            headers: {
+              'Content-Type': 'text/plain',
+              'Content-Length': byteLength
+            }
+          };
+
+          console.log(`[CERT UPLOAD] Uploading file to gateway at: http://${uploadOptions.hostname}:${uploadOptions.port}${uploadOptions.path}`);
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('console-log', `[CERT UPLOAD] Uploading file to gateway at: http://${uploadOptions.hostname}:${uploadOptions.port}${uploadOptions.path}`);
+          }
+
+          const req = http.request(uploadOptions, (uploadRes) => {
+            let responseData = '';
+            uploadRes.on('data', chunk => responseData += chunk.toString());
+            uploadRes.on('end', () => {
+              if (uploadRes.statusCode === 200) {
+                console.log(`[CERT UPLOAD] Success! Upload completed on port ${uploadOptions.port}.`);
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                  mainWindow.webContents.send('console-log', `[CERT UPLOAD] Success! Upload completed on port ${uploadOptions.port}.`);
+                }
+                resolve(byteLength);
+              } else {
+                reject(new Error(`ESP32 upload failed. Code ${uploadRes.statusCode}: ${responseData}`));
+              }
+            });
+          });
+          req.on('error', err => reject(err));
+          req.write(content);
+          req.end();
+        });
+      }).on('error', err => reject(err));
+    });
+  };
 
   // Express API: Provision Certificates from SCADA server to ESP32
+  /*
+  // Original Express API endpoint commented out as per constraint:
   expressApp.post('/api/certificates/provision', async (req, res) => {
     const { imei, password, gatewayIp } = req.body;
     if (!imei || !password || !gatewayIp) {
@@ -201,6 +279,107 @@ function startExpressServer() {
       await db.saveCertificateLog(logData);
 
       res.status(500).json({ error: `Provisioning failed: ${err.message}` });
+    }
+  });
+  */
+
+  expressApp.post('/api/certificates/provision', async (req, res) => {
+    const { imei, password, gatewayIp } = req.body;
+    if (!imei || !password || !gatewayIp) {
+      return res.status(400).json({ error: 'Missing imei, password, or gatewayIp' });
+    }
+
+    const replacePlaceholders = (urlStr, imeiVal, passVal) => {
+      if (!urlStr) return urlStr;
+      return urlStr
+        .replace(/{IMEI}/g, imeiVal)
+        .replace(/{IEMI}/g, imeiVal) // Handle swapped E/I typo
+        .replace(/{PASSWORD}/g, passVal)
+        .replace(/{PASS}/g, passVal);
+    };
+
+    let rootCaUrl = `https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei=${imei}&user=${imei}&pass=${password}&ctype=1&PROJCD=re`;
+    let deviceCertUrl = `https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei=${imei}&user=${imei}&pass=${password}&ctype=2&PROJCD=re`;
+    let privateKeyUrl = `https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei=${imei}&user=${imei}&pass=${password}&ctype=3&PROJCD=re`;
+
+    rootCaUrl = replacePlaceholders(rootCaUrl, imei, password);
+    deviceCertUrl = replacePlaceholders(deviceCertUrl, imei, password);
+    privateKeyUrl = replacePlaceholders(privateKeyUrl, imei, password);
+
+    console.log(`[EXPRESS API] Starting certificates provisioning for IMEI ${imei}...`);
+
+    // Attempt 1: Upload to Port 8000 (Main Firmware HTTP Server)
+    try {
+      const esp32BaseUrl = `http://${gatewayIp}:8000`;
+      console.log(`[EXPRESS API] Attempting certificate uploads on Port 8000...`);
+      const rootCaSize = await downloadAndUploadCert(rootCaUrl, `${esp32BaseUrl}/api/upload_ca`);
+      const deviceCertSize = await downloadAndUploadCert(deviceCertUrl, `${esp32BaseUrl}/api/upload_cert`);
+      const privateKeySize = await downloadAndUploadCert(privateKeyUrl, `${esp32BaseUrl}/api/upload_key`);
+
+      const logData = {
+        imei,
+        gatewayIp,
+        rootCaSize,
+        deviceCertSize,
+        privateKeySize,
+        status: 'SUCCESS',
+        message: 'Successfully provisioned CA, Cert, and Key from SCADA to ESP32 on Port 8000.'
+      };
+      await db.saveCertificateLog(logData);
+
+      if (activeTcpSocket && !activeTcpSocket.destroyed) {
+        activeTcpSocket.write('SYNC_CERTS_TO_QCOM\n');
+      } else if (activeSerialPort && activeSerialPort.isOpen) {
+        activeSerialPort.write('SYNC_CERTS_TO_QCOM\n');
+      }
+
+      return res.json({ success: true, message: 'All certificates successfully provisioned on Port 8000.' });
+    } catch (err8000) {
+      console.warn(`[EXPRESS API] Port 8000 provisioning failed: ${err8000.message}. Retrying on OTA port...`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('console-log', `[WIFI] Port 8000 failed: ${err8000.message}. Retrying on OTA port...`);
+      }
+
+      // Attempt 2: Fallback retry on configured OTA Port (Port 500)
+      try {
+        const otaPort = appConfig.otaPort || 500;
+        const esp32BaseUrl = `http://${gatewayIp}:${otaPort}`;
+        console.log(`[EXPRESS API] Attempting certificate uploads on Port ${otaPort}...`);
+        const rootCaSize = await downloadAndUploadCert(rootCaUrl, `${esp32BaseUrl}/api/upload_ca`);
+        const deviceCertSize = await downloadAndUploadCert(deviceCertUrl, `${esp32BaseUrl}/api/upload_cert`);
+        const privateKeySize = await downloadAndUploadCert(privateKeyUrl, `${esp32BaseUrl}/api/upload_key`);
+
+        const logData = {
+          imei,
+          gatewayIp,
+          rootCaSize,
+          deviceCertSize,
+          privateKeySize,
+          status: 'SUCCESS',
+          message: `Successfully provisioned CA, Cert, and Key from SCADA to ESP32 on OTA Port ${otaPort}.`
+        };
+        await db.saveCertificateLog(logData);
+
+        return res.json({ success: true, message: `All certificates successfully provisioned on OTA Port ${otaPort}.` });
+      } catch (errOta) {
+        console.error('[EXPRESS API] Provisioning failed on both ports:', errOta.message);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('console-log', `[ERROR] Provisioning failed on both ports: ${errOta.message}`);
+        }
+
+        const logData = {
+          imei,
+          gatewayIp,
+          rootCaSize: 0,
+          deviceCertSize: 0,
+          privateKeySize: 0,
+          status: 'FAILED',
+          message: `Failed on both 8000 and OTA ports: ${errOta.message}`
+        };
+        await db.saveCertificateLog(logData);
+
+        return res.status(500).json({ error: `Provisioning failed on both Port 8000 and Port 500: ${errOta.message}` });
+      }
     }
   });
 
@@ -783,6 +962,39 @@ app.whenReady().then(() => {
   startOtaLocalServer();
   createWindow();
 
+  // Register Standard Application Menu for Edit (Copy, Paste, Undo, Redo, Select All) support in production (Requirement 3)
+  const template = [
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'delete' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    }
+  ];
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+
   // Start background WiFi and UDP auto-discovery scanning
   if (mainWindow) {
     startBackgroundScanning(mainWindow.webContents);
@@ -850,6 +1062,12 @@ ipcMain.on('window-maximize', () => {
 
 ipcMain.on('window-close', () => {
   if (mainWindow) mainWindow.close();
+});
+
+ipcMain.on('focus-window', () => {
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFocused()) {
+    mainWindow.focus();
+  }
 });
 
 let backgroundScanInterval = null;
@@ -1247,6 +1465,7 @@ ipcMain.on('start-ota', (event, { filePath, ip, port, target }) => {
 */
 
 // Updated buffer-based start-ota handler to resolve file path limitations inside web app context
+/*
 ipcMain.on('start-ota', (event, { fileBuffer, filename, ip, port, target }) => {
   const gatewayIP = ip || '192.168.4.1';
   const gatewayPort = parseInt(port) || 8000;
@@ -1333,6 +1552,114 @@ ipcMain.on('start-ota', (event, { fileBuffer, filename, ip, port, target }) => {
       req.end();
     });
     
+  } catch (err) {
+    event.reply('ota-progress', { status: 'error', message: err.message });
+    event.reply('console-log', `[OTA EXCEPTION] ${err.message}`);
+  }
+});
+*/
+
+// Optimized chunk-by-chunk stream writer with backpressure control (Requirement 2)
+const streamFirmwareToESP32 = (buffer, options, filename, event, targetName) => {
+  return new Promise((resolve, reject) => {
+    const boundary = '----WebKitFormBoundaryIoT' + Math.random().toString(36).substring(2);
+    const header = 
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="update"; filename="${filename || 'firmware.bin'}"\r\n` +
+      `Content-Type: application/octet-stream\r\n\r\n`;
+    const footer = `\r\n--${boundary}--\r\n`;
+    
+    const fileSize = buffer.length;
+    const totalLength = header.length + fileSize + footer.length;
+    
+    const requestOptions = {
+      ...options,
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': totalLength,
+        'Connection': 'close'
+      }
+    };
+    
+    const req = http.request(requestOptions, (res) => {
+      let responseData = '';
+      res.on('data', (chunk) => { responseData += chunk.toString(); });
+      res.on('end', () => {
+        if (res.statusCode === 200 && responseData.toUpperCase().includes('OK')) {
+          resolve(responseData);
+        } else {
+          reject(new Error(`Flashing failed. Code ${res.statusCode}: ${responseData}`));
+        }
+      });
+    });
+    
+    req.on('error', (err) => {
+      reject(err);
+    });
+    
+    req.write(header);
+    
+    const chunkSize = 16384; // 16KB chunk size (optimized for ESP32 receive buffer)
+    let offset = 0;
+    
+    const writeNextChunk = () => {
+      let canWrite = true;
+      while (offset < fileSize && canWrite) {
+        const nextOffset = Math.min(offset + chunkSize, fileSize);
+        const chunk = buffer.subarray(offset, nextOffset);
+        offset = nextOffset;
+        
+        canWrite = req.write(chunk);
+        
+        const progress = Math.round((offset / fileSize) * 100);
+        event.reply('ota-progress', { status: 'uploading', progress: progress });
+      }
+      
+      if (offset >= fileSize) {
+        req.write(footer);
+        req.end();
+      } else if (!canWrite) {
+        // Wait for drain before writing more to prevent packet overflow on the ESP32
+        req.once('drain', writeNextChunk);
+      }
+    };
+    
+    writeNextChunk();
+  });
+};
+
+ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, filePath }) => {
+  const gatewayIP = ip || '192.168.4.1';
+  const gatewayPort = parseInt(port) || 8000;
+  const targetName = target || 'esp32';
+  const localSourcePath = filePath || filename || 'firmware.bin';
+  
+  event.reply('console-log', `[OTA] Source File (Where bin is loaded from): ${localSourcePath}`);
+  event.reply('console-log', `[OTA] Target Flashing Destination: http://${gatewayIP}:${gatewayPort}/update?target=${targetName}`);
+  event.reply('console-log', `[OTA] Starting optimized chunked buffer upload to ESP32...`);
+
+  if (!fileBuffer) {
+    event.reply('ota-progress', { status: 'error', message: 'Binary file buffer is empty.' });
+    return;
+  }
+
+  try {
+    const buffer = Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer);
+    const options = {
+      hostname: gatewayIP,
+      port: gatewayPort,
+      path: `/update?target=${targetName}`,
+      method: 'POST'
+    };
+    
+    await streamFirmwareToESP32(buffer, options, filename, event, targetName);
+    
+    event.reply('ota-progress', { status: 'success', progress: 100, target: targetName });
+    if (targetName === 'esp32') {
+      event.reply('console-log', '[OTA] Upgrade completed! Router reboot triggered.');
+    } else {
+      event.reply('console-log', '[OTA] QCOM Co-processor flash update completed successfully!');
+    }
   } catch (err) {
     event.reply('ota-progress', { status: 'error', message: err.message });
     event.reply('console-log', `[OTA EXCEPTION] ${err.message}`);
@@ -1637,6 +1964,8 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
 });
 */
 
+/*
+// Original download-and-provision-certs IPC handler commented out as per constraint:
 ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
   const gatewayIP = ip || '192.168.4.1';
   event.reply('console-log', `[CERTS] Starting step-by-step certificate provisioning process...`);
@@ -1713,6 +2042,141 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
       });
       
       event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS successfully.`);
+    }
+    
+    // Step 3: Sync to QCOM via serial channel
+    event.reply('console-log', '[CERTS] [STEP 3/3] Initiating sync from ESP32 to QCOM co-processor storage...');
+    if (activeTcpSocket && !activeTcpSocket.destroyed) {
+      activeTcpSocket.write('SYNC_CERTS_TO_QCOM\n');
+    } else if (activeSerialPort && activeSerialPort.isOpen) {
+      activeSerialPort.write('SYNC_CERTS_TO_QCOM\n');
+    }
+    
+    event.reply('console-log', '[CERTS] All certificates successfully provisioned from URL -> Local -> ESP32 -> QCOM channel.');
+    event.reply('provision-certs-status', { status: 'success' });
+  } catch (err) {
+    event.reply('console-log', `[CERTS ERROR] Provisioning failed: ${err.message}`);
+    event.reply('provision-certs-status', { status: 'error', message: err.message });
+  }
+});
+*/
+
+ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
+  const gatewayIP = ip || '192.168.4.1';
+  event.reply('console-log', `[CERTS] Starting step-by-step certificate provisioning process...`);
+  
+  const scratchDir = path.join(__dirname, 'scratch', 'certs');
+  if (!fs.existsSync(scratchDir)) {
+    fs.mkdirSync(scratchDir, { recursive: true });
+  }
+
+  try {
+    const files = Object.keys(urls);
+    
+    // Step 1: Download all files locally first (with TLS verification bypass)
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const fileUrl = urls[file];
+      const localFilePath = path.join(scratchDir, file);
+      
+      event.reply('console-log', `[CERTS] [STEP 1/3] Downloading ${file} locally from: ${fileUrl}...`);
+      
+      const content = await new Promise((resolve, reject) => {
+        const urlObj = new URL(fileUrl);
+        const isHttps = urlObj.protocol === 'https:';
+        const client = isHttps ? require('https') : require('http');
+        
+        const getOptions = {
+          hostname: urlObj.hostname,
+          port: urlObj.port || (isHttps ? 443 : 80),
+          path: urlObj.pathname + urlObj.search,
+          method: 'GET',
+          rejectUnauthorized: false // Ignore self-signed or invalid SSL cert validation (Requirement 1)
+        };
+        
+        client.get(getOptions, (res) => {
+          if (res.statusCode !== 200) {
+            reject(new Error(`Failed to download ${file}, HTTP Code: ${res.statusCode}`));
+            return;
+          }
+          let data = '';
+          res.on('data', chunk => data += chunk.toString());
+          res.on('end', () => resolve(data));
+        }).on('error', err => reject(err));
+      });
+      
+      fs.writeFileSync(localFilePath, content, 'utf8');
+      event.reply('console-log', `[CERTS] Downloaded locally to: scratch/certs/${file} (Size: ${Buffer.byteLength(content)} bytes).`);
+    }
+    
+    // Step 2: Upload locally stored files to ESP32 SPIFFS with Port Fallback
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const localFilePath = path.join(scratchDir, file);
+      
+      event.reply('console-log', `[CERTS] [STEP 2/3] Uploading ${file} from local storage to ESP32 SPIFFS...`);
+      
+      const content = fs.readFileSync(localFilePath, 'utf8');
+      const contentBytes = Buffer.byteLength(content);
+      
+      // Attempt 1: Upload to Port 8000
+      try {
+        await new Promise((resolve, reject) => {
+          const options = {
+            hostname: gatewayIP,
+            port: 8000,
+            path: `/upload_cert?filename=${encodeURIComponent(file)}`,
+            method: 'POST',
+            headers: {
+              'Content-Type': 'text/plain',
+              'Content-Length': contentBytes
+            }
+          };
+          
+          const req = http.request(options, (res) => {
+            let responseData = '';
+            res.on('data', (chunk) => { responseData += chunk.toString(); });
+            res.on('end', () => {
+              if (res.statusCode === 200) resolve();
+              else reject(new Error(`Upload failed. Code ${res.statusCode}: ${responseData}`));
+            });
+          });
+          req.on('error', err => reject(err));
+          req.write(content);
+          req.end();
+        });
+        event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on Port 8000.`);
+      } catch (err8000) {
+        const otaPort = appConfig.otaPort || 500;
+        event.reply('console-log', `[WIFI] Port 8000 upload failed: ${err8000.message}. Retrying on OTA Port ${otaPort}...`);
+        
+        // Attempt 2: Fallback to Port 500
+        await new Promise((resolve, reject) => {
+          const options = {
+            hostname: gatewayIP,
+            port: otaPort,
+            path: `/upload_cert?filename=${encodeURIComponent(file)}`,
+            method: 'POST',
+            headers: {
+              'Content-Type': 'text/plain',
+              'Content-Length': contentBytes
+            }
+          };
+          
+          const req = http.request(options, (res) => {
+            let responseData = '';
+            res.on('data', (chunk) => { responseData += chunk.toString(); });
+            res.on('end', () => {
+              if (res.statusCode === 200) resolve();
+              else reject(new Error(`Upload failed. Code ${res.statusCode}: ${responseData}`));
+            });
+          });
+          req.on('error', err => reject(err));
+          req.write(content);
+          req.end();
+        });
+        event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on OTA Port ${otaPort}.`);
+      }
     }
     
     // Step 3: Sync to QCOM via serial channel
@@ -1816,6 +2280,8 @@ ipcMain.on('download-and-flash-firmware', async (event, { firmwareUrl, ip, port,
     
     proxyReq.write(header);
     
+    // Original streaming code commented out as per constraint:
+    /*
     const fileStream = fs.createReadStream(tempPath, { highWaterMark: 32768 });
     let bytesSent = 0;
     
@@ -1824,6 +2290,29 @@ ipcMain.on('download-and-flash-firmware', async (event, { firmwareUrl, ip, port,
       bytesSent += chunk.length;
       const progress = Math.round((bytesSent / contentSize) * 100);
       event.reply('ota-progress', { status: 'uploading', progress: progress });
+    });
+    
+    fileStream.on('end', () => {
+      proxyReq.write(footer);
+      proxyReq.end();
+    });
+    */
+    
+    const fileStream = fs.createReadStream(tempPath, { highWaterMark: 16384 });
+    let bytesSent = 0;
+    
+    fileStream.on('data', (chunk) => {
+      const canWrite = proxyReq.write(chunk);
+      bytesSent += chunk.length;
+      const progress = Math.round((bytesSent / contentSize) * 100);
+      event.reply('ota-progress', { status: 'uploading', progress: progress });
+      
+      if (!canWrite) {
+        fileStream.pause();
+        proxyReq.once('drain', () => {
+          fileStream.resume();
+        });
+      }
     });
     
     fileStream.on('end', () => {
