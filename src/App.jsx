@@ -16,6 +16,7 @@ export default function App() {
   const [selectedSerialPort, setSelectedSerialPort] = useState('');
   const [selectedBaud, setSelectedBaud] = useState('115200');
   const [bootTriggerEnabled, setBootTriggerEnabled] = useState(false);
+  const [usbDetect, setUsbDetect] = useState({ detected: false, port: null, ports: [] });
 
   // Diagnostics State
   const [imei, setImei] = useState('--');
@@ -50,6 +51,22 @@ export default function App() {
   const [isCertUploading, setIsCertUploading] = useState(false);
   const [certUploadProgress, setCertUploadProgress] = useState(0);
 
+  // WiFi & Network Connection Details State (Request 1)
+  const [wifiDetails, setWifiDetails] = useState({
+    status: 'DISCONNECTED',
+    ssid: '--',
+    mac_sta: '--',
+    mac_ap: '--',
+    ip_sta: '--',
+    ip_ap: '--',
+    rssi: 0,
+    subnet: '--',
+    gateway: '--',
+    dns: '--',
+    ap_clients: 0,
+    ap_clients_list: []
+  });
+
   // Switchboard Controls State
   const [relay1, setRelay1] = useState(false);
   const [relay2, setRelay2] = useState(false);
@@ -69,10 +86,142 @@ export default function App() {
 
   // OTA Updates State
   const [otaIp, setOtaIp] = useState('192.168.4.1');
+  const [otaPort, setOtaPort] = useState('8000');
+  const [firmwareUrl, setFirmwareUrl] = useState('');
   const [otaFile, setOtaFile] = useState(null);
   const [otaProgress, setOtaProgress] = useState(null); // { status, progress, message }
   const [otaTarget, setOtaTarget] = useState('esp32s3'); // 'esp32' or 'qcom'
   const fileInputRef = useRef(null);
+
+  // Network Scanning & Cert Downloader State
+  const [isScanningNetwork, setIsScanningNetwork] = useState(false);
+  const [discoveredGateways, setDiscoveredGateways] = useState([]);
+  const [nearbyHotspots, setNearbyHotspots] = useState([]);
+
+  // Phase 3 Certificate Provisioning States
+  const [imeiProvisionInput, setImeiProvisionInput] = useState('');
+  const [passwordProvisionInput, setPasswordProvisionInput] = useState('');
+  const [gatewayIpProvisionInput, setGatewayIpProvisionInput] = useState('192.168.4.1');
+  const [provisioningStatus, setProvisioningStatus] = useState('');
+  const [isProvisioning, setIsProvisioning] = useState(false);
+  const [certHistoryLogs, setCertHistoryLogs] = useState([]);
+
+  // Auto-fill values when device connects/boots
+  useEffect(() => {
+    if (imei && imei !== '--') {
+      setImeiProvisionInput(imei);
+    }
+    if (password && password !== '--') {
+      setPasswordProvisionInput(password);
+    }
+    if (wifiIp) {
+      setGatewayIpProvisionInput(wifiIp);
+    }
+  }, [imei, password, wifiIp]);
+
+  const fetchCertProvisionHistory = async () => {
+    try {
+      const res = await fetch('/api/certificates/history');
+      if (res.ok) {
+        const data = await res.json();
+        setCertHistoryLogs(data);
+      }
+    } catch (err) {
+      console.error('Failed to load certificate logs history:', err);
+    }
+  };
+
+  // Fetch certificate history when the provisioning tab is active
+  useEffect(() => {
+    if (activeTab === 'page-cert-provision') {
+      fetchCertProvisionHistory();
+    }
+  }, [activeTab]);
+
+  const triggerCertificateProvision = async () => {
+    if (!imeiProvisionInput || !passwordProvisionInput || !gatewayIpProvisionInput) {
+      alert('IMEI, Password, and Gateway IP are required.');
+      return;
+    }
+    setIsProvisioning(true);
+    setProvisioningStatus('Initiating secure download from SCADA server...');
+    addLogLine(`[EXPRESS CLIENT] POSTing certificate provision request for IMEI: ${imeiProvisionInput}...`);
+
+    try {
+      const res = await fetch('/api/certificates/provision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imei: imeiProvisionInput,
+          password: passwordProvisionInput,
+          gatewayIp: gatewayIpProvisionInput
+        })
+      });
+
+      const result = await res.json();
+      if (res.ok) {
+        setProvisioningStatus('Success! Certificates provisioned to ESP32 SPIFFS & QCOM synced.');
+        addLogLine('[EXPRESS CLIENT] SUCCESS: Certificate provisioning completed.', 'success');
+        alert('Certificates provisioned successfully!');
+        fetchCertProvisionHistory();
+        sendControlCommand('GET_INFO');
+      } else {
+        setProvisioningStatus(`Error: ${result.error || 'Failed'}`);
+        addLogLine(`[EXPRESS CLIENT ERROR] ${result.error || 'Failed'}`, 'error');
+        alert(`Provisioning Failed:\n${result.error || 'Unknown error'}`);
+        fetchCertProvisionHistory();
+      }
+    } catch (err) {
+      setProvisioningStatus(`Error: ${err.message}`);
+      addLogLine(`[EXPRESS CLIENT ERROR] ${err.message}`, 'error');
+      alert(`Provisioning Failed:\n${err.message}`);
+      fetchCertProvisionHistory();
+    } finally {
+      setIsProvisioning(false);
+    }
+  };
+  /* const [certBaseUrl, setCertBaseUrl] = useState('http://localhost:8000/certs'); */
+  const [certRootCaUrl, setCertRootCaUrl] = useState('https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=1&PROJCD=re');
+  const [certDeviceCertUrl, setCertDeviceCertUrl] = useState('https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=2&PROJCD=re');
+  const [certPrivateKeyUrl, setCertPrivateKeyUrl] = useState('https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=3&PROJCD=re');
+  const [isDownloadingCerts, setIsDownloadingCerts] = useState(false);
+  const [certDownloadStatus, setCertDownloadStatus] = useState('');
+
+  // App Config Settings State (Requirement 6)
+  const [dbUriInput, setDbUriInput] = useState('mongodb://127.0.0.1:27017/iot_monitor');
+  const [dbReconnectStatus, setDbReconnectStatus] = useState('');
+  const [isReconnectingDb, setIsReconnectingDb] = useState(false);
+
+  const [expressPortInput, setExpressPortInput] = useState('8000');
+  const [telemetryPortInput, setTelemetryPortInput] = useState('9000');
+  const [otaPortInput, setOtaPortInput] = useState('500');
+  const [udpPortInput, setUdpPortInput] = useState('5002');
+  const [defaultBaudRateInput, setDefaultBaudRateInput] = useState('115200');
+
+  // System Info specifications useMemo
+  const systemInfo = useMemo(() => {
+    try {
+      const os = window.require('os');
+      const processVersions = window.process ? window.process.versions : (window.require ? window.require('process').versions : {});
+      return {
+        platform: os.platform(),
+        release: os.release(),
+        arch: os.arch(),
+        cpu: os.cpus()[0]?.model || 'Unknown CPU',
+        totalMem: `${Math.round(os.totalmem() / (1024 * 1024 * 1024))} GB`,
+        freeMem: `${Math.round(os.freemem() / (1024 * 1024))} MB`,
+        node: processVersions.node || 'Unknown',
+        electron: processVersions.electron || 'Unknown',
+        chrome: processVersions.chrome || 'Unknown',
+        v8: processVersions.v8 || 'Unknown'
+      };
+    } catch (e) {
+      return {
+        platform: 'Unknown', release: 'Unknown', arch: 'Unknown', cpu: 'Unknown', totalMem: 'Unknown', freeMem: 'Unknown',
+        node: 'Unknown', electron: 'Unknown', chrome: 'Unknown', v8: 'Unknown'
+      };
+    }
+  }, []);
 
   // Terminal Console Logs State
   const [consoleLogs, setConsoleLogs] = useState([
@@ -101,9 +250,27 @@ export default function App() {
 
         if (data.type === 'serial') {
           setPingLatency({ value: 'USB Line', status: 'excellent' });
+          setTimeout(() => {
+            ipcRenderer.send('send-serial-command', 'GET_INFO');
+          }, 1000);
+        } else if (data.type === 'tcp') {
+          setTimeout(() => {
+            ipcRenderer.send('send-tcp-command', 'GET_INFO');
+          }, 1000);
+        }
+
+        // Dynamically update active WiFi/OTA IP input fields upon successful connection (Requirement 4)
+        if (data.type === 'tcp' && data.target) {
+          const parts = data.target.split(':');
+          if (parts.length > 0) {
+            const connectedIp = parts[0];
+            setWifiIp(connectedIp);
+            setOtaIp(connectedIp);
+            addLogLine(`[GUI] Dynamically updated WiFi/OTA target IP address to: ${connectedIp}`, 'success');
+          }
         }
       } else {
-        setConnection({ type: null, target: null });
+        setConnection({ type: data.status === 'error' ? 'failed' : null, target: data.message || null });
         setBootTriggerEnabled(false);
         setControlsDisabled(true);
         setPingLatency({ value: 'Offline', status: 'offline' });
@@ -111,13 +278,23 @@ export default function App() {
 
         if (data.status === 'error') {
           addLogLine(`Connection error: ${data.message}`, 'error');
-          alert(`Connection failed: ${data.message}`);
         } else {
           addLogLine('Gateway interface closed.', 'system');
         }
       }
     };
     ipcRenderer.on('connection-status', onConnectionStatus);
+
+    const onUsbDetectStatus = (event, status) => {
+      setUsbDetect(status);
+      if (status.detected) {
+        setSerialPorts(status.ports);
+        if (status.port && !selectedSerialPort) {
+          setSelectedSerialPort(status.port);
+        }
+      }
+    };
+    ipcRenderer.on('usb-detect-status', onUsbDetectStatus);
 
     // 3. Subscribe to console logs
     const onConsoleLog = (event, message) => {
@@ -146,8 +323,12 @@ export default function App() {
         setImeiInput(payload.imei || '');
         setPasswordInput(payload.password || '');
         setCertificates(payload.certificates || []);
-        setOtaIp('192.168.4.1');
-        
+        /* setOtaIp('192.168.4.1'); */
+        // Maintain connection-dynamic IP or sync with current wifiIp state:
+        if (wifiIp) {
+          setOtaIp(wifiIp);
+        }
+
         // Fix lockup bug: enable switchboard controls once boot is successful!
         setControlsDisabled(false);
 
@@ -158,6 +339,9 @@ export default function App() {
           newDiags[key] = payload.diagnostics[key] ? 'OK' : 'ERROR';
         });
         setDiagnostics(prev => ({ ...prev, ...newDiags }));
+        if (payload.wifi) {
+          setWifiDetails(payload.wifi);
+        }
       } else if (payload.status === 'IMEI_UPDATED') {
         setImei(payload.imei);
         setImeiInput(payload.imei);
@@ -181,6 +365,14 @@ export default function App() {
         setIsCertUploading(false);
         setCertUploadProgress(0);
         addLogLine(`[SYS] Certificate file successfully stored to SPIFFS and synchronized to QCOM: ${payload.filename}`, 'success');
+
+        // Auto-trigger QCOM storage sync from GUI after cert upload finishes (Requirement 3)
+        sendControlCommand('SYNC_CERTS_TO_QCOM');
+        addLogLine(`[GUI] Auto-triggered QCOM certificate storage sync.`);
+      } else if (payload.status === 'AP_CLIENT_CONNECTED') {
+        addLogLine(`[WIFI AP STATUS] Client connected to SoftAP.`, 'success');
+      } else if (payload.status === 'AP_CLIENT_DISCONNECTED') {
+        addLogLine(`[WIFI AP STATUS] Client disconnected from SoftAP.`, 'error');
       } else if (payload.status === 'CERT_ERROR') {
         setIsCertUploading(false);
         setCertUploadProgress(0);
@@ -242,14 +434,88 @@ export default function App() {
     };
     ipcRenderer.on('ota-progress', onOtaProgress);
 
+    const onGatewayDiscovered = (event, gateway) => {
+      setDiscoveredGateways(prev => {
+        if (prev.some(g => g.ip === gateway.ip)) return prev;
+        return [...prev, gateway];
+      });
+
+      // Auto-fill and auto-connect when a gateway is discovered if we are offline
+      setWifiIp(gateway.ip);
+      setConnection(curr => {
+        if (!curr.type || curr.type === 'failed') {
+          addLogLine(`[AUTO CONNECT] Auto-connecting to discovered gateway at ${gateway.ip}:9000...`, 'system');
+          ipcRenderer.send('connect-tcp', { ip: gateway.ip, port: '9000' });
+        }
+        return curr;
+      });
+    };
+    ipcRenderer.on('gateway-discovered', onGatewayDiscovered);
+
+    const onWifiScanStatus = (event, status) => {
+      setNearbyHotspots(status.nearbyGateways || []);
+    };
+    ipcRenderer.on('wifi-scan-status', onWifiScanStatus);
+
+    const onDiscoveryTimeout = () => {
+      setIsScanningNetwork(false);
+    };
+    ipcRenderer.on('discovery-timeout', onDiscoveryTimeout);
+
+    const onProvisionCertsStatus = (event, result) => {
+      setIsDownloadingCerts(false);
+      if (result.status === 'success') {
+        setCertDownloadStatus('Success! Certificates provisioned to ESP32.');
+        // Auto-trigger QCOM storage sync from GUI after cert upload finishes (Requirement 3)
+        sendControlCommand('SYNC_CERTS_TO_QCOM');
+        alert('Certificates downloaded & provisioned successfully!');
+      } else {
+        setCertDownloadStatus(`Failed: ${result.message}`);
+        alert(`Certificate Provisioning Failed:\n${result.message}`);
+      }
+    };
+    ipcRenderer.on('provision-certs-status', onProvisionCertsStatus);
+
+    const onDbConnectionResult = (event, result) => {
+      setIsReconnectingDb(false);
+      if (result.connected) {
+        setDbReconnectStatus('Database connected successfully.');
+        addLogLine('[DATABASE] MongoDB reconnected successfully.', 'success');
+        fetchDatabaseStatus();
+        fetchDatabaseHistory();
+      } else {
+        setDbReconnectStatus(`Failed: ${result.message}`);
+        addLogLine(`[DATABASE ERROR] MongoDB reconnection failed: ${result.message}`, 'error');
+      }
+    };
+    ipcRenderer.on('database-connection-result', onDbConnectionResult);
+
+    // Fetch initial app configuration (Requirement 6)
+    ipcRenderer.invoke('get-app-config').then((config) => {
+      if (config) {
+        setDbUriInput(config.mongoUri || 'mongodb://127.0.0.1:27017/iot_monitor');
+        setExpressPortInput(String(config.expressPort || '8000'));
+        setTelemetryPortInput(String(config.telemetryPort || '9000'));
+        setOtaPortInput(String(config.otaPort || '500'));
+        setUdpPortInput(String(config.udpPort || '5002'));
+        setDefaultBaudRateInput(String(config.defaultBaudRate || '115200'));
+      }
+    });
+
     return () => {
       ipcRenderer.off('connection-status', onConnectionStatus);
+      ipcRenderer.off('usb-detect-status', onUsbDetectStatus);
       ipcRenderer.off('console-log', onConsoleLog);
       ipcRenderer.off('hardware-payload', onHardwarePayload);
       ipcRenderer.off('control-payload-sync', onControlPayloadSync);
       ipcRenderer.off('telemetry-payload', onTelemetryPayload);
       ipcRenderer.off('ping-pong-reply', onPingPongReply);
       ipcRenderer.off('ota-progress', onOtaProgress);
+      ipcRenderer.off('gateway-discovered', onGatewayDiscovered);
+      ipcRenderer.off('wifi-scan-status', onWifiScanStatus);
+      ipcRenderer.off('discovery-timeout', onDiscoveryTimeout);
+      ipcRenderer.off('provision-certs-status', onProvisionCertsStatus);
+      ipcRenderer.off('database-connection-result', onDbConnectionResult);
     };
   }, []);
 
@@ -425,7 +691,7 @@ export default function App() {
     }
     sendControlCommand(`SET_WIFI:${wifiRouterSsid}:${wifiRouterPass}`);
     addLogLine(`[CMD] Sending WiFi credentials update: SSID -> ${wifiRouterSsid}`);
-    
+
     // Reboot the gateway automatically after 1 second so changes take effect
     setTimeout(() => {
       sendControlCommand('REBOOT');
@@ -445,10 +711,10 @@ export default function App() {
     setIsCertUploading(true);
     setCertUploadProgress(10);
     addLogLine(`[SPIFFS] Initiating HTTP upload of certificate: ${file.name}...`);
-    
+
     // Send file path and IP to Electron uploader IPC
     ipcRenderer.send('upload-certificate', { filePath: file.path, ip: otaIp });
-    
+
     // Update progress feedback for UI rendering
     setTimeout(() => setCertUploadProgress(40), 200);
     setTimeout(() => setCertUploadProgress(75), 500);
@@ -466,6 +732,79 @@ export default function App() {
 
   const disconnectGateway = () => {
     ipcRenderer.send('disconnect-active');
+  };
+
+  const scanNetworkForGateway = () => {
+    setIsScanningNetwork(true);
+    setDiscoveredGateways([]);
+    ipcRenderer.send('start-udp-discovery');
+  };
+
+  const connectDiscoveredGateway = (gateway) => {
+    setWifiIp(gateway.ip);
+    ipcRenderer.send('connect-tcp', { ip: gateway.ip, port: '9000' });
+  };
+
+  // Old cert provisioning code commented out:
+  /*
+  const startCertProvisioning = () => {
+    if (!certBaseUrl) {
+      alert('Please specify a valid base URL.');
+      return;
+    }
+    setIsDownloadingCerts(true);
+    setCertDownloadStatus('Initiating download...');
+    ipcRenderer.send('download-and-provision-certs', { baseUrl: certBaseUrl, ip: wifiIp });
+  };
+  */
+
+  const startCertProvisioning = () => {
+    if (!certRootCaUrl || !certDeviceCertUrl || !certPrivateKeyUrl) {
+      alert('Please specify all three certificate URLs.');
+      return;
+    }
+
+    // Check if IMEI and Password inputs are provided since they are used in formatting (Requirement 4)
+    if (!imeiInput || !passwordInput) {
+      alert('Please provide IMEI and Password inputs (in Security & Config) to format certificate URLs.');
+      return;
+    }
+
+    const formatUrl = (url) => {
+      return url
+        .replace(/\{IMEI\}/gi, imeiInput)
+        .replace(/\{PASSWORD\}/gi, passwordInput);
+    };
+
+    setIsDownloadingCerts(true);
+    setCertDownloadStatus('Initiating download...');
+    ipcRenderer.send('download-and-provision-certs', {
+      urls: {
+        'aws_root_ca.pem': formatUrl(certRootCaUrl),
+        'device_cert.crt': formatUrl(certDeviceCertUrl),
+        'private_key.key': formatUrl(certPrivateKeyUrl)
+      },
+      ip: wifiIp
+    });
+  };
+
+  const saveAppConfigSettings = () => {
+    const config = {
+      mongoUri: dbUriInput,
+      expressPort: parseInt(expressPortInput) || 8000,
+      telemetryPort: parseInt(telemetryPortInput) || 9000,
+      otaPort: parseInt(otaPortInput) || 500,
+      udpPort: parseInt(udpPortInput) || 5002,
+      defaultBaudRate: parseInt(defaultBaudRateInput) || 115200
+    };
+    ipcRenderer.send('save-app-config', config);
+    alert('Settings saved successfully. Restart the application for port updates to take effect.');
+  };
+
+  const triggerDbReconnect = () => {
+    setIsReconnectingDb(true);
+    setDbReconnectStatus('Connecting...');
+    ipcRenderer.send('reconnect-database', { uri: dbUriInput });
   };
 
   const triggerBoot = () => {
@@ -552,11 +891,59 @@ export default function App() {
     addLogLine(`[OTA] Selected firmware binary: ${file.name} (${Math.round(file.size / 1024)} KB)`);
   };
 
+  // Old OTA upload trigger commented out:
+  /*
   const startOtaUpdate = () => {
     if (!otaFile) return;
     setControlsDisabled(true);
     setOtaProgress({ status: 'uploading', progress: 0 });
     ipcRenderer.send('start-ota', { filePath: otaFile.path, ip: otaIp, target: otaTarget });
+  };
+  */
+
+  /*
+  const startOtaUpdate = () => {
+    if (!otaFile) return;
+    setControlsDisabled(true);
+    setOtaProgress({ status: 'uploading', progress: 0 });
+    ipcRenderer.send('start-ota', { filePath: otaFile.path, ip: otaIp, port: otaPort, target: otaTarget });
+  };
+  */
+
+  const startOtaUpdate = () => {
+    if (!otaFile) return;
+    setControlsDisabled(true);
+    setOtaProgress({ status: 'uploading', progress: 0 });
+    addLogLine(`[OTA] Reading local binary file: ${otaFile.name}...`);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      // Electron IPC automatically serializes ArrayBuffer as Buffer
+      ipcRenderer.send('start-ota', {
+        fileBuffer: reader.result,
+        filename: otaFile.name,
+        ip: otaIp,
+        port: otaPort,
+        target: otaTarget
+      });
+    };
+    reader.onerror = (err) => {
+      addLogLine(`[OTA] FileReader error: ${err.message}`, 'error');
+      setOtaProgress({ status: 'error', message: 'Failed to read local binary file.' });
+      setControlsDisabled(false);
+    };
+    reader.readAsArrayBuffer(otaFile);
+  };
+
+  const startOtaUrlUpdate = () => {
+    if (!firmwareUrl) {
+      alert('Please specify a valid firmware URL.');
+      return;
+    }
+    setControlsDisabled(true);
+    setOtaProgress({ status: 'uploading', progress: 0 });
+    addLogLine(`[OTA] Initiating step-by-step firmware URL update from: ${firmwareUrl}...`);
+    ipcRenderer.send('download-and-flash-firmware', { firmwareUrl, ip: otaIp, port: otaPort, target: otaTarget });
   };
 
   return (
@@ -565,7 +952,7 @@ export default function App() {
       <div className="window-titlebar">
         <div className="titlebar-logo">
           <div className="logo-dot"></div>
-          <span>NEBULA MERN SYSTEM</span>
+          <span>IOT System Manager</span>
         </div>
         <div className="titlebar-controls">
           <button className="win-btn" onClick={() => ipcRenderer.send('window-minimize')}>&#128469;&#xFE0E;</button>
@@ -585,7 +972,7 @@ export default function App() {
               </svg>
             </div>
             <div className="brand-text">
-              <h2>NEBULA MERN</h2>
+              <h2>IOT System Manager</h2>
               <span>IoT Router v3.0</span>
             </div>
           </div>
@@ -617,7 +1004,7 @@ export default function App() {
               </svg>
               <span>Security & Config</span>
             </button>
-            
+
             <button className={`nav-item ${activeTab === 'page-ota' ? 'active' : ''}`} onClick={() => setActiveTab('page-ota')}>
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
@@ -632,15 +1019,39 @@ export default function App() {
               </svg>
               <span>Debug Console</span>
             </button>
+
+            <button className={`nav-item ${activeTab === 'page-hardware' ? 'active' : ''}`} onClick={() => setActiveTab('page-hardware')}>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+              <span>Hardware Info</span>
+            </button>
+
+            <button className={`nav-item ${activeTab === 'page-cert-provision' ? 'active' : ''}`} onClick={() => setActiveTab('page-cert-provision')}>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                <path d="M9 11l2 2 4-4" />
+              </svg>
+              <span>Cert Provisioning</span>
+            </button>
+
+            <button className={`nav-item ${activeTab === 'page-settings' ? 'active' : ''}`} onClick={() => setActiveTab('page-settings')}>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              <span>App Settings</span>
+            </button>
           </nav>
 
           <div className="sidebar-status-box">
             <div className="status-indicator">
-              <span className={`pulse-dot ${connection.type ? 'connected' : 'idle'}`}></span>
-              <span>{connection.type ? 'Gateway Online' : 'Not Connected'}</span>
+              <span className={`pulse-dot ${connection.type === 'failed' ? 'error' : connection.type ? 'connected' : 'idle'}`}></span>
+              <span>{connection.type === 'failed' ? 'Connection Failed' : connection.type ? 'Gateway Online' : 'Not Connected'}</span>
             </div>
             <div className="connection-details">
-              {connection.type ? `Port: ${connection.type.toUpperCase()}\n${connection.target}` : 'Gateway Offline'}
+              {connection.type === 'failed' ? connection.target : connection.type ? `Port: ${connection.type.toUpperCase()}\n${connection.target}` : 'Gateway Offline'}
             </div>
           </div>
         </aside>
@@ -655,8 +1066,8 @@ export default function App() {
                 <h1>Gateway Dashboard</h1>
                 <p>Monitor peripherals, adjust pacing telemetry speed, and toggle relays</p>
               </div>
-              <div className={`connection-pill ${connection.type ? 'connected' : ''}`}>
-                {connection.type ? `${connection.type.toUpperCase()} ACTIVE` : 'DISCONNECTED'}
+              <div className={`connection-pill ${connection.type === 'failed' ? 'failed' : connection.type ? 'connected' : ''}`}>
+                {connection.type === 'failed' ? 'CONNECTION FAILED' : connection.type ? `${connection.type.toUpperCase()} ACTIVE` : 'DISCONNECTED'}
               </div>
             </header>
 
@@ -666,7 +1077,7 @@ export default function App() {
               <div className="glass-card connection-panel">
                 <h3><span className="icon">&#128268;</span> Connect Gateway</h3>
 
-                {!connection.type ? (
+                {(!connection.type || connection.type === 'failed') ? (
                   <>
                     <div className="tabs-control">
                       <button className={`tab-btn ${activeConnTab === 'tab-wifi' ? 'active' : ''}`} onClick={() => setActiveConnTab('tab-wifi')}>WiFi IP</button>
@@ -683,7 +1094,38 @@ export default function App() {
                           <label>Telemetry Socket Port</label>
                           <input type="text" value={wifiPort} onChange={(e) => setWifiPort(e.target.value)} />
                         </div>
-                        <button className="btn btn-primary" onClick={connectWifi}>Open Socket (9000)</button>
+                        <div className="button-row" style={{ display: 'flex', gap: '10px' }}>
+                          <button className="btn btn-primary" style={{ flex: 1 }} onClick={connectWifi}>Open Socket (9000)</button>
+                          <button className="btn btn-accent" style={{ flex: 1 }} onClick={scanNetworkForGateway} disabled={isScanningNetwork}>
+                            {isScanningNetwork ? 'Scanning...' : 'Auto-Detect'}
+                          </button>
+                        </div>
+
+                        {nearbyHotspots.length > 0 && (
+                          <div className="nearby-hotspots-list" style={{ marginTop: '15px', padding: '10px', background: 'rgba(0,255,200,0.03)', borderRadius: '8px', border: '1px solid rgba(0,255,200,0.1)' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#00ffcc', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '5px' }}>
+                              📶 Wireless APs Visible Nearby:
+                            </span>
+                            {nearbyHotspots.map((ssid, index) => (
+                              <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: index < nearbyHotspots.length - 1 ? '1px dashed rgba(0,255,200,0.05)' : 'none' }}>
+                                <span style={{ fontSize: '11.5px', fontFamily: 'monospace', color: '#00ffcc' }}>{ssid}</span>
+                                <span style={{ fontSize: '10px', color: '#8080a0', fontStyle: 'italic' }}>Connect PC to this SSID</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {discoveredGateways.length > 0 && (
+                          <div className="discovered-gateways-list" style={{ marginTop: '15px', padding: '10px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--accent-pink)', display: 'block', marginBottom: '5px' }}>Discovered Devices:</span>
+                            {discoveredGateways.map((gw, index) => (
+                              <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: index < discoveredGateways.length - 1 ? '1px dashed rgba(255,255,255,0.05)' : 'none' }}>
+                                <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)' }}>{gw.ip} ({gw.imei})</span>
+                                <button className="btn btn-secondary small" style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px' }} onClick={() => connectDiscoveredGateway(gw)}>Connect</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="tab-content active">
@@ -707,15 +1149,23 @@ export default function App() {
                             <option value="9600">9600</option>
                           </select>
                         </div>
-                        <div className="button-row">
-                          <button className="btn btn-primary" onClick={connectSerial}>Open COM</button>
-                          <button className="btn btn-accent" onClick={triggerBoot} disabled={!bootTriggerEnabled}>START_BOOT</button>
+                        <div className="button-row" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          <button className="btn btn-primary" style={{ flex: '1 1 100%' }} onClick={connectSerial}>Open COM</button>
+                          <button className="btn btn-accent" style={{ flex: '1 1 100%' }} onClick={triggerBoot} disabled={!bootTriggerEnabled}>START_BOOT</button>
                         </div>
                       </div>
                     )}
                   </>
                 ) : (
-                  <button className="btn btn-danger" onClick={disconnectGateway}>Disconnect active link</button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {connection.type === 'serial' && (
+                      <div className="button-row" style={{ display: 'flex', gap: '8px' }}>
+                        <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => ipcRenderer.send('reset-device')}>Reset ESP32</button>
+                        <button className="btn btn-accent" style={{ flex: 1 }} onClick={() => ipcRenderer.send('enter-bootloader')}>Flash Mode</button>
+                      </div>
+                    )}
+                    <button className="btn btn-danger" onClick={disconnectGateway}>Disconnect active link</button>
+                  </div>
                 )}
               </div>
 
@@ -737,8 +1187,8 @@ export default function App() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <div className="diag-value" style={{ fontSize: '11px', fontWeight: 'bold' }}>{diagnostics[key]}</div>
                         {connection.type && diagnostics[key] !== 'TESTING' && (
-                          <button 
-                            className="btn btn-secondary small" 
+                          <button
+                            className="btn btn-secondary small"
                             style={{ padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', margin: 0, border: '1px solid rgba(255, 0, 127, 0.3)', cursor: 'pointer' }}
                             onClick={() => testModule(key)}
                           >
@@ -814,11 +1264,29 @@ export default function App() {
                     <h3><span className="icon">&#9889;</span> System Boot & Update Orchestrator</h3>
                     <p className="boot-subtitle">Manage ESP32 certificate provisioning, QCOM device syncing, and firmware flashes</p>
                   </div>
-                  {!isBooting && bootProgress === 0 && (
-                    <button className="btn btn-accent boot-start-btn" onClick={triggerBoot}>
-                      <span className="btn-icon">&#9658;</span> Start Boot Sequence
-                    </button>
-                  )}
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    {!isBooting && bootProgress === 0 && (
+                      <button className="btn btn-accent boot-start-btn" onClick={triggerBoot}>
+                        <span className="btn-icon">&#9658;</span> Start Boot Sequence
+                      </button>
+                    )}
+                    {bootProgress < 100 && (
+                      <button
+                        className="btn btn-secondary boot-bypass-btn"
+                        onClick={() => {
+                          setIsBooting(false);
+                          setBootProgress(100);
+                          setBootStep('COMPLETE');
+                          setBootMessage('Boot diagnostics bypassed by user.');
+                          setControlsDisabled(false);
+                          addLogLine('[SYS] Boot diagnostics sequence bypassed from GUI.', 'warning');
+                        }}
+                        style={{ height: '42px' }}
+                      >
+                        Skip Boot Diagnostics
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {(isBooting || bootProgress > 0) && (
@@ -839,7 +1307,7 @@ export default function App() {
 
                       {/* Step 1: ESP32 Cert Update */}
                       <div className={`boot-step ${bootStep.startsWith('ESP32_CERT') ? 'active' :
-                          (bootProgress > 30 || bootStep === 'QCOM_SYNC' || bootStep === 'MAIN_FW_UPDATE' || bootStep === 'DIAGNOSTICS' || bootStep === 'COMPLETE') ? 'completed' : 'pending'
+                        (bootProgress > 30 || bootStep === 'QCOM_SYNC' || bootStep === 'MAIN_FW_UPDATE' || bootStep === 'DIAGNOSTICS' || bootStep === 'COMPLETE') ? 'completed' : 'pending'
                         }`}>
                         <div className="step-marker">
                           <span className="step-number">1</span>
@@ -853,7 +1321,7 @@ export default function App() {
 
                       {/* Step 2: QCOM Sync */}
                       <div className={`boot-step ${bootStep === 'QCOM_SYNC' ? 'active' :
-                          (bootProgress > 45 || bootStep === 'MAIN_FW_UPDATE' || bootStep === 'DIAGNOSTICS' || bootStep === 'COMPLETE') ? 'completed' : 'pending'
+                        (bootProgress > 45 || bootStep === 'MAIN_FW_UPDATE' || bootStep === 'DIAGNOSTICS' || bootStep === 'COMPLETE') ? 'completed' : 'pending'
                         }`}>
                         <div className="step-marker">
                           <span className="step-number">2</span>
@@ -867,7 +1335,7 @@ export default function App() {
 
                       {/* Step 3: Main Firmware Flash */}
                       <div className={`boot-step ${bootStep === 'MAIN_FW_UPDATE' ? 'active' :
-                          (bootProgress > 65 || bootStep === 'DIAGNOSTICS' || bootStep === 'COMPLETE') ? 'completed' : 'pending'
+                        (bootProgress > 65 || bootStep === 'DIAGNOSTICS' || bootStep === 'COMPLETE') ? 'completed' : 'pending'
                         }`}>
                         <div className="step-marker">
                           <span className="step-number">3</span>
@@ -881,7 +1349,7 @@ export default function App() {
 
                       {/* Step 4: Hardware Check */}
                       <div className={`boot-step ${bootStep === 'DIAGNOSTICS' ? 'active' :
-                          (bootStep === 'COMPLETE') ? 'completed' : 'pending'
+                        (bootStep === 'COMPLETE') ? 'completed' : 'pending'
                         }`}>
                         <div className="step-marker">
                           <span className="step-number">4</span>
@@ -956,6 +1424,47 @@ export default function App() {
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Dashboard Real-time Console Log Drawer Widget (Requirement 1 & 3) */}
+            <div className="glass-card" style={{ marginTop: '20px', padding: '15px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h3 style={{ margin: 0, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="icon" style={{ animation: 'pulse 2s infinite' }}>📺</span> Live Serial & Socket Terminal Output
+                </h3>
+                <button
+                  className="btn btn-danger small"
+                  onClick={() => setConsoleLogs([])}
+                  style={{ margin: 0, height: '24px', padding: '0 10px', fontSize: '11px', minWidth: 'auto' }}
+                >
+                  Clear Console Logs
+                </button>
+              </div>
+              <div
+                style={{
+                  background: '#040209',
+                  borderRadius: '6px',
+                  border: '1px solid var(--glass-border)',
+                  padding: '10px',
+                  height: '150px',
+                  overflowY: 'auto',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '11px',
+                  lineHeight: '1.5',
+                  textAlign: 'left'
+                }}
+              >
+                {consoleLogs.slice(-50).map((log, idx) => (
+                  <div key={idx} className={`terminal-line ${log.type}`} style={{ margin: '2px 0' }}>
+                    [{log.time}] {log.text}
+                  </div>
+                ))}
+                {consoleLogs.length === 0 && (
+                  <div style={{ color: 'var(--text-dim)', textAlign: 'center', padding: '40px 0' }}>
+                    No terminal log data available. Connect ESP32 serial or TCP port to receive streams.
+                  </div>
+                )}
+              </div>
             </div>
 
           </section>
@@ -1065,12 +1574,16 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="ota-settings" style={{ display: 'flex', gap: '15px' }}>
-                  <div className="input-group" style={{ flex: 1, maxWidth: '280px' }}>
+                <div className="ota-settings" style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+                  <div className="input-group" style={{ flex: 1, minWidth: '180px', maxWidth: '250px' }}>
                     <label>Gateway HTTP Address (IP)</label>
                     <input type="text" value={otaIp} onChange={(e) => setOtaIp(e.target.value)} />
                   </div>
-                  <div className="input-group" style={{ flex: 1, maxWidth: '280px' }}>
+                  <div className="input-group" style={{ flex: 1, minWidth: '100px', maxWidth: '120px' }}>
+                    <label>Port ID</label>
+                    <input type="text" value={otaPort} onChange={(e) => setOtaPort(e.target.value)} placeholder="8000" />
+                  </div>
+                  <div className="input-group" style={{ flex: 1, minWidth: '220px', maxWidth: '280px' }}>
                     <label>Flash Target Partition</label>
                     <select
                       value={otaTarget}
@@ -1108,7 +1621,7 @@ export default function App() {
                   <div className="drop-icon">&#128190;</div>
                   <h4>Drag & Drop firmware binary here</h4>
                   <p>or</p>
-                  <button className="btn btn-secondary">Browse files</button>
+                  <button className="btn btn-secondary" onClick={(e) => { e.stopPropagation(); fileInputRef.current.click(); }}>Browse files</button>
                   <input type="file" accept=".bin" style={{ display: 'none' }} ref={fileInputRef} onChange={(e) => {
                     if (e.target.files.length > 0) handleOtaFileChange(e.target.files[0]);
                   }} />
@@ -1138,10 +1651,32 @@ export default function App() {
                   </div>
                 )}
 
-                <div className="ota-actions">
+                <div className="ota-actions" style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                   <button className="btn btn-primary large" onClick={startOtaUpdate} disabled={!otaFile || otaProgress !== null}>
-                    Initiate wireless flash update
+                    Initiate local file flash update
                   </button>
+
+                  {/* Remote flasher URL section (Requirement 3) */}
+                  <div style={{ marginTop: '10px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
+                    <h4 style={{ fontSize: '13px', color: 'var(--accent-pink)', marginBottom: '10px' }}>Flash from remote Firmware URL / API</h4>
+                    <div className="input-group">
+                      <label>Remote Binary URL (.bin)</label>
+                      <input
+                        type="text"
+                        value={firmwareUrl}
+                        onChange={(e) => setFirmwareUrl(e.target.value)}
+                        placeholder="e.g. http://127.0.0.1:8000/firmware.bin"
+                      />
+                    </div>
+                    <button
+                      className="btn btn-accent"
+                      onClick={startOtaUrlUpdate}
+                      disabled={!firmwareUrl || otaProgress !== null}
+                      style={{ marginTop: '10px', width: '100%', height: '40px' }}
+                    >
+                      Fetch, Download & Flash Remote Firmware
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1192,7 +1727,7 @@ export default function App() {
             </header>
 
             <div className="security-layout-grid">
-              
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {/* Credentials Configuration Card */}
                 <div className="glass-card">
@@ -1200,38 +1735,54 @@ export default function App() {
                   <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
                     Update gateway hardware identifier and communication passphrase. Updates sync dynamically over the active interface.
                   </p>
-  
+
                   <div className="input-group">
                     <label>Device IMEI</label>
-                    <input 
-                      type="text" 
-                      value={imeiInput} 
-                      onChange={(e) => setImeiInput(e.target.value)} 
-                      placeholder="e.g. 866738083623502" 
+                    {/* Old code commented out:
+                    <input
+                      type="text"
+                      value={imeiInput}
+                      onChange={(e) => setImeiInput(e.target.value)}
+                      placeholder="e.g. 866738083623502"
                       disabled={!connection.type}
                     />
+                    */}
+                    <input
+                      type="text"
+                      value={imeiInput}
+                      onChange={(e) => setImeiInput(e.target.value)}
+                      placeholder="e.g. 866738083623502"
+                    />
                   </div>
-  
+
                   <div className="input-group">
                     <label>Gateway Password</label>
-                    <input 
-                      type="password" 
-                      value={passwordInput} 
-                      onChange={(e) => setPasswordInput(e.target.value)} 
+                    {/* Old code commented out:
+                    <input
+                      type="password"
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
                       placeholder="Enter device passphrase"
                       disabled={!connection.type}
                     />
+                    */}
+                    <input
+                      type="password"
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                      placeholder="Enter device passphrase"
+                    />
                   </div>
-  
-                  <button 
-                    className="btn btn-primary" 
-                    onClick={applyDeviceSettings} 
+
+                  <button
+                    className="btn btn-primary"
+                    onClick={applyDeviceSettings}
                     disabled={!connection.type}
                     style={{ marginTop: '10px' }}
                   >
                     Apply Credentials Update
                   </button>
-  
+
                   <div style={{ marginTop: '20px', padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)', fontSize: '11px' }}>
                     <span style={{ fontWeight: 'bold', display: 'block', color: 'var(--accent-pink)', marginBottom: '5px' }}>Current Sync Profile:</span>
                     <span style={{ display: 'block', fontFamily: 'var(--font-mono)' }}>IMEI: {imei}</span>
@@ -1245,32 +1796,48 @@ export default function App() {
                   <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
                     Update the SSID and Passphrase for the external wireless router. Gateway will store credentials to SPIFFS and auto-reboot to apply.
                   </p>
-  
+
                   <div className="input-group">
                     <label>Router SSID</label>
-                    <input 
-                      type="text" 
-                      value={wifiRouterSsid} 
-                      onChange={(e) => setWifiRouterSsid(e.target.value)} 
-                      placeholder="SSID of Wireless Router" 
+                    {/* Old code commented out:
+                    <input
+                      type="text"
+                      value={wifiRouterSsid}
+                      onChange={(e) => setWifiRouterSsid(e.target.value)}
+                      placeholder="SSID of Wireless Router"
                       disabled={!connection.type}
                     />
+                    */}
+                    <input
+                      type="text"
+                      value={wifiRouterSsid}
+                      onChange={(e) => setWifiRouterSsid(e.target.value)}
+                      placeholder="SSID of Wireless Router"
+                    />
                   </div>
-  
+
                   <div className="input-group">
                     <label>Router Password</label>
-                    <input 
-                      type="password" 
-                      value={wifiRouterPass} 
-                      onChange={(e) => setWifiRouterPass(e.target.value)} 
+                    {/* Old code commented out:
+                    <input
+                      type="password"
+                      value={wifiRouterPass}
+                      onChange={(e) => setWifiRouterPass(e.target.value)}
                       placeholder="Router WPA2 Passphrase"
                       disabled={!connection.type}
                     />
+                    */}
+                    <input
+                      type="password"
+                      value={wifiRouterPass}
+                      onChange={(e) => setWifiRouterPass(e.target.value)}
+                      placeholder="Router WPA2 Passphrase"
+                    />
                   </div>
-  
-                  <button 
-                    className="btn btn-accent" 
-                    onClick={applyWifiRouterSettings} 
+
+                  <button
+                    className="btn btn-accent"
+                    onClick={applyWifiRouterSettings}
                     disabled={!connection.type}
                     style={{ marginTop: '10px' }}
                   >
@@ -1305,7 +1872,7 @@ export default function App() {
                 </div>
 
                 {/* Certificate drag & drop zone */}
-                <div 
+                <div
                   className="drag-drop-zone"
                   onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
                   onDragLeave={(e) => e.currentTarget.classList.remove('dragover')}
@@ -1315,7 +1882,7 @@ export default function App() {
                     if (e.dataTransfer.files.length > 0) handleCertificateSelection(e.dataTransfer.files[0]);
                   }}
                   onClick={() => {
-                    if (connection.type) {
+                    if (connection.type && connection.type !== 'failed') {
                       const input = document.createElement('input');
                       input.type = 'file';
                       input.accept = '.pem,.crt,.key';
@@ -1327,16 +1894,79 @@ export default function App() {
                       alert('Gateway must be connected to upload certificates.');
                     }
                   }}
-                  style={{ 
+                  style={{
                     padding: '25px 20px',
                     borderColor: isCertUploading ? 'var(--accent-blue)' : '',
-                    opacity: connection.type ? 1 : 0.5,
-                    cursor: connection.type ? 'pointer' : 'not-allowed'
+                    opacity: (connection.type && connection.type !== 'failed') ? 1 : 0.5,
+                    cursor: (connection.type && connection.type !== 'failed') ? 'pointer' : 'not-allowed'
                   }}
                 >
                   <div className="drop-icon" style={{ fontSize: '24px', marginBottom: '8px' }}>&#128228;</div>
                   <h4 style={{ fontSize: '13px' }}>Drag & Drop Certificate file here</h4>
                   <p style={{ fontSize: '11px' }}>Supports .pem, .crt, .key formats</p>
+                </div>
+
+                {/* Auto-Download from URL */}
+                <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                  <h4 style={{ fontSize: '13px', color: 'var(--accent-pink)', marginBottom: '10px' }}>Auto-Download from URL</h4>
+
+                  {/* Old Certificate Base URL Input commented out:
+                  <div className="input-group">
+                    <label>Certificate Base URL</label>
+                    <input
+                      type="text"
+                      value={certBaseUrl}
+                      onChange={(e) => setCertBaseUrl(e.target.value)}
+                      placeholder="e.g. http://localhost:8000/certs/"
+                      disabled={(!connection.type || connection.type === 'failed') || isDownloadingCerts}
+                    />
+                  </div>
+                  */}
+
+                  <div className="input-group">
+                    <label>Root CA Certificate URL (.pem)</label>
+                    <input
+                      type="text"
+                      value={certRootCaUrl}
+                      onChange={(e) => setCertRootCaUrl(e.target.value)}
+                      placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=1&PROJCD=re"
+                      disabled={isDownloadingCerts}
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label>Device Certificate URL (.crt)</label>
+                    <input
+                      type="text"
+                      value={certDeviceCertUrl}
+                      onChange={(e) => setCertDeviceCertUrl(e.target.value)}
+                      placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=2&PROJCD=re"
+                      disabled={isDownloadingCerts}
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label>Private Key URL (.key)</label>
+                    <input
+                      type="text"
+                      value={certPrivateKeyUrl}
+                      onChange={(e) => setCertPrivateKeyUrl(e.target.value)}
+                      placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=3&PROJCD=re"
+                      disabled={isDownloadingCerts}
+                    />
+                  </div>
+
+                  <button
+                    className="btn btn-primary"
+                    onClick={startCertProvisioning}
+                    disabled={(!connection.type || connection.type === 'failed') || isDownloadingCerts}
+                    style={{ marginTop: '10px', width: '100%' }}
+                  >
+                    {isDownloadingCerts ? 'Downloading & Provisioning...' : 'Fetch & Sync Certificates'}
+                  </button>
+                  {certDownloadStatus && (
+                    <span style={{ display: 'block', marginTop: '8px', fontSize: '11px', color: certDownloadStatus.startsWith('Success') ? '#00ff66' : '#ff3366', fontFamily: 'var(--font-mono)' }}>
+                      {certDownloadStatus}
+                    </span>
+                  )}
                 </div>
 
                 {/* Uploading progress indicator */}
@@ -1375,6 +2005,430 @@ export default function App() {
                 ))}
                 <div ref={consoleEndRef}></div>
               </div>
+            </div>
+          </section>
+
+          {/* ================= VIEW 6: HARDWARE INFO ================= */}
+          <section id="page-hardware" className={`page-view ${activeTab === 'page-hardware' ? 'active' : ''}`}>
+            <header className="view-header">
+              <div>
+                <h1>Hardware Diagnostics & Info</h1>
+                <p>Monitor physical USB interfaces, active network connections, boot partitions, and peripheral verification status</p>
+              </div>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <button 
+                  className="btn-secondary" 
+                  onClick={() => sendControlCommand('GET_INFO')} 
+                  disabled={controlsDisabled}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '4px', fontSize: '0.85rem' }}
+                >
+                  🔄 Refresh Status
+                </button>
+                <div className={`connection-pill ${connection.type === 'failed' ? 'failed' : connection.type ? 'connected' : ''}`}>
+                  {connection.type === 'failed' ? 'CONNECTION FAILED' : connection.type ? `${connection.type.toUpperCase()} ACTIVE` : 'DISCONNECTED'}
+                </div>
+              </div>
+            </header>
+
+            <div className="hardware-spec-grid">
+              
+              {/* Connection Status Card */}
+              <div className="glass-card hardware-card">
+                <h3><span className="icon">🔌</span> Interface Connectivity</h3>
+                <div style={{ marginTop: '15px' }}>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Type-C USB Cable Status</span>
+                    <span className={`spec-value ${usbDetect.detected ? 'highlight-emerald' : 'highlight-pink'}`}>
+                      {usbDetect.detected ? `DETECTED (${usbDetect.port})` : 'NOT DETECTED'}
+                    </span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Active Connection Mode</span>
+                    <span className={`spec-value ${connection.type ? 'highlight-blue' : ''}`}>
+                      {connection.type ? connection.type.toUpperCase() : 'OFFLINE'}
+                    </span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Active Connection Target</span>
+                    <span className="spec-value">{connection.target || 'None'}</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">RTT Connection Ping</span>
+                    <span className={`spec-value ${pingLatency.status === 'excellent' ? 'highlight-emerald' : pingLatency.status === 'warning' ? 'highlight-pink' : ''}`}>
+                      {pingLatency.value}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Board Specifications Card */}
+              <div className="glass-card hardware-card">
+                <h3><span className="icon">📟</span> Hardware Specifications</h3>
+                <div style={{ marginTop: '15px' }}>
+                  <div className="spec-list-item">
+                    <span className="spec-label">System Chipset</span>
+                    <span className="spec-value highlight-blue">ESP32 Dual-Core (240MHz)</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Firmware Version</span>
+                    <span className="spec-value highlight-emerald">v3.1.2</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Hardware IMEI ID</span>
+                    <span className="spec-value">{imei}</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">STA MAC Address</span>
+                    <span className="spec-value">{wifiDetails.mac_sta && wifiDetails.mac_sta !== '--' ? wifiDetails.mac_sta : mac}</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">SoftAP MAC Address</span>
+                    <span className="spec-value">{wifiDetails.mac_ap || '--'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* WiFi Router Status Card (STA Mode) */}
+              <div className="glass-card hardware-card">
+                <h3><span className="icon">📡</span> WiFi Router Client (STA)</h3>
+                <div style={{ marginTop: '15px' }}>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Connection Status</span>
+                    <span className={`spec-value ${wifiDetails.status === 'CONNECTED' ? 'highlight-emerald' : 'highlight-pink'}`}>
+                      {wifiDetails.status}
+                    </span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Target Router SSID</span>
+                    <span className="spec-value highlight-blue">{wifiDetails.ssid || '--'}</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Station Local IP</span>
+                    <span className="spec-value">{wifiDetails.ip_sta || '--'}</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Signal Strength (RSSI)</span>
+                    <span className="spec-value">{wifiDetails.rssi ? `${wifiDetails.rssi} dBm` : '--'}</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Subnet Mask</span>
+                    <span className="spec-value">{wifiDetails.subnet || '--'}</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Gateway IP</span>
+                    <span className="spec-value">{wifiDetails.gateway || '--'}</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Primary DNS</span>
+                    <span className="spec-value">{wifiDetails.dns || '--'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SoftAP Hotspot & Stations Card */}
+              <div className="glass-card hardware-card">
+                <h3><span className="icon">📶</span> SoftAP Hotspot & Stations</h3>
+                <div style={{ marginTop: '15px' }}>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Hotspot SSID</span>
+                    <span className="spec-value highlight-blue">{wifiDetails.mac_ap && wifiDetails.mac_ap !== '--' ? `ESP32_GATEWAY_${wifiDetails.mac_ap.replace(/:/g, '')}` : `ESP32_GATEWAY_${mac.replace(/:/g, '')}`}</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Hotspot IP Address</span>
+                    <span className="spec-value">192.168.4.1</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Active Clients Count</span>
+                    <span className="spec-value highlight-emerald">{wifiDetails.ap_clients} client(s)</span>
+                  </div>
+                  <div style={{ marginTop: '15px' }}>
+                    <span className="spec-label" style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: '#a0a0c0' }}>
+                      Connected Client MACs:
+                    </span>
+                    {wifiDetails.ap_clients_list && wifiDetails.ap_clients_list.length > 0 ? (
+                      <div style={{ maxHeight: '90px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                        {wifiDetails.ap_clients_list.map((cli, idx) => (
+                          <div key={idx} style={{ fontSize: '0.8rem', fontFamily: 'monospace', padding: '3px 0', borderBottom: idx < wifiDetails.ap_clients_list.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none', color: '#00ffcc' }}>
+                            • {cli.mac}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '0.8rem', color: '#707090', fontStyle: 'italic', padding: '4px', textAlign: 'center', background: 'rgba(0, 0, 0, 0.1)', borderRadius: '4px' }}>
+                        No clients connected
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Boot Partition Map Card */}
+              <div className="glass-card hardware-card">
+                <h3><span className="icon">💾</span> Boot & Partition Mapping</h3>
+                <div style={{ marginTop: '15px' }}>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Running Partition</span>
+                    <span className="spec-value highlight-blue">app0</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">Running Offset</span>
+                    <span className="spec-value">0x010000</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">OTA Partition Update</span>
+                    <span className="spec-value">app1 (0x1D0000)</span>
+                  </div>
+                  <div className="spec-list-item">
+                    <span className="spec-label">QCOM Storage Partition</span>
+                    <span className="spec-value">core (0x390000)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 9-Point diagnostics card */}
+              <div className="glass-card hardware-card" style={{ gridColumn: 'span 2' }}>
+                <h3><span className="icon">🛡️</span> Peripheral Self-Check Diagnostician</h3>
+                <div className="diag-checklist" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginTop: '20px' }}>
+                  {Object.keys(diagnostics).map(key => (
+                    <div key={key} className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : diagnostics[key] === 'TESTING' ? 'warning' : ''}`} style={{ margin: 0 }}>
+                      <div className="diag-indicator"></div>
+                      <div className="diag-label" style={{ flex: 1 }}>{key.toUpperCase()}</div>
+                      <div className="diag-value">{diagnostics[key]}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          </section>
+
+          {/* ================= VIEW 7: CERTIFICATE PROVISIONING ================= */}
+          <section id="page-cert-provision" className={`page-view ${activeTab === 'page-cert-provision' ? 'active' : ''}`}>
+            <header className="view-header">
+              <div>
+                <h1>Certificate Provisioning & Audit</h1>
+                <p>Fetch AWS IoT credentials dynamically from the SCADA server and flash them directly to the ESP32 Winbond flash SPIFFS</p>
+              </div>
+            </header>
+
+            <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+              
+              {/* Form Card */}
+              <div className="glass-card">
+                <h3><span className="icon">🔑</span> Request SCADA Certificates</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                  Enter the device identity credentials to download the Root CA, Device Certificate, and Private Key from the SCADA gateway.
+                </p>
+
+                <div className="input-group">
+                  <label>Device IMEI ID</label>
+                  <input
+                    type="text"
+                    value={imeiProvisionInput}
+                    onChange={(e) => setImeiProvisionInput(e.target.value)}
+                    placeholder="e.g. 866738083623502"
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label>SCADA User Password</label>
+                  <input
+                    type="password"
+                    value={passwordProvisionInput}
+                    onChange={(e) => setPasswordProvisionInput(e.target.value)}
+                    placeholder="Enter device credentials password"
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label>ESP32 Gateway IP Address</label>
+                  <input
+                    type="text"
+                    value={gatewayIpProvisionInput}
+                    onChange={(e) => setGatewayIpProvisionInput(e.target.value)}
+                    placeholder="e.g. 192.168.4.1"
+                  />
+                </div>
+
+                <button 
+                  className="btn btn-primary" 
+                  onClick={triggerCertificateProvision} 
+                  disabled={isProvisioning} 
+                  style={{ marginTop: '20px', width: '100%' }}
+                >
+                  {isProvisioning ? 'Downloading & Provisioning...' : 'Start Secure Provisioning'}
+                </button>
+
+                {provisioningStatus && (
+                  <div style={{ marginTop: '15px', fontSize: '12.5px', color: provisioningStatus.startsWith('Success') ? '#00ff66' : provisioningStatus.startsWith('Error') ? '#ff3366' : '#00ffff', fontFamily: 'var(--font-mono)' }}>
+                    • {provisioningStatus}
+                  </div>
+                )}
+              </div>
+
+              {/* History Audit Logs Card */}
+              <div className="glass-card" style={{ gridColumn: 'span 2' }}>
+                <h3><span className="icon">🛡️</span> Certificate Provisioning History Audit Logs</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                  Review MERN database logs tracking successful/failed AWS IoT credentials synchronization:
+                </p>
+
+                <div style={{ maxHeight: '350px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                  {certHistoryLogs.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
+                      No certificate provisioning logs recorded in database
+                    </div>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
+                          <th style={{ padding: '8px' }}>Timestamp</th>
+                          <th style={{ padding: '8px' }}>IMEI</th>
+                          <th style={{ padding: '8px' }}>Gateway IP</th>
+                          <th style={{ padding: '8px' }}>Sizes (CA/Cert/Key)</th>
+                          <th style={{ padding: '8px' }}>Status</th>
+                          <th style={{ padding: '8px' }}>Logs</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {certHistoryLogs.map((log, index) => (
+                          <tr key={log._id || index} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
+                            <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>{new Date(log.timestamp).toLocaleString()}</td>
+                            <td style={{ padding: '8px', fontFamily: 'monospace' }}>{log.imei}</td>
+                            <td style={{ padding: '8px', fontFamily: 'monospace' }}>{log.gatewayIp}</td>
+                            <td style={{ padding: '8px', fontFamily: 'monospace' }}>
+                              {log.status === 'SUCCESS' ? `${log.rootCaSize}B / ${log.deviceCertSize}B / ${log.privateKeySize}B` : '--'}
+                            </td>
+                            <td style={{ padding: '8px' }}>
+                              <span style={{ padding: '2px 6px', borderRadius: '4px', background: log.status === 'SUCCESS' ? 'rgba(0,255,100,0.1)' : 'rgba(255,50,50,0.1)', color: log.status === 'SUCCESS' ? '#00ff66' : '#ff3366', fontWeight: 'bold', fontSize: '0.75rem' }}>
+                                {log.status}
+                              </span>
+                            </td>
+                            <td style={{ padding: '8px', color: '#a0a0c0', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.message}>
+                              {log.message}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          </section>
+
+          {/* ================= VIEW 5: APP SETTINGS (Requirement 6) ================= */}
+          <section id="page-settings" className={`page-view ${activeTab === 'page-settings' ? 'active' : ''}`}>
+            <header className="view-header">
+              <div>
+                <h1>Application Settings</h1>
+                <p>Configure MongoDB connection strings, system communication ports, default baud rates, and view system specifications</p>
+              </div>
+            </header>
+
+            <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+
+              {/* Database Settings Card */}
+              <div className="glass-card">
+                <h3><span className="icon">📂</span> MongoDB Database Settings</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                  Set the MERN backend database connection URI. The app will attempt to connect and persist telemetry data dynamically.
+                </p>
+                <div className="input-group">
+                  <label>MongoDB Connection URI</label>
+                  <input
+                    type="text"
+                    value={dbUriInput}
+                    onChange={(e) => setDbUriInput(e.target.value)}
+                    placeholder="mongodb://127.0.0.1:27017/iot_monitor"
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                  <button className="btn btn-primary" onClick={triggerDbReconnect} disabled={isReconnectingDb} style={{ flex: 1 }}>
+                    {isReconnectingDb ? 'Connecting...' : 'Reconnect & Save'}
+                  </button>
+                </div>
+                {dbReconnectStatus && (
+                  <div style={{ marginTop: '10px', fontSize: '12px', color: dbReconnectStatus.includes('success') ? '#00ff66' : '#ff3366', fontFamily: 'var(--font-mono)' }}>
+                    {dbReconnectStatus}
+                  </div>
+                )}
+              </div>
+
+              {/* Ports & Communication Config Card */}
+              <div className="glass-card">
+                <h3><span className="icon">⚙️</span> Port & Communication Config</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                  Modify ports used by telemetry, web hosting, OTA, and UDP network services. Changes require app restart to bind.
+                </p>
+                <div className="input-group">
+                  <label>Express Web Host Port</label>
+                  <input type="text" value={expressPortInput} onChange={(e) => setExpressPortInput(e.target.value)} />
+                </div>
+                <div className="input-group">
+                  <label>Telemetry TCP Socket Port</label>
+                  <input type="text" value={telemetryPortInput} onChange={(e) => setTelemetryPortInput(e.target.value)} />
+                </div>
+                <div className="input-group">
+                  <label>OTA Local Portal Port</label>
+                  <input type="text" value={otaPortInput} onChange={(e) => setOtaPortInput(e.target.value)} />
+                </div>
+                <div className="input-group">
+                  <label>UDP Network Discovery Port</label>
+                  <input type="text" value={udpPortInput} onChange={(e) => setUdpPortInput(e.target.value)} />
+                </div>
+                <div className="input-group">
+                  <label>Default COM Baud Rate</label>
+                  <select value={defaultBaudRateInput} onChange={(e) => setDefaultBaudRateInput(e.target.value)} className="filter-select" style={{ width: '100%', height: '42px', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '8px', padding: '0 10px', cursor: 'pointer', outline: 'none' }}>
+                    <option value="115200" style={{ background: '#1c1b22', color: 'white' }}>115200</option>
+                    <option value="9600" style={{ background: '#1c1b22', color: 'white' }}>9600</option>
+                    <option value="57600" style={{ background: '#1c1b22', color: 'white' }}>57600</option>
+                  </select>
+                </div>
+                <button className="btn btn-accent" onClick={saveAppConfigSettings} style={{ marginTop: '15px', width: '100%' }}>
+                  Save Communications Config
+                </button>
+              </div>
+
+              {/* System Info Specifications Card */}
+              <div className="glass-card" style={{ gridColumn: 'span 2' }}>
+                <h3><span className="icon">🖥️</span> System Specifications & Versions</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                  Hardware architecture, operating system metadata, and host framework runtime environments:
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginTop: '10px' }}>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>OS Environment</span>
+                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>{systemInfo.platform.toUpperCase()} ({systemInfo.release})</span>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>CPU Architecture</span>
+                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>{systemInfo.cpu} ({systemInfo.arch})</span>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>System RAM</span>
+                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>{systemInfo.freeMem} Free / {systemInfo.totalMem} Total</span>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>Electron Framework</span>
+                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>v{systemInfo.electron}</span>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>NodeJS Platform</span>
+                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>v{systemInfo.node}</span>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>Chromium Core</span>
+                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>v{systemInfo.chrome}</span>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>V8 JavaScript Engine</span>
+                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>{systemInfo.v8}</span>
+                  </div>
+                </div>
+              </div>
+
             </div>
           </section>
 

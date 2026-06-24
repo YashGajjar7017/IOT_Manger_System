@@ -42,8 +42,9 @@
     "files": [
       "frontend-build/**/*",
       "main.js",
-      "preload.js",
-      "package.json"
+      "database.js",
+      "package.json",
+      "icon/**/*"
     ],
     "directories": {
       "buildResources": "public",
