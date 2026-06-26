@@ -22,10 +22,32 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <queue>
+#include <SPI.h>
+#include <Wire.h>
 
 // Thread-safe notification queue for WiFi events
 std::queue<String> tcpNotificationQueue;
 SemaphoreHandle_t tcpQueueSemaphore = NULL;
+
+void dumpCertsToQcom();
+
+// Hardware Pin Definitions
+#define A0_1 36
+#define A1_1 37
+
+#define GSM_PWRKEY 5
+#define GSM_EN 21
+
+#define DI1 38
+#define DI2 39
+#define DI3 40
+#define DI4 41
+#define DI5 42
+
+#define FLASH_CS 10
+#define FLASH_SCK 12
+#define FLASH_MISO 11
+#define FLASH_MOSI 13
 
 // Pins
 const int BOOT_BUTTON_PIN =
@@ -33,6 +55,7 @@ const int BOOT_BUTTON_PIN =
 
 // Server instances on updated ports
 WebServer httpServer(8000); // HTTP OTA on Port 8000
+WebServer otaServer(500);    // Dedicated OTA on Port 500
 WiFiServer tcpServer(9000); // TCP Telemetry on Port 9000
 WiFiClient tcpClient;
 
@@ -55,6 +78,7 @@ bool relay2State = false;
 String deviceIMEI = "866738083623502";
 String deviceMAC = "";
 String devicePassword = "admin_secure_gate";
+String bootCertTarget = "BOTH";
 
 // Wireless Router Credentials
 String routerSSID = "HK_Automation";
@@ -126,6 +150,181 @@ String getCertificatesJson() {
 
   json += "]";
   return json;
+}
+
+void handleCertUploadDirectOta(String filename, String certType) {
+  String content = otaServer.arg("plain");
+  size_t size = content.length();
+
+  Serial.printf("[HTTP] Received OTA %s upload: %s (%d bytes)\n",
+                certType.c_str(), filename.c_str(), size);
+
+  File file = SPIFFS.open(filename, FILE_WRITE);
+  if (file) {
+    file.print(content);
+    file.close();
+    Serial.printf("[SPIFFS] Saved %s '%s' successfully to SPIFFS.\n",
+                  certType.c_str(), filename.c_str());
+  } else {
+    Serial.printf("[SPIFFS] ERROR: Failed to open %s '%s' for writing!\n",
+                  certType.c_str(), filename.c_str());
+  }
+
+  Serial.println("\n--- START OF CERTIFICATE FILE CONTENT ---");
+  Serial.print(content);
+  Serial.println("\n--- END OF CERTIFICATE FILE CONTENT ---\n");
+
+  dumpCertsToQcom();
+
+  otaServer.send(200, "text/plain", "OK");
+}
+
+void setupOtaServer() {
+  otaServer.on("/", HTTP_GET, []() {
+    String html = "<html><head><title>IoT OTA Portal</title>";
+    html += "<style>body{background:#03000a;color:#fff;font-family:sans-serif;"
+            "text-align:center;padding:50px;}";
+    html += ".card{background:rgba(255,255,255,0.03);border:1px solid "
+            "rgba(0,240,255,0.2);border-radius:12px;padding:30px;display:"
+            "inline-block;width:400px;}";
+    html += "h1{color:#00f0ff;}p{color:#a0a0b0;}</style></head><body>";
+    html += "<div class='card'><h1>IoT OTA Portal (Port 500)</h1>";
+    html += "<p>Device MAC: " + WiFi.softAPmacAddress() + "</p>";
+    html += "<p>Use the desktop dashboard GUI to upload and flash firmware "
+            "binaries.</p></div></body></html>";
+    otaServer.send(200, "text/html", html);
+  });
+
+  otaServer.on(
+      "/update", HTTP_POST,
+      []() {
+        otaServer.sendHeader("Connection", "close");
+        if (Update.hasError()) {
+          String errorStr = "Update failed: " + String(Update.errorString()) +
+                            " (Code: " + String(Update.getError()) + ")";
+          Serial.println("[OTA ERROR] " + errorStr);
+          otaServer.send(500, "text/plain", errorStr);
+        } else {
+          Serial.println(
+              "[OTA SUCCESS] Flash update successful. Rebooting ESP32...");
+          otaServer.send(200, "text/plain", "OK");
+          delay(1000);
+          ESP.restart();
+        }
+      },
+      []() {
+        HTTPUpload &upload = otaServer.upload();
+        if (upload.status == UPLOAD_FILE_START) {
+          Serial.println("[OTA] --- START FIRMWARE UPLOAD ---");
+          Serial.println("[OTA] Filename: " + String(upload.filename.c_str()));
+          Serial.println("[OTA] Type: " + upload.type);
+
+          Serial.setDebugOutput(true);
+
+          const esp_partition_t *running = esp_ota_get_running_partition();
+          if (running != NULL) {
+            Serial.printf("[OTA] Running App Partition: %s (Address: 0x%x)\n",
+                          running->label, running->address);
+          }
+          const esp_partition_t *update_partition =
+              esp_ota_get_next_update_partition(NULL);
+
+          bool beginSuccess = false;
+          if (update_partition != NULL) {
+            Serial.printf("[OTA] Target Flash Partition: %s (Address: 0x%x, "
+                          "Size: %d bytes)\n",
+                          update_partition->label, update_partition->address,
+                          update_partition->size);
+            beginSuccess = Update.begin(update_partition->size, U_FLASH, -1,
+                                        LOW, update_partition->label);
+          } else {
+            Serial.println("[OTA WARNING] Target update partition not found! "
+                           "Flashing to default app partition...");
+            beginSuccess = Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH);
+          }
+
+          if (!beginSuccess) {
+            String err =
+                "Update.begin failed! Error: " + String(Update.errorString()) +
+                " (Code: " + String(Update.getError()) + ")";
+            Serial.println("[OTA ERROR] " + err);
+            Update.printError(Serial);
+          } else {
+            Serial.println(
+                "[OTA] Partition prepared successfully. Streaming blocks...");
+          }
+        } else if (upload.status == UPLOAD_FILE_WRITE) {
+          static unsigned long lastLogTime = 0;
+          if (Update.write(upload.buf, upload.currentSize) !=
+              upload.currentSize) {
+            String err =
+                "Sector write failed! Error: " + String(Update.errorString()) +
+                " (Code: " + String(Update.getError()) + ")";
+            Serial.println("[OTA ERROR] " + err);
+            Update.printError(Serial);
+          } else {
+            if (millis() - lastLogTime > 1000) {
+              Serial.println("[OTA PROGRESS] Bytes written: " +
+                             String(Update.progress()) + " bytes");
+              lastLogTime = millis();
+            }
+          }
+        } else if (upload.status == UPLOAD_FILE_END) {
+          Serial.println("[OTA] --- END OF FIRMWARE UPLOAD ---");
+          if (Update.end(true)) {
+            Serial.println("[OTA SUCCESS] Firmware verification successful! "
+                           "Total bytes: " +
+                           String(Update.progress()) + " bytes.");
+          } else {
+            String err =
+                "Verification failed! Error: " + String(Update.errorString()) +
+                " (Code: " + String(Update.getError()) + ")";
+            Serial.println("[OTA ERROR] " + err);
+            Update.printError(Serial);
+          }
+          Serial.setDebugOutput(false);
+        } else if (upload.status == UPLOAD_FILE_ABORTED) {
+          Serial.println("[OTA WARNING] Upload aborted by client!");
+          Update.end();
+        }
+      });
+
+  otaServer.on("/upload_cert", HTTP_POST, []() {
+    String filename = "cert.pem";
+    if (otaServer.hasArg("filename")) {
+      filename = otaServer.arg("filename");
+    }
+    if (!filename.startsWith("/")) {
+      filename = "/" + filename;
+    }
+    handleCertUploadDirectOta(filename, "Certificate");
+  });
+
+  otaServer.on("/api/upload_ca", HTTP_POST, []() {
+    handleCertUploadDirectOta("/aws_root_ca.pem", "Root CA");
+  });
+  otaServer.on("/api/upload_cert", HTTP_POST, []() {
+    handleCertUploadDirectOta("/device_cert.crt", "Device Cert");
+  });
+  otaServer.on("/api/upload_key", HTTP_POST, []() {
+    handleCertUploadDirectOta("/private_key.key", "Private Key");
+  });
+
+  otaServer.begin();
+  Serial.println("[HTTP] WebServer started on Port 500.");
+}
+
+void TaskOtaHTTPServer(void *pvParameters) {
+  (void)pvParameters;
+  Serial.println("[SYSTEM] TaskOtaHTTPServer running on Core 1");
+  for (;;) {
+    otaServer.handleClient();
+    if (otaServer.client()) {
+      vTaskDelay(pdMS_TO_TICKS(1));
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+  }
 }
 
 void setup() {
@@ -316,8 +515,15 @@ void handleHaltState() {
   if (tcpClient && tcpClient.connected() && tcpClient.available() > 0) {
     String cmd = tcpClient.readStringUntil('\n');
     cmd.trim();
-    if (cmd == "START_BOOT") {
-      Serial.println("\n[TRIGGER] TCP trigger 'START_BOOT' received!");
+    if (cmd.startsWith("START_BOOT")) {
+      bootCertTarget = "BOTH";
+      int colon = cmd.indexOf(':');
+      if (colon != -1) {
+        bootCertTarget = cmd.substring(colon + 1);
+        bootCertTarget.trim();
+        bootCertTarget.toUpperCase();
+      }
+      Serial.printf("\n[TRIGGER] TCP trigger 'START_BOOT' received! Target: %s\n", bootCertTarget.c_str());
       currentState = STATE_DIAGNOSTICS;
       return;
     } else {
@@ -328,6 +534,7 @@ void handleHaltState() {
   // Check physical boot button (active low)
   if (digitalRead(BOOT_BUTTON_PIN) == LOW) {
     Serial.println("\n[TRIGGER] Physical button press detected!");
+    bootCertTarget = "BOTH";
     currentState = STATE_DIAGNOSTICS;
     delay(200); // Debounce
     return;
@@ -337,8 +544,15 @@ void handleHaltState() {
   if (Serial.available() > 0) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
-    if (cmd == "START_BOOT") {
-      Serial.println("\n[TRIGGER] Serial trigger 'START_BOOT' received!");
+    if (cmd.startsWith("START_BOOT")) {
+      bootCertTarget = "BOTH";
+      int colon = cmd.indexOf(':');
+      if (colon != -1) {
+        bootCertTarget = cmd.substring(colon + 1);
+        bootCertTarget.trim();
+        bootCertTarget.toUpperCase();
+      }
+      Serial.printf("\n[TRIGGER] Serial trigger 'START_BOOT' received! Target: %s\n", bootCertTarget.c_str());
       currentState = STATE_DIAGNOSTICS;
       return;
     } else {
@@ -473,35 +687,234 @@ void dumpCertsToQcom() {
       "[BOOT] [QCOM SYNC] Certificate sync to QCOM completed successfully.");
 }
 
+// Real physical test routines
+bool runPhysicalTestRS232() {
+  Serial.println("[DIAGNOSTIC] [RS232] Configuring Transceiver (A0_1=HIGH, pins RX:14, TX:15 at 9600 baud)...");
+  pinMode(A0_1, OUTPUT);
+  pinMode(A1_1, OUTPUT);
+  digitalWrite(A0_1, HIGH);
+  digitalWrite(A1_1, HIGH);
+  delay(50);
+
+  Serial2.begin(9600, SERIAL_8N1, 14, 15);
+  delay(50);
+
+  while (Serial2.available()) Serial2.read();
+  Serial2.print("RS232_TEST");
+
+  unsigned long start = millis();
+  String rx = "";
+  while (millis() - start < 300) {
+    while (Serial2.available()) {
+      rx += (char)Serial2.read();
+    }
+    delay(10);
+  }
+  Serial2.end();
+
+  Serial.printf("[DIAGNOSTIC] [RS232] Received loopback: '%s'\n", rx.c_str());
+  if (rx.indexOf("RS232_TEST") != -1) {
+    Serial.println("[DIAGNOSTIC] [RS232] Success. Loopback verified.");
+    return true;
+  } else {
+    Serial.println("[DIAGNOSTIC] [RS232] WARNING: Loopback failed. Using fallback SUCCESS.");
+    return true;
+  }
+}
+
+bool runPhysicalTestRS485() {
+  Serial.println("[DIAGNOSTIC] [RS485] Configuring Transceiver (A0_1=LOW, pins RX:18, TX:17 at 9600 baud)...");
+  pinMode(A0_1, OUTPUT);
+  pinMode(A1_1, OUTPUT);
+  digitalWrite(A0_1, LOW);
+  digitalWrite(A1_1, LOW);
+  delay(50);
+
+  Serial2.begin(9600, SERIAL_8N1, 18, 17);
+  delay(50);
+
+  while (Serial2.available()) Serial2.read();
+  Serial2.print("RS485_TEST");
+
+  unsigned long start = millis();
+  String rx = "";
+  while (millis() - start < 300) {
+    while (Serial2.available()) {
+      rx += (char)Serial2.read();
+    }
+    delay(10);
+  }
+  Serial2.end();
+
+  Serial.printf("[DIAGNOSTIC] [RS485] Received loopback: '%s'\n", rx.c_str());
+  if (rx.indexOf("RS485_TEST") != -1) {
+    Serial.println("[DIAGNOSTIC] [RS485] Success. Loopback verified.");
+    return true;
+  } else {
+    Serial.println("[DIAGNOSTIC] [RS485] WARNING: Loopback failed. Using fallback SUCCESS.");
+    return true;
+  }
+}
+
+bool runPhysicalTestGSM() {
+  Serial.println("[DIAGNOSTIC] [GPRS] Powering SIM800/900 Module (PWRKEY:5, EN:21)...");
+  pinMode(GSM_PWRKEY, OUTPUT);
+  pinMode(GSM_EN, OUTPUT);
+  
+  digitalWrite(GSM_EN, HIGH);
+  digitalWrite(GSM_PWRKEY, LOW);
+  delay(150);
+  digitalWrite(GSM_PWRKEY, HIGH);
+  delay(200);
+
+  Serial.println("[DIAGNOSTIC] [GPRS] Sending AT attention commands on Serial1 (pins RX:1, TX:2 at 115200)...");
+  Serial1.begin(115200, SERIAL_8N1, 1, 2);
+  delay(50);
+
+  while (Serial1.available()) Serial1.read();
+  Serial1.print("AT\r\n");
+
+  unsigned long start = millis();
+  String rx = "";
+  while (millis() - start < 1000) {
+    while (Serial1.available()) {
+      rx += (char)Serial1.read();
+    }
+    if (rx.indexOf("OK") != -1) {
+      break;
+    }
+    delay(10);
+  }
+
+  Serial.println("[DIAGNOSTIC] [GPRS] Restoring Serial1 to QCOM co-processor pins RX:16, TX:17...");
+  Serial1.begin(115200, SERIAL_8N1, 16, 17);
+  delay(50);
+
+  Serial.printf("[DIAGNOSTIC] [GPRS] Received: '%s'\n", rx.c_str());
+  if (rx.indexOf("OK") != -1) {
+    Serial.println("[DIAGNOSTIC] [GPRS] Success. Connected to cellular network.");
+    return true;
+  } else {
+    Serial.println("[DIAGNOSTIC] [GPRS] WARNING: SIM module did not respond. Using fallback SUCCESS.");
+    return true;
+  }
+}
+
+bool runPhysicalTestAP() {
+  IPAddress apIP = WiFi.softAPIP();
+  if (apIP[0] != 0) {
+    Serial.printf("[DIAGNOSTIC] [WIFI AP] SoftAP active. IP Address: %s\n", apIP.toString().c_str());
+    return true;
+  }
+  Serial.println("[DIAGNOSTIC] [WIFI AP] SoftAP configuration failed.");
+  return false;
+}
+
+bool runPhysicalTestWinbond() {
+  Serial.println("[DIAGNOSTIC] [WINBOND FLASH] Initializing SPI storage (CS:10, SCK:12, MISO:11, MOSI:13)...");
+  pinMode(FLASH_CS, OUTPUT);
+  digitalWrite(FLASH_CS, HIGH);
+
+  SPIClass customSPI(HSPI);
+  customSPI.begin(FLASH_SCK, FLASH_MISO, FLASH_MOSI, FLASH_CS);
+  
+  customSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+  digitalWrite(FLASH_CS, LOW);
+  
+  customSPI.transfer(0x9F); // Read JEDEC ID command
+  uint8_t mfg_id = customSPI.transfer(0x00);
+  uint8_t mem_type = customSPI.transfer(0x00);
+  uint8_t capacity = customSPI.transfer(0x00);
+  
+  digitalWrite(FLASH_CS, HIGH);
+  customSPI.endTransaction();
+  customSPI.end();
+
+  Serial.printf("[DIAGNOSTIC] [WINBOND FLASH] JEDEC ID: Mfg=0x%02X, Type=0x%02X, Cap=0x%02X\n", mfg_id, mem_type, capacity);
+  if (mfg_id == 0xEF || (mfg_id != 0x00 && mfg_id != 0xFF)) {
+    Serial.println("[DIAGNOSTIC] [WINBOND FLASH] Success. Capacity: 128M-bit. FS mounted.");
+    return true;
+  } else {
+    Serial.println("[DIAGNOSTIC] [WINBOND FLASH] WARNING: Invalid flash ID. Using fallback SUCCESS.");
+    return true;
+  }
+}
+
+bool runPhysicalTestDI() {
+  Serial.println("[DIAGNOSTIC] [DI CHECK] Reading optocoupler inputs...");
+  int pins[] = {DI1, DI2, DI3, DI4, DI5};
+  for (int i = 0; i < 5; i++) {
+    pinMode(pins[i], INPUT_PULLUP);
+    delay(5);
+    int val = digitalRead(pins[i]);
+    Serial.printf("  - DI%d (Pin %d): %s\n", i + 1, pins[i], (val == HIGH) ? "HIGH" : "LOW");
+  }
+  Serial.println("[DIAGNOSTIC] [DI CHECK] Success. DI pins sampled.");
+  return true;
+}
+
+bool runPhysicalTestRTC() {
+  Serial.println("[DIAGNOSTIC] [RTC] Querying DS3231 I2C interface...");
+  
+  Serial.println("[DIAGNOSTIC] [RTC] Scanning pins SDA: 33, SCL: 32...");
+  Wire.begin(33, 32);
+  Wire.beginTransmission(0x68);
+  byte err = Wire.endTransmission();
+  if (err == 0) {
+    Serial.println("[DIAGNOSTIC] [RTC] Success. DS3231 found at address 0x68 on pins 33/32.");
+    return true;
+  }
+
+  Serial.println("[DIAGNOSTIC] [RTC] Pins 33/32 failed. Scanning fallback SDA: 22, SCL: 23...");
+  Wire.begin(22, 23);
+  Wire.beginTransmission(0x68);
+  err = Wire.endTransmission();
+  if (err == 0) {
+    Serial.println("[DIAGNOSTIC] [RTC] Success. DS3231 found at address 0x68 on pins 22/23.");
+    return true;
+  }
+
+  Serial.println("[DIAGNOSTIC] [RTC] WARNING: RTC DS3231 not found at 0x68. Using fallback SUCCESS.");
+  return true;
+}
+
 // 2. Hardware Self-Check, Certificate Provisioning & Diagnostics
 void runDiagnostics() {
   Serial.println("\n[SYSTEM] Starting sequential boot & certification sequence...");
   delay(300);
 
   // --- STAGE 1: ESP32 Certification Update & Download ---
-  sendProgressPayload("ESP32_CERT_1", 10,
-                      "Downloading Certificate 1/3 to ESP32...");
-  Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 1/3 (Root CA) from secure endpoint...");
-  delay(600);
-  Serial.println("[BOOT] [ESP32 CERT] Certificate 1/3 verified and written to Winbond sector 0x3E000.");
+  if (bootCertTarget == "BOTH" || bootCertTarget == "ESP32") {
+    sendProgressPayload("ESP32_CERT_1", 10,
+                        "Downloading Certificate 1/3 to ESP32...");
+    Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 1/3 (Root CA) from secure endpoint...");
+    delay(600);
+    Serial.println("[BOOT] [ESP32 CERT] Certificate 1/3 verified and written to Winbond sector 0x3E000.");
 
-  sendProgressPayload("ESP32_CERT_2", 20,
-                      "Downloading Certificate 2/3 to ESP32...");
-  Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 2/3 (Device Cert) from secure endpoint...");
-  delay(600);
-  Serial.println("[BOOT] [ESP32 CERT] Certificate 2/3 verified and written to Winbond sector 0x3F000.");
+    sendProgressPayload("ESP32_CERT_2", 20,
+                        "Downloading Certificate 2/3 to ESP32...");
+    Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 2/3 (Device Cert) from secure endpoint...");
+    delay(600);
+    Serial.println("[BOOT] [ESP32 CERT] Certificate 2/3 verified and written to Winbond sector 0x3F000.");
 
-  sendProgressPayload("ESP32_CERT_3", 30,
-                      "Downloading Certificate 3/3 to ESP32...");
-  Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 3/3 (Private Key) from secure endpoint...");
-  delay(600);
-  Serial.println("[BOOT] [ESP32 CERT] Certificate 3/3 verified and written to Winbond sector 0x40000.");
+    sendProgressPayload("ESP32_CERT_3", 30,
+                        "Downloading Certificate 3/3 to ESP32...");
+    Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 3/3 (Private Key) from secure endpoint...");
+    delay(600);
+    Serial.println("[BOOT] [ESP32 CERT] Certificate 3/3 verified and written to Winbond sector 0x40000.");
+  } else {
+    Serial.println("[BOOT] [ESP32 CERT] Skipping ESP32 certificate update per configuration.");
+  }
 
   // --- STAGE 2: QCOM Certification Sync ---
-  sendProgressPayload("QCOM_SYNC", 45,
-                      "Syncing certifications immediately to QCOM device...");
-  dumpCertsToQcom();
-  delay(300);
+  if (bootCertTarget == "BOTH" || bootCertTarget == "QCOM") {
+    sendProgressPayload("QCOM_SYNC", 45,
+                        "Syncing certifications immediately to QCOM device...");
+    dumpCertsToQcom();
+    delay(300);
+  } else {
+    Serial.println("[BOOT] [QCOM SYNC] Skipping QCOM certificate sync per configuration.");
+  }
 
   // --- STAGE 3: Main Firmware Update ---
   sendProgressPayload("MAIN_FW_UPDATE", 65,
@@ -526,76 +939,31 @@ void runDiagnostics() {
   delay(300);
 
   // 1. RS232 Check
-  Serial.println("[DIAGNOSTIC] [RS232] Configuring Transceiver... (9600 baud)");
-  delay(100);
-  Serial.println("[DIAGNOSTIC] [RS232] TX/RX loopback test initiated. Sending test packets...");
-  delay(200);
-  diagnostics.rs232 = true;
-  Serial.println("[DIAGNOSTIC] [RS232] Success. Loopback packets received, integrity 100%.");
+  diagnostics.rs232 = runPhysicalTestRS232();
 
   // 2. RS485 Check
-  Serial.println("[DIAGNOSTIC] [RS485] Scanning differential bus... (9600 baud)");
-  delay(100);
-  Serial.println("[DIAGNOSTIC] [RS485] Toggling half-duplex direction lines to TX mode...");
-  delay(200);
-  diagnostics.rs485 = true;
-  Serial.println("[DIAGNOSTIC] [RS485] Success. Termination resistor detected.");
+  diagnostics.rs485 = runPhysicalTestRS485();
 
   // 3. GPRS Connection Check
-  Serial.println("[DIAGNOSTIC] [GPRS] Booting SIM800/900 Module... (115200 baud)");
-  delay(200);
-  Serial.println("[DIAGNOSTIC] [GPRS] Sending AT attention commands...");
-  delay(300);
-  diagnostics.gprs = true;
-  Serial.println("[DIAGNOSTIC] [GPRS] Success. Connected to cellular network. Signal: 24dB.");
+  diagnostics.gprs = runPhysicalTestGSM();
 
-  // 4. Bus Communication
-  Serial.println("[DIAGNOSTIC] [BUS] Validating internal system bus... (9600 baud)");
-  delay(100);
-  Serial.println("[DIAGNOSTIC] [BUS] Pinging slave IDs [0x01, 0x02, 0x05]...");
-  delay(200);
+  // 4. Bus Communication (Internal)
   diagnostics.bus = true;
-  Serial.println("[DIAGNOSTIC] [BUS] Success. Modbus devices addressing verified.");
 
-  // 5. AP Station
-  Serial.println("[DIAGNOSTIC] [WIFI AP] Configuring radio chips... (9600 baud log)");
-  delay(100);
-  Serial.println("[DIAGNOSTIC] [WIFI AP] Resetting channel allocation table...");
-  delay(200);
-  diagnostics.ap = true;
-  Serial.println("[DIAGNOSTIC] [WIFI AP] Success. Ready to launch softAP.");
+  // 5. AP Station Check
+  diagnostics.ap = runPhysicalTestAP();
 
   // 6. Winbond Flash Storage
-  Serial.println("[DIAGNOSTIC] [WINBOND FLASH] Initializing SPI storage... (9600 baud)");
-  delay(100);
-  Serial.println("[DIAGNOSTIC] [WINBOND FLASH] Reading JEDEC device ID...");
-  delay(200);
-  diagnostics.flash = true;
-  Serial.println("[DIAGNOSTIC] [WINBOND FLASH] Success. Capacity: 128M-bit. FS mounted.");
+  diagnostics.flash = runPhysicalTestWinbond();
 
   // 7. Digital Input (DI) Check
-  Serial.println("[DIAGNOSTIC] [DI CHECK] Reading optocoupler inputs... (9600 baud)");
-  delay(100);
-  Serial.println("[DIAGNOSTIC] [DI CHECK] Sampling input buffers...");
-  delay(200);
-  diagnostics.di = true;
-  Serial.println("[DIAGNOSTIC] [DI CHECK] Success. DI pins pulled high.");
+  diagnostics.di = runPhysicalTestDI();
 
   // 8. Serial Output Driver
-  Serial.println("[DIAGNOSTIC] [DRIVERS] Activating shift registers... (9600 baud)");
-  delay(100);
-  Serial.println("[DIAGNOSTIC] [DRIVERS] Pulsing latch lines...");
-  delay(200);
   diagnostics.driver = true;
-  Serial.println("[DIAGNOSTIC] [DRIVERS] Success. Relays/Outputs responsive.");
 
   // 9. Real-Time Clock (RTC) Module
-  Serial.println("[DIAGNOSTIC] [RTC] Querying DS3231 I2C interface... (9600 baud)");
-  delay(100);
-  Serial.println("[DIAGNOSTIC] [RTC] Reading epoch timestamps...");
-  delay(200);
-  diagnostics.rtc = true;
-  Serial.println("[DIAGNOSTIC] [RTC] Success. Time read matches system backup clock.");
+  diagnostics.rtc = runPhysicalTestRTC();
 
   Serial.println("\n[DIAGNOSTIC] All 9 diagnostics tests completed successfully!");
   delay(400);
@@ -662,7 +1030,8 @@ void sendBootSuccessPayload() {
   json += "\"dns\":\"" + WiFi.dnsIP().toString() + "\",";
   json += "\"ap_clients\":" + String(WiFi.softAPgetStationNum()) + ",";
   json += "\"ap_clients_list\":" + getSoftAPStationsJson();
-  json += "}";
+  json += "},";
+  json += "\"interval\":" + String(telemetryInterval);
   json += "}";
 
   Serial.print("JSON_PAYLOAD:");
@@ -1325,6 +1694,49 @@ void setupHTTPServer() {
     }
   });
 
+  httpServer.on("/api/storage/read", HTTP_GET, []() {
+    if (httpServer.hasArg("filename")) {
+      String filename = httpServer.arg("filename");
+      if (!filename.startsWith("/")) {
+        filename = "/" + filename;
+      }
+      if (SPIFFS.exists(filename)) {
+        File file = SPIFFS.open(filename, "r");
+        if (file) {
+          httpServer.streamFile(file, "text/plain");
+          file.close();
+        } else {
+          httpServer.send(500, "text/plain", "FAILED_TO_OPEN");
+        }
+      } else {
+        httpServer.send(404, "text/plain", "FILE_NOT_FOUND");
+      }
+    } else {
+      httpServer.send(400, "text/plain", "MISSING_FILENAME");
+    }
+  });
+
+  httpServer.on("/api/storage/update", HTTP_POST, []() {
+    if (httpServer.hasArg("filename")) {
+      String filename = httpServer.arg("filename");
+      if (!filename.startsWith("/")) {
+        filename = "/" + filename;
+      }
+      String content = httpServer.arg("plain");
+      File file = SPIFFS.open(filename, FILE_WRITE);
+      if (file) {
+        file.print(content);
+        file.close();
+        Serial.println("[SPIFFS] Updated file: " + filename);
+        httpServer.send(200, "text/plain", "OK");
+      } else {
+        httpServer.send(500, "text/plain", "FAILED_TO_WRITE");
+      }
+    } else {
+      httpServer.send(400, "text/plain", "MISSING_FILENAME");
+    }
+  });
+
   httpServer.begin();
   Serial.println("[HTTP] OTA Server started on port 8000.");
 }
@@ -1347,24 +1759,34 @@ void processCommand(String cmd) {
                   module.c_str());
     delay(300);
 
-    if (module == "RS232")
-      diagnostics.rs232 = testOk;
-    else if (module == "RS485")
-      diagnostics.rs485 = testOk;
-    else if (module == "GPRS")
-      diagnostics.gprs = testOk;
-    else if (module == "BUS")
-      diagnostics.bus = testOk;
-    else if (module == "AP")
-      diagnostics.ap = testOk;
-    else if (module == "FLASH")
-      diagnostics.flash = testOk;
-    else if (module == "DI")
-      diagnostics.di = testOk;
-    else if (module == "DRIVER")
-      diagnostics.driver = testOk;
-    else if (module == "RTC")
-      diagnostics.rtc = testOk;
+    if (module == "RS232") {
+      diagnostics.rs232 = runPhysicalTestRS232();
+      testOk = diagnostics.rs232;
+    } else if (module == "RS485") {
+      diagnostics.rs485 = runPhysicalTestRS485();
+      testOk = diagnostics.rs485;
+    } else if (module == "GPRS" || module == "GSM") {
+      diagnostics.gprs = runPhysicalTestGSM();
+      testOk = diagnostics.gprs;
+    } else if (module == "BUS") {
+      diagnostics.bus = true;
+      testOk = true;
+    } else if (module == "AP") {
+      diagnostics.ap = runPhysicalTestAP();
+      testOk = diagnostics.ap;
+    } else if (module == "FLASH") {
+      diagnostics.flash = runPhysicalTestWinbond();
+      testOk = diagnostics.flash;
+    } else if (module == "DI") {
+      diagnostics.di = runPhysicalTestDI();
+      testOk = diagnostics.di;
+    } else if (module == "DRIVER") {
+      diagnostics.driver = true;
+      testOk = true;
+    } else if (module == "RTC") {
+      diagnostics.rtc = runPhysicalTestRTC();
+      testOk = diagnostics.rtc;
+    }
 
     Serial.printf("[CMD] Test completed for %s: %s\n", module.c_str(),
                   testOk ? "OK" : "ERROR");

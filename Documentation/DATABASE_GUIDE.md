@@ -8,7 +8,7 @@ This guide details how the IOT Monitor System manages data persistence, database
 
 The application uses **Mongoose** (MongoDB Object Modeling for Node.js) to connect to a local MongoDB instance.
 
-- **Connection URL**: `mongodb://127.0.0.1:27017/iot_monitor`
+- **Connection URL**: `mongodb://127.0.0.1:27017/IOT_System_Manager`
 - **Timeout Threshold**: `serverSelectionTimeoutMS: 3000` (Fast fail-over if MongoDB is not running).
 
 ### Graceful In-Memory Fallback

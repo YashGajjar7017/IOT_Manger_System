@@ -6,7 +6,7 @@ This guide describes how to configure, compile, and run the IoT Monitor System (
 
 ## 1. ESP32 Firmware Compilation & Setup
 
-The IoT co-processor gateway runs the C++ code located in [firmware.ino](file:///a:/Coding/Electron/IOT_Monitor_System/firmware/firmware.ino).
+The IoT co-processor gateway runs the C++ code located in [firmware.ino](file:///a:/Coding/Electron/IOT_System_Manager_System/firmware/firmware.ino).
 
 ### Prerequisites
 1. Download and install **Arduino IDE** (or VS Code with PlatformIO).
@@ -18,7 +18,7 @@ On boot, the ESP32 automatically configures:
 1. **Station Mode (STA)**: Connects to your wireless router to communicate over the local network.
 2. **Access Point Mode (SoftAP)**: Broadcasts an open backup configuration SSID (`ESP32_GATEWAY_XXXX`) if no router is present.
 
-Configure your router credentials in [firmware.ino](file:///a:/Coding/Electron/IOT_Monitor_System/firmware/firmware.ino):
+Configure your router credentials in [firmware.ino](file:///a:/Coding/Electron/IOT_System_Manager_System/firmware/firmware.ino):
 ```cpp
 const char* routerSSID = "IoT_Router";
 const char* routerPassword = "password123";
@@ -38,7 +38,7 @@ The dashboard is built on React, Vite, and Electron.
 ### Setup Steps
 1. Navigate to the project root directory:
    ```bash
-   cd a:\Coding\Electron\IOT_Monitor_System
+   cd a:\Coding\Electron\IOT_System_Manager_System
    ```
 2. Install npm dependencies:
    ```bash

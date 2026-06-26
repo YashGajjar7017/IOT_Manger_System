@@ -420,11 +420,13 @@ void setup() {
       []() {
         server.sendHeader("Connection", "close");
         if (Update.hasError()) {
-          String errorStr = "Update failed: " + String(Update.errorString()) + " (Code: " + String(Update.getError()) + ")";
+          String errorStr = "Update failed: " + String(Update.errorString()) +
+                            " (Code: " + String(Update.getError()) + ")";
           Serial.println("[OTA ERROR] " + errorStr);
           server.send(500, "text/plain", errorStr);
         } else {
-          Serial.println("[OTA SUCCESS] Flash update successful. Rebooting ESP32...");
+          Serial.println(
+              "[OTA SUCCESS] Flash update successful. Rebooting ESP32...");
           server.send(200, "text/plain", "OK");
           delay(1000);
           ESP.restart();
@@ -436,50 +438,69 @@ void setup() {
           Serial.println("[OTA] --- START FIRMWARE UPLOAD ---");
           Serial.println("[OTA] Filename: " + String(upload.filename.c_str()));
           Serial.println("[OTA] Type: " + upload.type);
-          
+
           Serial.setDebugOutput(true);
-          
-          const esp_partition_t* running = esp_ota_get_running_partition();
+
+          const esp_partition_t *running = esp_ota_get_running_partition();
           if (running != NULL) {
-            Serial.printf("[OTA] Running App Partition: %s (Address: 0x%x)\n", running->label, running->address);
+            Serial.printf("[OTA] Running App Partition: %s (Address: 0x%x)\n",
+                          running->label, running->address);
           }
-          const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
-          
+          const esp_partition_t *update_partition =
+              esp_ota_get_next_update_partition(NULL);
+
           bool beginSuccess = false;
           if (update_partition != NULL) {
-            Serial.printf("[OTA] Target Flash Partition: %s (Address: 0x%x, Size: %d bytes)\n", update_partition->label, update_partition->address, update_partition->size);
-            // Explicitly begin update targeting the inactive partition by label & size
-            beginSuccess = Update.begin(update_partition->size, U_FLASH, -1, LOW, update_partition->label);
+            Serial.printf("[OTA] Target Flash Partition: %s (Address: 0x%x, "
+                          "Size: %d bytes)\n",
+                          update_partition->label, update_partition->address,
+                          update_partition->size);
+            // Explicitly begin update targeting the inactive partition by label
+            // & size
+            beginSuccess = Update.begin(update_partition->size, U_FLASH, -1,
+                                        LOW, update_partition->label);
           } else {
-            Serial.println("[OTA WARNING] Target update partition not found! Flashing to default app partition...");
+            Serial.println("[OTA WARNING] Target update partition not found! "
+                           "Flashing to default app partition...");
             beginSuccess = Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH);
           }
-          
+
           if (!beginSuccess) {
-            String err = "Update.begin failed! Error: " + String(Update.errorString()) + " (Code: " + String(Update.getError()) + ")";
+            String err =
+                "Update.begin failed! Error: " + String(Update.errorString()) +
+                " (Code: " + String(Update.getError()) + ")";
             Serial.println("[OTA ERROR] " + err);
             Update.printError(Serial);
           } else {
-            Serial.println("[OTA] Partition prepared successfully. Streaming blocks...");
+            Serial.println(
+                "[OTA] Partition prepared successfully. Streaming blocks...");
           }
         } else if (upload.status == UPLOAD_FILE_WRITE) {
           static unsigned long lastLogTime = 0;
-          if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
-            String err = "Sector write failed! Error: " + String(Update.errorString()) + " (Code: " + String(Update.getError()) + ")";
+          if (Update.write(upload.buf, upload.currentSize) !=
+              upload.currentSize) {
+            String err =
+                "Sector write failed! Error: " + String(Update.errorString()) +
+                " (Code: " + String(Update.getError()) + ")";
             Serial.println("[OTA ERROR] " + err);
             Update.printError(Serial);
           } else {
             if (millis() - lastLogTime > 1000) {
-              Serial.println("[OTA PROGRESS] Bytes written: " + String(Update.progress()) + " bytes");
+              Serial.println("[OTA PROGRESS] Bytes written: " +
+                             String(Update.progress()) + " bytes");
               lastLogTime = millis();
             }
           }
         } else if (upload.status == UPLOAD_FILE_END) {
           Serial.println("[OTA] --- END OF FIRMWARE UPLOAD ---");
           if (Update.end(true)) {
-            Serial.println("[OTA SUCCESS] Firmware verification successful! Total bytes: " + String(Update.progress()) + " bytes.");
+            Serial.println("[OTA SUCCESS] Firmware verification successful! "
+                           "Total bytes: " +
+                           String(Update.progress()) + " bytes.");
           } else {
-            String err = "Verification failed! Error: " + String(Update.errorString()) + " (Code: " + String(Update.getError()) + ")";
+            String err =
+                "Verification failed! Error: " + String(Update.errorString()) +
+                " (Code: " + String(Update.getError()) + ")";
             Serial.println("[OTA ERROR] " + err);
             Update.printError(Serial);
           }
@@ -554,6 +575,49 @@ void setup() {
         server.send(200, "text/plain", "DELETED");
       } else {
         server.send(404, "text/plain", "FILE_NOT_FOUND");
+      }
+    } else {
+      server.send(400, "text/plain", "MISSING_FILENAME");
+    }
+  });
+
+  server.on("/api/storage/read", HTTP_GET, []() {
+    if (server.hasArg("filename")) {
+      String filename = server.arg("filename");
+      if (!filename.startsWith("/")) {
+        filename = "/" + filename;
+      }
+      if (SPIFFS.exists(filename)) {
+        File file = SPIFFS.open(filename, "r");
+        if (file) {
+          server.streamFile(file, "text/plain");
+          file.close();
+        } else {
+          server.send(500, "text/plain", "FAILED_TO_OPEN");
+        }
+      } else {
+        server.send(404, "text/plain", "FILE_NOT_FOUND");
+      }
+    } else {
+      server.send(400, "text/plain", "MISSING_FILENAME");
+    }
+  });
+
+  server.on("/api/storage/update", HTTP_POST, []() {
+    if (server.hasArg("filename")) {
+      String filename = server.arg("filename");
+      if (!filename.startsWith("/")) {
+        filename = "/" + filename;
+      }
+      String content = server.arg("plain");
+      File file = SPIFFS.open(filename, FILE_WRITE);
+      if (file) {
+        file.print(content);
+        file.close();
+        logMsg("[SPIFFS] Updated file: " + filename);
+        server.send(200, "text/plain", "OK");
+      } else {
+        server.send(500, "text/plain", "FAILED_TO_WRITE");
       }
     } else {
       server.send(400, "text/plain", "MISSING_FILENAME");

@@ -15,6 +15,8 @@ let activeTcpSocket = null;
 let serialBuffer = '';
 let tcpBuffer = '';
 let expressServer = null;
+let currentDeviceDbId = null;
+let currentPcbNumber = '';
 
 // ── Worker thread for off-main-thread JSON parsing + DB writes ──────────────
 let dataWorker = null;
@@ -27,7 +29,7 @@ let cacheSaveTimer = null; // debounce timer for cache writes
 const CONFIG_PATH = path.join(app.getPath('userData'), 'app-config.json');
 
 let appConfig = {
-  mongoUri: 'mongodb://127.0.0.1:27017/iot_monitor',
+  mongoUri: 'mongodb://localhost:27017/IOT_System_Manager',
   expressPort: 8000,
   telemetryPort: 9000,
   otaPort: 500,
@@ -609,6 +611,94 @@ function startExpressServer() {
     }
   });
 
+  // REST API: Reconnect database
+  expressApp.post('/api/database/connect', (req, res) => {
+    const { uri } = req.body;
+    if (!uri) {
+      return res.status(400).json({ error: 'Missing database URI' });
+    }
+    console.log(`[EXPRESS API] Reconnecting database to: ${uri}`);
+    saveConfig({ mongoUri: uri });
+    db.connectDatabase(uri);
+    if (dataWorker) {
+      dataWorker.postMessage({ type: 'DB_RECONNECT', uri });
+    }
+    setTimeout(() => {
+      res.json({
+        success: db.isDbConnected(),
+        message: db.isDbConnected() ? 'Database connected successfully.' : 'Database connection failed.'
+      });
+    }, 3500);
+  });
+
+  // REST API: Get all registered devices
+  expressApp.get('/api/devices', async (req, res) => {
+    try {
+      const devices = await db.getRegisteredDevices();
+      res.json(devices);
+    } catch (err) {
+      res.status(500).json({ error: `Failed to fetch registered devices: ${err.message}` });
+    }
+  });
+
+  // REST API: Register/Update a device config
+  expressApp.post('/api/devices/register', async (req, res) => {
+    const data = req.body;
+    if (!data.imei) {
+      return res.status(400).json({ error: 'Missing device IMEI' });
+    }
+    try {
+      const result = await db.registerOrUpdateDevice(data);
+      if (result) {
+        res.json({ success: true, device: result });
+      } else {
+        res.status(500).json({ error: 'Failed to save configuration.' });
+      }
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // REST API: Delete a device config
+  expressApp.delete('/api/devices/:imei', async (req, res) => {
+    const { imei } = req.params;
+    if (!imei) {
+      return res.status(400).json({ error: 'Missing device IMEI' });
+    }
+    try {
+      const success = await db.deleteDeviceByImei(imei);
+      if (success) {
+        res.json({ success: true, message: `Device IMEI ${imei} deleted.` });
+      } else {
+        res.status(500).json({ error: 'Failed to delete device config.' });
+      }
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // REST API: Send a raw control command to active link
+  expressApp.post('/api/command', (req, res) => {
+    const { command } = req.body;
+    if (!command) {
+      return res.status(400).json({ error: 'Missing command' });
+    }
+    console.log(`[EXPRESS API] Posting command to active channel: ${command}`);
+    if (activeTcpSocket && !activeTcpSocket.destroyed) {
+      activeTcpSocket.write(command + '\n', (err) => {
+        if (err) return res.status(500).json({ error: `TCP write failed: ${err.message}` });
+        res.json({ success: true, transport: 'tcp', message: `Command '${command}' sent.` });
+      });
+    } else if (activeSerialPort && activeSerialPort.isOpen) {
+      activeSerialPort.write(command + '\n', (err) => {
+        if (err) return res.status(500).json({ error: `Serial write failed: ${err.message}` });
+        res.json({ success: true, transport: 'serial', message: `Command '${command}' sent.` });
+      });
+    } else {
+      res.status(400).json({ error: 'No active connection. Gateway offline.' });
+    }
+  });
+
   // Fallback to React index.html for single-page routing
   expressApp.get('*', (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
@@ -1076,6 +1166,62 @@ app.whenReady().then(async () => {
           break;
         case 'HARDWARE':
           wc.send('hardware-payload', msg.payload);
+          if (currentDeviceDbId && (msg.payload.imei || msg.payload.mac)) {
+            db.updateDeviceIdentification(currentDeviceDbId, {
+              imei: msg.payload.imei || '',
+              mac: msg.payload.mac || ''
+            });
+          }
+          // Auto-sync configuration from MongoDB registry to the connected hardware device
+          if (msg.payload.imei && msg.payload.imei !== '--') {
+            db.syncDeviceConfig(msg.payload.imei, {
+              ...msg.payload,
+              connectionType: activeTcpSocket ? 'tcp' : (activeSerialPort ? 'serial' : 'unknown'),
+              target: activeTcpSocket ? `${activeTcpSocket.remoteAddress}:${activeTcpSocket.remotePort}` : (activeSerialPort ? activeSerialPort.path : '')
+            }).then((syncResult) => {
+              if (syncResult && syncResult.action === 'sync') {
+                const config = syncResult.config;
+                console.log(`[DB-SYNC] Checking configuration sync for IMEI ${msg.payload.imei}...`);
+                
+                const sendCommand = (cmd) => {
+                  if (activeTcpSocket && !activeTcpSocket.destroyed) {
+                    activeTcpSocket.write(cmd + '\n');
+                    console.log(`[DB-SYNC -> TCP] Sent sync command: ${cmd}`);
+                  } else if (activeSerialPort && activeSerialPort.isOpen) {
+                    activeSerialPort.write(cmd + '\n');
+                    console.log(`[DB-SYNC -> SERIAL] Sent sync command: ${cmd}`);
+                  }
+                };
+
+                // Push custom password if it differs
+                if (config.password && config.password !== msg.payload.password) {
+                  console.log(`[DB-SYNC] Pushing password update: ${config.password}`);
+                  sendCommand(`SET_PASS:${config.password}`);
+                }
+
+                // Push custom telemetry interval if it differs
+                const currentInterval = msg.payload.wifi ? msg.payload.wifi.interval : null;
+                if (config.telemetryInterval && config.telemetryInterval !== currentInterval) {
+                  console.log(`[DB-SYNC] Pushing telemetry interval update: ${config.telemetryInterval} ms`);
+                  sendCommand(`SET_INTERVAL:${config.telemetryInterval}`);
+                }
+
+                // Push custom Wi-Fi router configuration if SSID differs
+                const currentSsid = msg.payload.wifi ? msg.payload.wifi.ssid : '';
+                if (config.routerSSID && config.routerSSID !== currentSsid) {
+                  console.log(`[DB-SYNC] Pushing wireless router SSID update: ${config.routerSSID}`);
+                  sendCommand(`SET_WIFI:${config.routerSSID}:${config.routerPassword}`);
+                  // Reboot the gateway after 1 second so changes apply
+                  setTimeout(() => {
+                    sendCommand('REBOOT');
+                    console.log('[DB-SYNC] Dispatched dynamic REBOOT command.');
+                  }, 1000);
+                }
+              }
+            }).catch(err => {
+              console.error('[DB-SYNC ERROR] Failed to run config synchronization check:', err);
+            });
+          }
           break;
         case 'CONTROL_STATUS':
           wc.send('control-payload-sync', msg.payload);
@@ -1373,8 +1519,20 @@ ipcMain.handle('list-ports', async () => {
   }
 });
 
-ipcMain.on('connect-serial', (event, { portPath, baudRate }) => {
+ipcMain.on('connect-serial', (event, { portPath, baudRate, pcbNumber }) => {
   cleanupConnections();
+  currentPcbNumber = pcbNumber || '';
+  currentDeviceDbId = null;
+
+  if (db.isDbConnected()) {
+    db.createDeviceIdentification({
+      pcbNumber: currentPcbNumber,
+      connectionType: 'serial',
+      target: portPath
+    }).then(id => {
+      currentDeviceDbId = id;
+    });
+  }
 
   try {
     activeSerialPort = new SerialPort({
@@ -1436,6 +1594,12 @@ ipcMain.on('connect-serial', (event, { portPath, baudRate }) => {
                   db.saveTelemetrySnapshot(payload);
                 } else {
                   event.reply('hardware-payload', payload);
+                  if (currentDeviceDbId && (payload.imei || payload.mac)) {
+                    db.updateDeviceIdentification(currentDeviceDbId, {
+                      imei: payload.imei || '',
+                      mac: payload.mac || ''
+                    });
+                  }
                 }
               } catch (e) {
                 event.reply('console-log', `[ERROR] Serial JSON parse failed: ${e.message}`);
@@ -1485,10 +1649,22 @@ ipcMain.on('send-serial-command', (event, command) => {
 // IPC Handlers: TCP Network Communication
 // -------------------------------------------------------------
 
-ipcMain.on('connect-tcp', (event, { ip, port }) => {
+ipcMain.on('connect-tcp', (event, { ip, port, pcbNumber }) => {
   cleanupConnections();
   const hostIP = ip || '192.168.4.1';
   const hostPort = parseInt(port) || 9000;
+  currentPcbNumber = pcbNumber || '';
+  currentDeviceDbId = null;
+
+  if (db.isDbConnected()) {
+    db.createDeviceIdentification({
+      pcbNumber: currentPcbNumber,
+      connectionType: 'tcp',
+      target: `${hostIP}:${hostPort}`
+    }).then(id => {
+      currentDeviceDbId = id;
+    });
+  }
 
   event.reply('console-log', `[TCP] Connecting to telemetry socket at ${hostIP}:${hostPort}...`);
 
@@ -1528,6 +1704,12 @@ ipcMain.on('connect-tcp', (event, { ip, port }) => {
             event.reply('ping-pong-reply');
           } else if (payload.status) {
             event.reply('hardware-payload', payload);
+            if (currentDeviceDbId && (payload.imei || payload.mac)) {
+              db.updateDeviceIdentification(currentDeviceDbId, {
+                imei: payload.imei || '',
+                mac: payload.mac || ''
+              });
+            }
           }
         } catch (e) {
           event.reply('console-log', `[TCP RX] ${line}`);
@@ -1827,11 +2009,11 @@ const streamFirmwareToESP32 = (buffer, options, filename, event, targetName) => 
         }
       }
 
-      const isResetError = err.code === 'ECONNRESET' || 
-                           err.code === 'EPIPE' || 
-                           (err.message && err.message.includes('ECONNRESET')) ||
-                           (err.message && err.message.includes('EPIPE'));
-      
+      const isResetError = err.code === 'ECONNRESET' ||
+        err.code === 'EPIPE' ||
+        (err.message && err.message.includes('ECONNRESET')) ||
+        (err.message && err.message.includes('EPIPE'));
+
       const percentSent = fileSize > 0 ? (offset / fileSize) : 0;
       // If we got a connection reset/broken pipe after sending at least 95% of the firmware,
       // it is a success (ESP32 finished flashing and instantly rebooted, closing the SoftAP/socket).
@@ -2391,34 +2573,41 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port }) => 
       const fileUrl = urls[file];
       const localFilePath = path.join(scratchDir, file);
 
+      event.reply('cert-status-update', { file, status: 'downloading' });
       event.reply('console-log', `[CERTS] [STEP 1/3] Downloading ${file} locally from: ${fileUrl}...`);
 
-      const content = await new Promise((resolve, reject) => {
-        const urlObj = new URL(fileUrl);
-        const isHttps = urlObj.protocol === 'https:';
-        const client = isHttps ? require('https') : require('http');
+      try {
+        const content = await new Promise((resolve, reject) => {
+          const urlObj = new URL(fileUrl);
+          const isHttps = urlObj.protocol === 'https:';
+          const client = isHttps ? require('https') : require('http');
 
-        const getOptions = {
-          hostname: urlObj.hostname,
-          port: urlObj.port || (isHttps ? 443 : 80),
-          path: urlObj.pathname + urlObj.search,
-          method: 'GET',
-          rejectUnauthorized: false // Ignore self-signed or invalid SSL cert validation (Requirement 1)
-        };
+          const getOptions = {
+            hostname: urlObj.hostname,
+            port: urlObj.port || (isHttps ? 443 : 80),
+            path: urlObj.pathname + urlObj.search,
+            method: 'GET',
+            rejectUnauthorized: false // Ignore self-signed or invalid SSL cert validation (Requirement 1)
+          };
 
-        client.get(getOptions, (res) => {
-          if (res.statusCode !== 200) {
-            reject(new Error(`Failed to download ${file}, HTTP Code: ${res.statusCode}`));
-            return;
-          }
-          let data = '';
-          res.on('data', chunk => data += chunk.toString());
-          res.on('end', () => resolve(data));
-        }).on('error', err => reject(err));
-      });
+          client.get(getOptions, (res) => {
+            if (res.statusCode !== 200) {
+              reject(new Error(`Failed to download ${file}, HTTP Code: ${res.statusCode}`));
+              return;
+            }
+            let data = '';
+            res.on('data', chunk => data += chunk.toString());
+            res.on('end', () => resolve(data));
+          }).on('error', err => reject(err));
+        });
 
-      fs.writeFileSync(localFilePath, content, 'utf8');
-      event.reply('console-log', `[CERTS] Downloaded locally to: scratch/certs/${file} (Size: ${Buffer.byteLength(content)} bytes).`);
+        fs.writeFileSync(localFilePath, content, 'utf8');
+        event.reply('cert-status-update', { file, status: 'downloaded' });
+        event.reply('console-log', `[CERTS] Downloaded locally to: scratch/certs/${file} (Size: ${Buffer.byteLength(content)} bytes).`);
+      } catch (err) {
+        event.reply('cert-status-update', { file, status: 'failed' });
+        throw err;
+      }
     }
 
     // Step 2: Upload locally stored files to ESP32 SPIFFS with Port Fallback
@@ -2426,6 +2615,7 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port }) => 
       const file = files[i];
       const localFilePath = path.join(scratchDir, file);
 
+      event.reply('cert-status-update', { file, status: 'uploading' });
       event.reply('console-log', `[CERTS] [STEP 2/3] Uploading ${file} from local storage to ESP32 SPIFFS...`);
 
       const content = fs.readFileSync(localFilePath, 'utf8');
@@ -2461,13 +2651,20 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port }) => 
       // Attempt 1: Upload to primary target port
       try {
         await uploadToPort(targetPort1);
+        event.reply('cert-status-update', { file, status: 'success' });
         event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on Port ${targetPort1}.`);
       } catch (err1) {
         event.reply('console-log', `[WIFI] Port ${targetPort1} upload failed: ${err1.message}. Retrying on fallback Port ${targetPort2}...`);
 
         // Attempt 2: Fallback to secondary port
-        await uploadToPort(targetPort2);
-        event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on fallback Port ${targetPort2}.`);
+        try {
+          await uploadToPort(targetPort2);
+          event.reply('cert-status-update', { file, status: 'success' });
+          event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on fallback Port ${targetPort2}.`);
+        } catch (err2) {
+          event.reply('cert-status-update', { file, status: 'failed' });
+          throw err2;
+        }
       }
     }
 
@@ -2627,6 +2824,9 @@ ipcMain.on('reconnect-database', (event, { uri }) => {
   saveConfig({ mongoUri: uri });
 
   db.connectDatabase(uri);
+  if (dataWorker) {
+    dataWorker.postMessage({ type: 'DB_RECONNECT', uri });
+  }
   setTimeout(() => {
     event.reply('database-connection-result', {
       connected: db.isDbConnected(),
@@ -2724,6 +2924,85 @@ ipcMain.on('delete-spiffs-file', (event, { ip, port, filename }) => {
     event.reply('console-log', `[SPIFFS ERROR] Deletion request failed: ${err.message}`);
   });
 
+  req.end();
+});
+
+// IPC Handler: Read file content from ESP32 SPIFFS Storage
+ipcMain.on('read-spiffs-file', (event, { ip, port, filename }) => {
+  const gatewayIP = ip || '192.168.4.1';
+  const gatewayPort = parseInt(port) || 8000;
+
+  event.reply('console-log', `[SPIFFS] Requesting content of '${filename}' from http://${gatewayIP}:${gatewayPort}...`);
+
+  const options = {
+    hostname: gatewayIP,
+    port: gatewayPort,
+    path: `/api/storage/read?filename=${encodeURIComponent(filename)}`,
+    method: 'GET',
+    timeout: 5000
+  };
+
+  const req = http.request(options, (res) => {
+    let data = '';
+    res.on('data', chunk => data += chunk.toString());
+    res.on('end', () => {
+      if (res.statusCode === 200) {
+        event.reply('spiffs-read-result', { success: true, filename, content: data });
+        event.reply('console-log', `[SPIFFS] Successfully read file: ${filename}`);
+      } else {
+        event.reply('spiffs-read-result', { success: false, filename, error: data });
+        event.reply('console-log', `[SPIFFS ERROR] Failed to read ${filename}. Code ${res.statusCode}: ${data}`);
+      }
+    });
+  });
+
+  req.on('error', (err) => {
+    event.reply('spiffs-read-result', { success: false, filename, error: err.message });
+    event.reply('console-log', `[SPIFFS ERROR] Read request failed: ${err.message}`);
+  });
+
+  req.end();
+});
+
+// IPC Handler: Update file content in ESP32 SPIFFS Storage
+ipcMain.on('update-spiffs-file', (event, { ip, port, filename, content }) => {
+  const gatewayIP = ip || '192.168.4.1';
+  const gatewayPort = parseInt(port) || 8000;
+
+  event.reply('console-log', `[SPIFFS] Requesting update of '${filename}' to http://${gatewayIP}:${gatewayPort}...`);
+
+  const options = {
+    hostname: gatewayIP,
+    port: gatewayPort,
+    path: `/api/storage/update?filename=${encodeURIComponent(filename)}`,
+    method: 'POST',
+    timeout: 5000,
+    headers: {
+      'Content-Type': 'text/plain',
+      'Content-Length': Buffer.byteLength(content)
+    }
+  };
+
+  const req = http.request(options, (res) => {
+    let data = '';
+    res.on('data', chunk => data += chunk.toString());
+    res.on('end', () => {
+      if (res.statusCode === 200) {
+        event.reply('spiffs-update-result', { success: true, filename });
+        event.reply('console-log', `[SPIFFS] Successfully updated file: ${filename}`);
+      } else {
+        event.reply('spiffs-update-result', { success: false, filename, error: data });
+        event.reply('console-log', `[SPIFFS ERROR] Failed to update ${filename}. Code ${res.statusCode}: ${data}`);
+      }
+    });
+  });
+
+  req.on('error', (err) => {
+    event.reply('spiffs-update-result', { success: false, filename, error: err.message });
+    event.reply('console-log', `[SPIFFS ERROR] Update request failed: ${err.message}`);
+  });
+
+  req.write(content);
   req.end();
 });
 

@@ -83,6 +83,17 @@ export default function App() {
   const [dbStatus, setDbStatus] = useState({ mongodb: 'CONNECTING', recordsCount: 0 });
   const [dbHistory, setDbHistory] = useState([]);
   const [expandedLogId, setExpandedLogId] = useState(null);
+  const [registeredDevices, setRegisteredDevices] = useState([]);
+  const [dbSubTab, setDbSubTab] = useState('tab-db-history'); // 'tab-db-history' or 'tab-db-devices'
+
+  // Registered Device Form state
+  const [regImei, setRegImei] = useState('');
+  const [regPcb, setRegPcb] = useState('');
+  const [regPass, setRegPass] = useState('admin_secure_gate');
+  const [regSsid, setRegSsid] = useState('');
+  const [regWifiPass, setRegWifiPass] = useState('');
+  const [regInterval, setRegInterval] = useState('1500');
+  const [isRegisteringDevice, setIsRegisteringDevice] = useState(false);
 
   // OTA Updates State
   const [otaIp, setOtaIp] = useState('192.168.4.1');
@@ -131,6 +142,21 @@ export default function App() {
   const [isFetchingStorage, setIsFetchingStorage] = useState(false);
   const [storageError, setStorageError] = useState(null);
 
+  const [pcbNumber, setPcbNumber] = useState('');
+  const [certPreUploadTarget, setCertPreUploadTarget] = useState('BOTH');
+  const [certStatuses, setCertStatuses] = useState({
+    'aws_root_ca.pem': 'idle',
+    'device_cert.crt': 'idle',
+    'private_key.key': 'idle'
+  });
+  const [selectedSpiffsFile, setSelectedSpiffsFile] = useState('');
+  const [selectedFileContent, setSelectedFileContent] = useState('');
+  const [fileContentEdit, setFileContentEdit] = useState('');
+  const [isReadingFile, setIsReadingFile] = useState(false);
+  const [isSavingFile, setIsSavingFile] = useState(false);
+  const [isCreatingNewFile, setIsCreatingNewFile] = useState(false);
+  const [newFileNameInput, setNewFileNameInput] = useState('');
+
   // Auto-fill values when device connects/boots
   useEffect(() => {
     if (imei && imei !== '--') {
@@ -168,7 +194,7 @@ export default function App() {
           // Select-all on text inputs so the user can immediately replace value
           if (target.tagName === 'INPUT' && target.type !== 'checkbox' && target.type !== 'radio') {
             requestAnimationFrame(() => {
-              try { target.select(); } catch (_) {}
+              try { target.select(); } catch (_) { }
             });
           }
         } catch (err) {
@@ -251,7 +277,7 @@ export default function App() {
   const [certDownloadStatus, setCertDownloadStatus] = useState('');
 
   // App Config Settings State (Requirement 6)
-  const [dbUriInput, setDbUriInput] = useState('mongodb://127.0.0.1:27017/iot_monitor');
+  const [dbUriInput, setDbUriInput] = useState('mongodb://localhost:27017/IOT_System_Manager');
   const [dbReconnectStatus, setDbReconnectStatus] = useState('');
   const [isReconnectingDb, setIsReconnectingDb] = useState(false);
 
@@ -337,7 +363,8 @@ export default function App() {
         setBootTriggerEnabled(false);
         setControlsDisabled(true);
         setPingLatency({ value: 'Offline', status: 'offline' });
-        resetDiagnostics();
+        // Comment out resetDiagnostics() to preserve diagnostics, IMEI, and MAC details during device reboots
+        // resetDiagnostics();
 
         if (data.status === 'error') {
           addLogLine(`Connection error: ${data.message}`, 'error');
@@ -367,11 +394,28 @@ export default function App() {
 
     // 4. Subscribe to diagnostics success and boot progress updates
     const onHardwarePayload = (event, payload) => {
+      if (!payload) return;
+
+      // Auto-extract IMEI/MAC/Password if present in payload (Requirement 4)
+      if (payload.imei && payload.imei !== '--') {
+        setImei(payload.imei);
+        setImeiInput(payload.imei);
+      }
+      if (payload.mac && payload.mac !== '--') {
+        setMac(payload.mac);
+      }
+      if (payload.password && payload.password !== '--') {
+        setPassword(payload.password);
+        setPasswordInput(payload.password);
+      }
+
       if (payload.status === 'BOOT_PROGRESS' || payload.step === 'QCOM_SHIFT') {
-        setIsBooting(true);
         setBootProgress(payload.progress);
         setBootStep(payload.step);
         setBootMessage(payload.message);
+        setIsBooting(true);
+        setControlsDisabled(true);
+
         if (payload.step === 'QCOM_SHIFT' && payload.progress === 100) {
           setTimeout(() => setIsBooting(false), 2000);
         }
@@ -486,24 +530,24 @@ export default function App() {
       // If we are doing advanced flashing
       if (flashingQueueRef.current.length > 0 && currentSlotRef.current) {
         const slotId = currentSlotRef.current.id;
-        
+
         if (update.status === 'uploading') {
           setOtaSlots(prev => prev.map(s => s.id === slotId ? { ...s, progress: update.progress } : s));
         } else if (update.status === 'success') {
           setOtaSlots(prev => prev.map(s => s.id === slotId ? { ...s, status: 'success', progress: 100 } : s));
           addLogLine(`[OTA] Slot "${currentSlotRef.current.label}" flashed successfully.`, 'success');
-          
+
           // Pop completed slot from queue
           flashingQueueRef.current.shift();
           currentSlotRef.current = null;
-          
+
           // Proceed to next
           setTimeout(flashNextSlot, 500);
         } else if (update.status === 'error') {
           setOtaSlots(prev => prev.map(s => s.id === slotId ? { ...s, status: 'error' } : s));
           addLogLine(`[OTA ERROR] Slot "${currentSlotRef.current.label}" failed: ${update.message}`, 'error');
           alert(`OTA Flashing Failed at slot "${currentSlotRef.current.label}":\n${update.message}`);
-          
+
           // Clear remaining queue
           flashingQueueRef.current = [];
           currentSlotRef.current = null;
@@ -611,10 +655,43 @@ export default function App() {
     };
     ipcRenderer.on('spiffs-delete-result', onSpiffsDeleteResult);
 
+    const onCertStatusUpdate = (event, { file, status }) => {
+      setCertStatuses(prev => ({ ...prev, [file]: status }));
+    };
+    ipcRenderer.on('cert-status-update', onCertStatusUpdate);
+
+    const onSpiffsReadResult = (event, result) => {
+      setIsReadingFile(false);
+      if (result.success) {
+        setSelectedSpiffsFile(result.filename);
+        setSelectedFileContent(result.content);
+        setFileContentEdit(result.content);
+        setIsCreatingNewFile(false);
+        addLogLine(`[SPIFFS] Successfully read file content for: ${result.filename}`, 'success');
+      } else {
+        alert(`Failed to read file: ${result.error}`);
+        addLogLine(`[SPIFFS ERROR] Read failed: ${result.error}`, 'error');
+      }
+    };
+    ipcRenderer.on('spiffs-read-result', onSpiffsReadResult);
+
+    const onSpiffsUpdateResult = (event, result) => {
+      setIsSavingFile(false);
+      if (result.success) {
+        alert(`File ${result.filename} updated successfully!`);
+        addLogLine(`[SPIFFS] Saved file ${result.filename} successfully to ESP32.`, 'success');
+        ipcRenderer.send('get-spiffs-storage', { ip: otaIpRef.current, port: otaPortRef.current });
+      } else {
+        alert(`Failed to update file: ${result.error}`);
+        addLogLine(`[SPIFFS ERROR] Save failed: ${result.error}`, 'error');
+      }
+    };
+    ipcRenderer.on('spiffs-update-result', onSpiffsUpdateResult);
+
     // Fetch initial app configuration (Requirement 6)
     ipcRenderer.invoke('get-app-config').then((config) => {
       if (config) {
-        setDbUriInput(config.mongoUri || 'mongodb://127.0.0.1:27017/iot_monitor');
+        setDbUriInput(config.mongoUri || 'mongodb://localhost:27017/IOT_System_Manager');
         setExpressPortInput(String(config.expressPort || '8000'));
         setTelemetryPortInput(String(config.telemetryPort || '9000'));
         setOtaPortInput(String(config.otaPort || '500'));
@@ -639,6 +716,9 @@ export default function App() {
       ipcRenderer.off('database-connection-result', onDbConnectionResult);
       ipcRenderer.off('spiffs-storage-info', onSpiffsStorageInfo);
       ipcRenderer.off('spiffs-delete-result', onSpiffsDeleteResult);
+      ipcRenderer.off('cert-status-update', onCertStatusUpdate);
+      ipcRenderer.off('spiffs-read-result', onSpiffsReadResult);
+      ipcRenderer.off('spiffs-update-result', onSpiffsUpdateResult);
     };
   }, []);
 
@@ -693,6 +773,7 @@ export default function App() {
     if (activeTab === 'page-database') {
       fetchDatabaseHistory();
       fetchDatabaseStatus();
+      fetchRegisteredDevices();
     }
   }, [activeTab]);
 
@@ -781,6 +862,107 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to load mongoose status:', err);
+    }
+  };
+
+  // REST API: Fetch registered devices configuration
+  const fetchRegisteredDevices = async () => {
+    try {
+      const res = await fetch('/api/devices');
+      if (res.ok) {
+        const data = await res.json();
+        setRegisteredDevices(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch registered devices:', err);
+    }
+  };
+
+  // REST API: Register a new device configuration
+  const handleRegisterDevice = async (e) => {
+    e.preventDefault();
+    if (!regImei) {
+      alert('IMEI is required.');
+      return;
+    }
+    setIsRegisteringDevice(true);
+    try {
+      const res = await fetch('/api/devices/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imei: regImei,
+          pcbNumber: regPcb,
+          password: regPass,
+          routerSSID: regSsid,
+          routerPassword: regWifiPass,
+          telemetryInterval: parseInt(regInterval) || 1500
+        })
+      });
+      if (res.ok) {
+        alert('Device configuration registered/updated successfully.');
+        setRegImei('');
+        setRegPcb('');
+        setRegPass('admin_secure_gate');
+        setRegSsid('');
+        setRegWifiPass('');
+        setRegInterval('1500');
+        fetchRegisteredDevices();
+      } else {
+        const errData = await res.json();
+        alert(`Failed to save device: ${errData.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Registration error: ${err.message}`);
+    } finally {
+      setIsRegisteringDevice(false);
+    }
+  };
+
+  // REST API: Delete a device configuration
+  const handleDeleteDevice = async (imei) => {
+    if (!confirm(`Are you sure you want to unregister device IMEI ${imei}?`)) return;
+    try {
+      const res = await fetch(`/api/devices/${imei}`, { method: 'DELETE' });
+      if (res.ok) {
+        alert('Device unregistered successfully.');
+        fetchRegisteredDevices();
+      } else {
+        const errData = await res.json();
+        alert(`Failed to delete: ${errData.error}`);
+      }
+    } catch (err) {
+      alert(`Delete error: ${err.message}`);
+    }
+  };
+
+  // UI action: Push DB configuration directly to connected device
+  const handlePushDeviceConfig = async (device) => {
+    if (!connection.type) {
+      alert('No active connection. Gateway must be connected (TCP or Serial) to push configuration.');
+      return;
+    }
+    addLogLine(`[GUI] Manually pushing DB config to device (IMEI: ${device.imei})...`);
+    try {
+      if (device.password) {
+        sendControlCommand(`SET_PASS:${device.password}`);
+        addLogLine(`[CMD] Pushing Password: *****`);
+      }
+      if (device.telemetryInterval) {
+        sendControlCommand(`SET_INTERVAL:${device.telemetryInterval}`);
+        addLogLine(`[CMD] Pushing Telemetry Interval: ${device.telemetryInterval} ms`);
+      }
+      if (device.routerSSID) {
+        sendControlCommand(`SET_WIFI:${device.routerSSID}:${device.routerPassword}`);
+        addLogLine(`[CMD] Pushing Wi-Fi SSID: ${device.routerSSID}`);
+        setTimeout(() => {
+          sendControlCommand('REBOOT');
+          addLogLine('[CMD] Dispatched REBOOT to gateway.');
+        }, 1000);
+      }
+      alert('Configuration push commands dispatched successfully.');
+    } catch (err) {
+      alert(`Failed to push configuration: ${err.message}`);
     }
   };
 
@@ -874,11 +1056,11 @@ export default function App() {
   // Trigger Connections
   const connectSerial = () => {
     if (!selectedSerialPort) return;
-    ipcRenderer.send('connect-serial', { portPath: selectedSerialPort, baudRate: selectedBaud });
+    ipcRenderer.send('connect-serial', { portPath: selectedSerialPort, baudRate: selectedBaud, pcbNumber });
   };
 
   const connectWifi = () => {
-    ipcRenderer.send('connect-tcp', { ip: wifiIp, port: wifiPort });
+    ipcRenderer.send('connect-tcp', { ip: wifiIp, port: wifiPort, pcbNumber });
   };
 
   const disconnectGateway = () => {
@@ -893,21 +1075,8 @@ export default function App() {
 
   const connectDiscoveredGateway = (gateway) => {
     setWifiIp(gateway.ip);
-    ipcRenderer.send('connect-tcp', { ip: gateway.ip, port: '9000' });
+    ipcRenderer.send('connect-tcp', { ip: gateway.ip, port: '9000', pcbNumber });
   };
-
-  // Old cert provisioning code commented out:
-  /*
-  const startCertProvisioning = () => {
-    if (!certBaseUrl) {
-      alert('Please specify a valid base URL.');
-      return;
-    }
-    setIsDownloadingCerts(true);
-    setCertDownloadStatus('Initiating download...');
-    ipcRenderer.send('download-and-provision-certs', { baseUrl: certBaseUrl, ip: wifiIp });
-  };
-  */
 
   const startCertProvisioning = () => {
     if (!certRootCaUrl || !certDeviceCertUrl || !certPrivateKeyUrl) {
@@ -921,14 +1090,6 @@ export default function App() {
       return;
     }
 
-    /*
-    // Original formatUrl commented out as per constraint:
-    const formatUrl = (url) => {
-      return url
-        .replace(/\{IMEI\}/gi, imeiInput)
-        .replace(/\{PASSWORD\}/gi, passwordInput);
-    };
-    */
     const formatUrl = (url) => {
       return url
         .replace(/\{IMEI\}/gi, imeiInput)
@@ -939,6 +1100,11 @@ export default function App() {
 
     setIsDownloadingCerts(true);
     setCertDownloadStatus('Initiating download...');
+    setCertStatuses({
+      'aws_root_ca.pem': 'idle',
+      'device_cert.crt': 'idle',
+      'private_key.key': 'idle'
+    });
     ipcRenderer.send('download-and-provision-certs', {
       urls: {
         'aws_root_ca.pem': formatUrl(certRootCaUrl),
@@ -970,7 +1136,7 @@ export default function App() {
   };
 
   const triggerBoot = () => {
-    sendControlCommand('START_BOOT');
+    sendControlCommand(`START_BOOT:${certPreUploadTarget}`);
   };
 
   // Switchboard Event Actions
@@ -1053,58 +1219,11 @@ export default function App() {
     addLogLine(`[OTA] Selected firmware binary: ${file.name} (${Math.round(file.size / 1024)} KB)`);
   };
 
-  // Old OTA upload trigger commented out:
-  /*
   const startOtaUpdate = () => {
     if (!otaFile) return;
     setControlsDisabled(true);
     setOtaProgress({ status: 'uploading', progress: 0 });
-    ipcRenderer.send('start-ota', { filePath: otaFile.path, ip: otaIp, target: otaTarget });
-  };
-  */
 
-  /*
-  const startOtaUpdate = () => {
-    if (!otaFile) return;
-    setControlsDisabled(true);
-    setOtaProgress({ status: 'uploading', progress: 0 });
-    ipcRenderer.send('start-ota', { filePath: otaFile.path, ip: otaIp, port: otaPort, target: otaTarget });
-  };
-  */
-
-  // Original startOtaUpdate commented out as per constraint:
-  /*
-  const startOtaUpdate = () => {
-    if (!otaFile) return;
-    setControlsDisabled(true);
-    setOtaProgress({ status: 'uploading', progress: 0 });
-    addLogLine(`[OTA] Reading local binary file: ${otaFile.name}...`);
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      // Electron IPC automatically serializes ArrayBuffer as Buffer
-      ipcRenderer.send('start-ota', {
-        fileBuffer: reader.result,
-        filename: otaFile.name,
-        ip: otaIp,
-        port: otaPort,
-        target: otaTarget
-      });
-    };
-    reader.onerror = (err) => {
-      addLogLine(`[OTA] FileReader error: ${err.message}`, 'error');
-      setOtaProgress({ status: 'error', message: 'Failed to read local binary file.' });
-      setControlsDisabled(false);
-    };
-    reader.readAsArrayBuffer(otaFile);
-  };
-  */
-
-  const startOtaUpdate = () => {
-    if (!otaFile) return;
-    setControlsDisabled(true);
-    setOtaProgress({ status: 'uploading', progress: 0 });
-    
     const localSourcePath = otaFile.path || otaFile.name;
     addLogLine(`[OTA] Source File (Where bin is loaded from): ${localSourcePath}`);
     // Fix Issue 3: Log if address mode is active in standard OTA
@@ -1210,6 +1329,35 @@ export default function App() {
     if (confirm(`Are you sure you want to delete ${filename} from ESP32 SPIFFS storage?`)) {
       ipcRenderer.send('delete-spiffs-file', { ip: otaIp, port: otaPort, filename });
     }
+  };
+
+  const handleReadSpiffsFile = (filename) => {
+    setIsReadingFile(true);
+    ipcRenderer.send('read-spiffs-file', { ip: otaIp, port: otaPort, filename });
+  };
+
+  const handleSaveSpiffsFileContent = () => {
+    const filename = isCreatingNewFile ? newFileNameInput.trim() : selectedSpiffsFile;
+    if (!filename) {
+      alert('Please specify a filename.');
+      return;
+    }
+    const cleanFilename = filename.startsWith('/') ? filename : '/' + filename;
+    setIsSavingFile(true);
+    ipcRenderer.send('update-spiffs-file', {
+      ip: otaIp,
+      port: otaPort,
+      filename: cleanFilename,
+      content: fileContentEdit
+    });
+  };
+
+  const handleNewSpiffsFileSetup = () => {
+    setIsCreatingNewFile(true);
+    setSelectedSpiffsFile('');
+    setSelectedFileContent('');
+    setFileContentEdit('');
+    setNewFileNameInput('/untitled.txt');
   };
 
   useEffect(() => {
@@ -1319,6 +1467,14 @@ export default function App() {
               <span>Cert Provisioning</span>
             </button>
 
+            <button className={`nav-item ${activeTab === 'page-storage' ? 'active' : ''}`} onClick={() => setActiveTab('page-storage')}>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <line x1="9" y1="3" x2="9" y2="21" />
+              </svg>
+              <span>ESP32 Storage</span>
+            </button>
+
             <button className={`nav-item ${activeTab === 'page-settings' ? 'active' : ''}`} onClick={() => setActiveTab('page-settings')}>
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="3" />
@@ -1362,6 +1518,16 @@ export default function App() {
 
                 {(!connection.type || connection.type === 'failed') ? (
                   <>
+                    <div className="input-group" style={{ marginBottom: '15px' }}>
+                      <label>PCB Serial Number</label>
+                      <input
+                        type="text"
+                        value={pcbNumber}
+                        onChange={(e) => setPcbNumber(e.target.value)}
+                        placeholder="e.g. PCB-ESP32-v3-987"
+                      />
+                    </div>
+
                     <div className="tabs-control">
                       <button className={`tab-btn ${activeConnTab === 'tab-wifi' ? 'active' : ''}`} onClick={() => setActiveConnTab('tab-wifi')}>WiFi IP</button>
                       <button className={`tab-btn ${activeConnTab === 'tab-serial' ? 'active' : ''}`} onClick={() => setActiveConnTab('tab-serial')}>Serial</button>
@@ -1549,9 +1715,22 @@ export default function App() {
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                     {!isBooting && bootProgress === 0 && (
-                      <button className="btn btn-accent boot-start-btn" onClick={triggerBoot}>
-                        <span className="btn-icon">&#9658;</span> Start Boot Sequence
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <select
+                          value={certPreUploadTarget}
+                          onChange={(e) => setCertPreUploadTarget(e.target.value)}
+                          className="filter-select"
+                          style={{ height: '42px', margin: 0, background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '6px', padding: '0 10px', fontSize: '12px' }}
+                        >
+                          <option value="BOTH">Upload to both ESP32 & QCOM</option>
+                          <option value="ESP32">Upload to ESP32 Only</option>
+                          <option value="QCOM">Upload to QCOM Only</option>
+                          <option value="SKIP">Skip Certificate Pre-Upload</option>
+                        </select>
+                        <button className="btn btn-accent boot-start-btn" onClick={triggerBoot}>
+                          <span className="btn-icon">&#9658;</span> Start Boot Sequence
+                        </button>
+                      </div>
                     )}
                     {bootProgress < 100 && (
                       <button
@@ -1694,7 +1873,7 @@ export default function App() {
                           <span class="metric-val">{dev.rssi} dBm</span>
                         </div>
                         <div className="device-metric" style={{ gridColumn: 'span 2' }}>
-                          <span class="metric-label">Battery</span>
+                          <span className="metric-label">{dev.id === 1 ? 'Memory Usage' : 'Battery'}</span>
                           <div className="bat-wrapper">
                             <div className="bat-bar-outer">
                               <div className={`bat-bar-inner ${dev.bat < 20 ? 'low' : ''}`} style={{ width: `${dev.bat}%` }}></div>
@@ -1752,14 +1931,18 @@ export default function App() {
 
           </section>
 
-          {/* ================= VIEW 2: MONGODB DATABASE LOGS ================= */}
+          {/* ================= VIEW 2: MONGODB DATABASE LOGS & REGISTRY ================= */}
           <section id="page-database" className={`page-view ${activeTab === 'page-database' ? 'active' : ''}`}>
             <header className="view-header">
               <div>
-                <h1>MongoDB Telemetry History</h1>
-                <p>Review telemetry snapshots logged directly to the local MongoDB MERN backend database</p>
+                <h1>MERN Database Dashboard</h1>
+                <p>Review telemetry history logs and manage registered device configurations stored in MongoDB</p>
               </div>
-              <button className="btn btn-danger small" style={{ width: 'auto' }} onClick={clearDatabaseLogs}>Clear database logs</button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button className={`btn ${dbSubTab === 'tab-db-history' ? 'btn-primary' : 'btn-secondary'} small`} onClick={() => setDbSubTab('tab-db-history')} style={{ minWidth: 'auto', padding: '0 15px', height: '36px' }}>Telemetry History</button>
+                <button className={`btn ${dbSubTab === 'tab-db-devices' ? 'btn-primary' : 'btn-secondary'} small`} onClick={() => setDbSubTab('tab-db-devices')} style={{ minWidth: 'auto', padding: '0 15px', height: '36px' }}>Device Registry</button>
+                <button className="btn btn-danger small" style={{ width: 'auto', height: '36px' }} onClick={clearDatabaseLogs}>Clear database logs</button>
+              </div>
             </header>
 
             <div className="db-layout-container">
@@ -1782,58 +1965,216 @@ export default function App() {
                 </div>
               </div>
 
-              {/* logs display */}
-              <div className="glass-card" style={{ padding: '0px' }}>
-                {dbHistory.length === 0 ? (
-                  <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>
-                    No logs found. Connect your gateway, start the socket telemetry stream, and records will save automatically.
-                  </div>
-                ) : (
-                  <div className="db-history-table">
-                    <div className="db-table-header" style={{ display: 'grid', gridTemplateColumns: '150px 100px 1fr 100px', padding: '15px 20px', borderBottom: '1px solid var(--glass-border)', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-pink)' }}>
-                      <span>Timestamp</span>
-                      <span>Clients</span>
-                      <span>Nodes Summary</span>
-                      <span style={{ textAlign: 'right' }}>Details</span>
+              {dbSubTab === 'tab-db-history' ? (
+                /* logs display */
+                <div className="glass-card" style={{ padding: '0px' }}>
+                  {dbHistory.length === 0 ? (
+                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>
+                      No logs found. Connect your gateway, start the socket telemetry stream, and records will save automatically.
                     </div>
+                  ) : (
+                    <div className="db-history-table">
+                      <div className="db-table-header" style={{ display: 'grid', gridTemplateColumns: '150px 100px 1fr 100px', padding: '15px 20px', borderBottom: '1px solid var(--glass-border)', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-pink)' }}>
+                        <span>Timestamp</span>
+                        <span>Clients</span>
+                        <span>Nodes Summary</span>
+                        <span style={{ textAlign: 'right' }}>Details</span>
+                      </div>
 
-                    <div className="db-table-body" style={{ maxHeight: '420px', overflowY: 'auto' }}>
-                      {dbHistory.map((record) => {
-                        const isExpanded = expandedLogId === record._id || expandedLogId === record.timestamp;
-                        const recordId = record._id || record.timestamp;
+                      <div className="db-table-body" style={{ maxHeight: '420px', overflowY: 'auto' }}>
+                        {dbHistory.map((record) => {
+                          const isExpanded = expandedLogId === record._id || expandedLogId === record.timestamp;
+                          const recordId = record._id || record.timestamp;
 
-                        return (
-                          <div key={recordId} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '150px 100px 1fr 100px', padding: '12px 20px', fontSize: '13px', alignItems: 'center' }}>
-                              <span style={{ fontFamily: 'var(--font-mono)' }}>{new Date(record.timestamp).toLocaleTimeString()}</span>
-                              <span>{record.count} clients</span>
-                              <span style={{ color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {record.devices.slice(0, 8).map(d => `#${d.id}(${d.temp}°C)`).join(', ')}...
-                              </span>
-                              <button className="btn btn-secondary small-btn" style={{ marginLeft: 'auto' }} onClick={() => setExpandedLogId(isExpanded ? null : recordId)}>
-                                {isExpanded ? 'Hide' : 'Expand'}
-                              </button>
-                            </div>
-
-                            {isExpanded && (
-                              <div style={{ padding: '15px 25px', background: 'rgba(3, 0, 10, 0.5)', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px', borderTop: '1px dashed var(--glass-border)' }}>
-                                {record.devices.map((d) => (
-                                  <div key={d.id} style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column' }}>
-                                    <span style={{ fontWeight: 'bold' }}>Node #{d.id}</span>
-                                    <span style={{ color: 'var(--accent-orange)' }}>Temp: {parseFloat(d.temp).toFixed(1)}°C</span>
-                                    <span>Signal: {d.rssi}dBm</span>
-                                    <span>Bat: {d.bat}%</span>
-                                  </div>
-                                ))}
+                          return (
+                            <div key={recordId} style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '150px 100px 1fr 100px', padding: '12px 20px', fontSize: '13px', alignItems: 'center' }}>
+                                <span style={{ fontFamily: 'var(--font-mono)' }}>{new Date(record.timestamp).toLocaleTimeString()}</span>
+                                <span>{record.count} clients</span>
+                                <span style={{ color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {record.devices.slice(0, 8).map(d => `#${d.id}(${d.temp}°C)`).join(', ')}...
+                                </span>
+                                <button className="btn btn-secondary small-btn" style={{ marginLeft: 'auto' }} onClick={() => setExpandedLogId(isExpanded ? null : recordId)}>
+                                  {isExpanded ? 'Hide' : 'Expand'}
+                                </button>
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
+
+                              {isExpanded && (
+                                <div style={{ padding: '15px 25px', background: 'rgba(3, 0, 10, 0.5)', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px', borderTop: '1px dashed var(--glass-border)' }}>
+                                  {record.devices.map((d) => (
+                                    <div key={d.id} style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column' }}>
+                                      <span style={{ fontWeight: 'bold' }}>Node #{d.id}</span>
+                                      <span style={{ color: 'var(--accent-orange)' }}>Temp: {parseFloat(d.temp).toFixed(1)}°C</span>
+                                      <span>Signal: {d.rssi}dBm</span>
+                                      <span>Bat: {d.bat}%</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* registered devices registry view */
+                <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px', marginTop: '15px' }}>
+                  {/* Registry Form */}
+                  <div className="glass-card">
+                    <h3><span className="icon">📝</span> Register Device Config</h3>
+                    <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                      Register or modify target settings associated with a specific device IMEI ID. Settings automatically sync upon connection.
+                    </p>
+
+                    <form onSubmit={handleRegisterDevice}>
+                      <div className="input-group">
+                        <label>Device IMEI ID *</label>
+                        <input
+                          type="text"
+                          value={regImei}
+                          onChange={(e) => setRegImei(e.target.value)}
+                          placeholder="e.g. 866738083623502"
+                          required
+                        />
+                      </div>
+
+                      <div className="input-group">
+                        <label>PCB Serial Number</label>
+                        <input
+                          type="text"
+                          value={regPcb}
+                          onChange={(e) => setRegPcb(e.target.value)}
+                          placeholder="e.g. PCB-ESP32-v3-987"
+                        />
+                      </div>
+
+                      <div className="input-group">
+                        <label>Gateway Password</label>
+                        <input
+                          type="password"
+                          value={regPass}
+                          onChange={(e) => setRegPass(e.target.value)}
+                          placeholder="Device credentials password"
+                        />
+                      </div>
+
+                      <div className="input-group">
+                        <label>Target Router SSID</label>
+                        <input
+                          type="text"
+                          value={regSsid}
+                          onChange={(e) => setRegSsid(e.target.value)}
+                          placeholder="SSID of Wireless Router"
+                        />
+                      </div>
+
+                      <div className="input-group">
+                        <label>Router Password</label>
+                        <input
+                          type="password"
+                          value={regWifiPass}
+                          onChange={(e) => setRegWifiPass(e.target.value)}
+                          placeholder="Router WPA2 Passphrase"
+                        />
+                      </div>
+
+                      <div className="input-group">
+                        <label>Telemetry Interval (ms)</label>
+                        <input
+                          type="number"
+                          value={regInterval}
+                          onChange={(e) => setRegInterval(e.target.value)}
+                          placeholder="1500"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="btn btn-primary"
+                        disabled={isRegisteringDevice}
+                        style={{ marginTop: '15px', width: '100%' }}
+                      >
+                        {isRegisteringDevice ? 'Saving Registry...' : 'Save Configuration Profile'}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Registered Devices List Table */}
+                  <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <h3><span className="icon">📡</span> Registered Device Profiles ({registeredDevices.length})</h3>
+                    <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                      List of device configurations registered inside the MongoDB database.
+                    </p>
+
+                    <div style={{ maxHeight: '420px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)', flex: 1 }}>
+                      {registeredDevices.length === 0 ? (
+                        <div style={{ padding: '40px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
+                          No configurations found in database registry. Fill form to register.
+                        </div>
+                      ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
+                              <th style={{ padding: '8px' }}>IMEI / PCB Serial</th>
+                              <th style={{ padding: '8px' }}>Password</th>
+                              <th style={{ padding: '8px' }}>SSID Target</th>
+                              <th style={{ padding: '8px' }}>Rate Interval</th>
+                              <th style={{ padding: '8px', textAlign: 'right' }}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {registeredDevices.map((dev) => (
+                              <tr key={dev._id || dev.imei} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
+                                <td style={{ padding: '8px' }}>
+                                  <div style={{ fontWeight: 'bold', color: 'white' }}>{dev.imei}</div>
+                                  <div style={{ fontSize: '10.5px', color: 'var(--text-dim)' }}>{dev.pcbNumber || 'No PCB Serial'}</div>
+                                </td>
+                                <td style={{ padding: '8px', fontFamily: 'monospace' }}>{dev.password || 'admin_secure_gate'}</td>
+                                <td style={{ padding: '8px' }}>{dev.routerSSID || '--'}</td>
+                                <td style={{ padding: '8px', fontFamily: 'monospace' }}>{dev.telemetryInterval}ms</td>
+                                <td style={{ padding: '8px', textAlign: 'right' }}>
+                                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                    <button
+                                      className="btn btn-secondary small"
+                                      style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto' }}
+                                      onClick={() => {
+                                        setRegImei(dev.imei);
+                                        setRegPcb(dev.pcbNumber || '');
+                                        setRegPass(dev.password || 'admin_secure_gate');
+                                        setRegSsid(dev.routerSSID || '');
+                                        setRegWifiPass(dev.routerPassword || '');
+                                        setRegInterval(String(dev.telemetryInterval || 1500));
+                                      }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      className="btn btn-accent small"
+                                      style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto' }}
+                                      onClick={() => handlePushDeviceConfig(dev)}
+                                    >
+                                      Push
+                                    </button>
+                                    <button
+                                      className="btn btn-danger small"
+                                      style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', background: 'rgba(255, 0, 85, 0.1)', border: '1px solid rgba(255, 0, 85, 0.3)', color: '#ff0055' }}
+                                      onClick={() => handleDeleteDevice(dev.imei)}
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
                     </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
             </div>
           </section>
@@ -2131,28 +2472,28 @@ export default function App() {
                         </span>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontFamily: 'monospace' }}>
                           <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
-                            <strong style={{ color: 'white' }}>bootloader</strong><br/>
-                            Offset: 0x0000<br/>
+                            <strong style={{ color: 'white' }}>bootloader</strong><br />
+                            Offset: 0x0000<br />
                             Size: 32KB
                           </div>
                           <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
-                            <strong style={{ color: 'white' }}>partitions</strong><br/>
-                            Offset: 0x8000<br/>
+                            <strong style={{ color: 'white' }}>partitions</strong><br />
+                            Offset: 0x8000<br />
                             Size: 4KB
                           </div>
                           <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.04)' }}>
-                            <strong style={{ color: 'white' }}>otadata</strong><br/>
-                            Offset: 0xe000<br/>
+                            <strong style={{ color: 'white' }}>otadata</strong><br />
+                            Offset: 0xe000<br />
                             Size: 8KB
                           </div>
                           <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(0, 240, 255, 0.05)', borderRadius: '6px', border: '1px solid rgba(0, 240, 255, 0.15)' }}>
-                            <strong style={{ color: 'var(--accent-blue)' }}>app0 (OTA update)</strong><br/>
-                            Offset: 0x10000<br/>
+                            <strong style={{ color: 'var(--accent-blue)' }}>app0 (OTA update)</strong><br />
+                            Offset: 0x10000<br />
                             Size: 1408KB
                           </div>
                           <div style={{ flex: 1, minWidth: '120px', padding: '8px', background: 'rgba(249, 83, 198, 0.05)', borderRadius: '6px', border: '1px solid rgba(249, 83, 198, 0.15)' }}>
-                            <strong style={{ color: 'var(--accent-pink)' }}>app1 (Main application)</strong><br/>
-                            Offset: 0x170000<br/>
+                            <strong style={{ color: 'var(--accent-pink)' }}>app1 (Main application)</strong><br />
+                            Offset: 0x170000<br />
                             Size: 1408KB
                           </div>
                         </div>
@@ -2333,15 +2674,6 @@ export default function App() {
 
                   <div className="input-group">
                     <label>Device IMEI</label>
-                    {/* Old code commented out:
-                    <input
-                      type="text"
-                      value={imeiInput}
-                      onChange={(e) => setImeiInput(e.target.value)}
-                      placeholder="e.g. 866738083623502"
-                      disabled={!connection.type}
-                    />
-                    */}
                     <input
                       type="text"
                       value={imeiInput}
@@ -2352,15 +2684,6 @@ export default function App() {
 
                   <div className="input-group">
                     <label>Gateway Password</label>
-                    {/* Old code commented out:
-                    <input
-                      type="password"
-                      value={passwordInput}
-                      onChange={(e) => setPasswordInput(e.target.value)}
-                      placeholder="Enter device passphrase"
-                      disabled={!connection.type}
-                    />
-                    */}
                     <input
                       type="password"
                       value={passwordInput}
@@ -2394,15 +2717,6 @@ export default function App() {
 
                   <div className="input-group">
                     <label>Router SSID</label>
-                    {/* Old code commented out:
-                    <input
-                      type="text"
-                      value={wifiRouterSsid}
-                      onChange={(e) => setWifiRouterSsid(e.target.value)}
-                      placeholder="SSID of Wireless Router"
-                      disabled={!connection.type}
-                    />
-                    */}
                     <input
                       type="text"
                       value={wifiRouterSsid}
@@ -2413,15 +2727,6 @@ export default function App() {
 
                   <div className="input-group">
                     <label>Router Password</label>
-                    {/* Old code commented out:
-                    <input
-                      type="password"
-                      value={wifiRouterPass}
-                      onChange={(e) => setWifiRouterPass(e.target.value)}
-                      placeholder="Router WPA2 Passphrase"
-                      disabled={!connection.type}
-                    />
-                    */}
                     <input
                       type="password"
                       value={wifiRouterPass}
@@ -2440,34 +2745,6 @@ export default function App() {
                   </button>
                 </div>
               </div>
-
-              {/* Certificates Manager Card */}
-              {/* Commented out to preserve history:
-              <div className="glass-card">
-                <h3><span className="icon">&#128190;</span> SPIFFS & QCOM Certificates Manager</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
-                  Manage certificates stored directly inside the ESP32 SPIFFS config partition (`config`) and synced to the QCOM co-processor space.
-                </p>
-
-                <div className="cert-list-container">
-                  {certificates.length === 0 ? (
-                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
-                      No active certificates loaded. Connect gateway and trigger boot diagnostics.
-                    </div>
-                  ) : (
-                    certificates.map((cert, idx) => (
-                      <div key={idx} className="cert-item-row">
-                        <div className="cert-item-details">
-                          <span className="cert-item-name">{cert.name}</span>
-                          <span className="cert-item-size">{cert.size} bytes</span>
-                        </div>
-                        <span className="cert-badge">Active SPIFFS / QCOM</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-              */}
 
               <div className="glass-card">
                 <h3><span className="icon">&#128190;</span> ESP32 SPIFFS Storage & File Inspector</h3>
@@ -2584,49 +2861,45 @@ export default function App() {
                 <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
                   <h4 style={{ fontSize: '13px', color: 'var(--accent-pink)', marginBottom: '10px' }}>Auto-Download from URL</h4>
 
-                  {/* Old Certificate Base URL Input commented out:
-                  <div className="input-group">
-                    <label>Certificate Base URL</label>
-                    <input
-                      type="text"
-                      value={certBaseUrl}
-                      onChange={(e) => setCertBaseUrl(e.target.value)}
-                      placeholder="e.g. http://localhost:8000/certs/"
-                      disabled={(!connection.type || connection.type === 'failed') || isDownloadingCerts}
-                    />
-                  </div>
-                  */}
-
-                  <div className="input-group">
-                    <label>Root CA Certificate URL (.pem)</label>
-                    <input
-                      type="text"
-                      value={certRootCaUrl}
-                      onChange={(e) => setCertRootCaUrl(e.target.value)}
-                      placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=1&PROJCD=re"
-                      disabled={isDownloadingCerts}
-                    />
-                  </div>
-                  <div className="input-group">
-                    <label>Device Certificate URL (.crt)</label>
-                    <input
-                      type="text"
-                      value={certDeviceCertUrl}
-                      onChange={(e) => setCertDeviceCertUrl(e.target.value)}
-                      placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=2&PROJCD=re"
-                      disabled={isDownloadingCerts}
-                    />
-                  </div>
-                  <div className="input-group">
-                    <label>Private Key URL (.key)</label>
-                    <input
-                      type="text"
-                      value={certPrivateKeyUrl}
-                      onChange={(e) => setCertPrivateKeyUrl(e.target.value)}
-                      placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=3&PROJCD=re"
-                      disabled={isDownloadingCerts}
-                    />
-                  </div>
+                   <div className="input-group">
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                       <label>Root CA Certificate URL (.pem)</label>
+                       <CertStatusBadge status={certStatuses['aws_root_ca.pem']} />
+                     </div>
+                     <input
+                       type="text"
+                       value={certRootCaUrl}
+                       onChange={(e) => setCertRootCaUrl(e.target.value)}
+                       placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=1&PROJCD=re"
+                       disabled={isDownloadingCerts}
+                     />
+                   </div>
+                   <div className="input-group">
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                       <label>Device Certificate URL (.crt)</label>
+                       <CertStatusBadge status={certStatuses['device_cert.crt']} />
+                     </div>
+                     <input
+                       type="text"
+                       value={certDeviceCertUrl}
+                       onChange={(e) => setCertDeviceCertUrl(e.target.value)}
+                       placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=2&PROJCD=re"
+                       disabled={isDownloadingCerts}
+                     />
+                   </div>
+                   <div className="input-group">
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                       <label>Private Key URL (.key)</label>
+                       <CertStatusBadge status={certStatuses['private_key.key']} />
+                     </div>
+                     <input
+                       type="text"
+                       value={certPrivateKeyUrl}
+                       onChange={(e) => setCertPrivateKeyUrl(e.target.value)}
+                       placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=3&PROJCD=re"
+                       disabled={isDownloadingCerts}
+                     />
+                   </div>
 
                   <button
                     className="btn btn-primary"
@@ -2690,9 +2963,9 @@ export default function App() {
                 <p>Monitor physical USB interfaces, active network connections, boot partitions, and peripheral verification status</p>
               </div>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <button 
-                  className="btn-secondary" 
-                  onClick={() => sendControlCommand('GET_INFO')} 
+                <button
+                  className="btn-secondary"
+                  onClick={() => sendControlCommand('GET_INFO')}
                   disabled={controlsDisabled}
                   style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '4px', fontSize: '0.85rem' }}
                 >
@@ -2705,7 +2978,7 @@ export default function App() {
             </header>
 
             <div className="hardware-spec-grid">
-              
+
               {/* Connection Status Card */}
               <div className="glass-card hardware-card">
                 <h3><span className="icon">🔌</span> Interface Connectivity</h3>
@@ -2886,7 +3159,7 @@ export default function App() {
             </header>
 
             <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-              
+
               {/* Form Card */}
               <div className="glass-card">
                 <h3><span className="icon">🔑</span> Request SCADA Certificates</h3>
@@ -2924,10 +3197,10 @@ export default function App() {
                   />
                 </div>
 
-                <button 
-                  className="btn btn-primary" 
-                  onClick={triggerCertificateProvision} 
-                  disabled={isProvisioning} 
+                <button
+                  className="btn btn-primary"
+                  onClick={triggerCertificateProvision}
+                  disabled={isProvisioning}
                   style={{ marginTop: '20px', width: '100%' }}
                 >
                   {isProvisioning ? 'Downloading & Provisioning...' : 'Start Secure Provisioning'}
@@ -2992,6 +3265,235 @@ export default function App() {
             </div>
           </section>
 
+          {/* ================= VIEW: ESP32 SPIFFS STORAGE MANAGER ================= */}
+          <section id="page-storage" className={`page-view ${activeTab === 'page-storage' ? 'active' : ''}`}>
+            <header className="view-header">
+              <div>
+                <h1>ESP32 SPIFFS Storage Manager</h1>
+                <p>Read, write, edit, and inspect active files stored directly in the ESP32 Winbond flash SPIFFS filesystem</p>
+              </div>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={refreshSpiffsStorage}
+                  disabled={isFetchingStorage}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '36px', minWidth: 'auto', fontSize: '12px' }}
+                >
+                  🔄 Refresh Filesystem
+                </button>
+                <div className={`connection-pill ${connection.type === 'failed' ? 'failed' : connection.type ? 'connected' : ''}`}>
+                  {connection.type === 'failed' ? 'CONNECTION FAILED' : connection.type ? `${connection.type.toUpperCase()} ACTIVE` : 'DISCONNECTED'}
+                </div>
+              </div>
+            </header>
+
+            <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '20px' }}>
+              
+              {/* Left Column: Files list and storage utilization */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                
+                {/* Storage Utilization Card */}
+                <div className="glass-card">
+                  <h3><span className="icon">&#128190;</span> Filesystem Space</h3>
+                  
+                  {spiffsStorage.totalBytes > 0 ? (
+                    <div style={{ marginTop: '15px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '8px' }}>
+                        <span style={{ color: 'var(--text-dim)' }}>Used: <strong style={{ color: '#fff' }}>{Math.round(spiffsStorage.usedBytes / 1024)} KB</strong> / {Math.round(spiffsStorage.totalBytes / 1024)} KB</span>
+                        <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold' }}>{Math.round((spiffsStorage.totalBytes - spiffsStorage.usedBytes) / 1024)} KB Free</span>
+                      </div>
+                      <div style={{ height: '8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%',
+                          width: `${Math.min(100, (spiffsStorage.usedBytes * 100) / spiffsStorage.totalBytes)}%`,
+                          background: 'linear-gradient(90deg, var(--accent-blue), var(--accent-pink))',
+                          boxShadow: '0 0 10px rgba(0, 240, 255, 0.4)'
+                        }}></div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-dim)', fontSize: '12.5px', fontStyle: 'italic' }}>
+                      Connect device and refresh to inspect filesystem details.
+                    </div>
+                  )}
+
+                  <button 
+                    className="btn btn-accent" 
+                    onClick={handleNewSpiffsFileSetup}
+                    disabled={!connection.type || connection.type === 'failed'}
+                    style={{ marginTop: '20px', width: '100%', height: '36px', fontSize: '12.5px' }}
+                  >
+                    ➕ Create New File
+                  </button>
+                </div>
+
+                {/* Files List Card */}
+                <div className="glass-card">
+                  <h3><span className="icon">&#128194;</span> SPIFFS Files</h3>
+                  
+                  <div className="cert-list-container" style={{ maxHeight: '350px', overflowY: 'auto', marginTop: '15px' }}>
+                    {spiffsStorage.files.length === 0 ? (
+                      <div style={{ padding: '30px 10px', textAlign: 'center', color: 'var(--text-dim)', fontSize: '12.5px' }}>
+                        No files found. Scan the filesystem using the refresh button.
+                      </div>
+                    ) : (
+                      spiffsStorage.files.map((file, idx) => {
+                        const cleanName = file.name.startsWith('/') ? file.name.substring(1) : file.name;
+                        const isSelected = selectedSpiffsFile === file.name;
+                        return (
+                          <div 
+                            key={idx} 
+                            className="cert-item-row" 
+                            style={{ 
+                              display: 'flex', 
+                              justifyContent: 'space-between', 
+                              alignItems: 'center', 
+                              padding: '10px 12px', 
+                              background: isSelected ? 'rgba(0, 240, 255, 0.05)' : 'rgba(255,255,255,0.01)', 
+                              border: isSelected ? '1px solid rgba(0, 240, 255, 0.2)' : '1px solid rgba(255,255,255,0.03)',
+                              borderRadius: '6px', 
+                              marginBottom: '6px' 
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, cursor: 'pointer' }} onClick={() => handleReadSpiffsFile(file.name)}>
+                              <span style={{ fontWeight: 'bold', color: isSelected ? 'var(--accent-blue)' : 'white', fontSize: '12.5px' }}>/{cleanName}</span>
+                              <span style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '2px' }}>{file.size} bytes</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button
+                                className="btn btn-secondary"
+                                onClick={() => handleReadSpiffsFile(file.name)}
+                                disabled={isReadingFile}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  height: '26px',
+                                  minWidth: 'auto',
+                                  margin: 0,
+                                  background: 'rgba(0, 240, 255, 0.1)',
+                                  border: '1px solid rgba(0, 240, 255, 0.3)',
+                                  color: '#00f0ff',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Read
+                              </button>
+                              <button
+                                className="btn btn-secondary"
+                                onClick={() => handleDeleteSpiffsFile(file.name)}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  height: '26px',
+                                  minWidth: 'auto',
+                                  margin: 0,
+                                  background: 'rgba(255, 0, 85, 0.1)',
+                                  border: '1px solid rgba(255, 0, 85, 0.3)',
+                                  color: '#ff0055',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Right Column: File Content Editor & Viewer */}
+              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', minHeight: '400px' }}>
+                {selectedSpiffsFile || isCreatingNewFile ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px' }}>
+                      <div>
+                        <h3 style={{ margin: 0 }}>
+                          {isCreatingNewFile ? '📝 Create New File' : `📖 File: ${selectedSpiffsFile}`}
+                        </h3>
+                        <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                          {isCreatingNewFile ? 'Drafting new configuration file content' : `Read-only / write-override partition: ${Math.round(selectedFileContent.length)} characters`}
+                        </span>
+                      </div>
+                      <button
+                        className="btn btn-secondary small"
+                        onClick={() => {
+                          setSelectedSpiffsFile('');
+                          setIsCreatingNewFile(false);
+                          setFileContentEdit('');
+                        }}
+                        style={{ margin: 0, minWidth: 'auto', padding: '4px 10px', height: '26px', fontSize: '11px' }}
+                      >
+                        Close
+                      </button>
+                    </div>
+
+                    {isCreatingNewFile && (
+                      <div className="input-group" style={{ marginBottom: '15px' }}>
+                        <label>SPIFFS Destination File Path</label>
+                        <input
+                          type="text"
+                          value={newFileNameInput}
+                          onChange={(e) => setNewFileNameInput(e.target.value)}
+                          placeholder="e.g. /config.txt"
+                        />
+                      </div>
+                    )}
+
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                      <label style={{ fontSize: '11.5px', color: 'var(--accent-pink)', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>
+                        File Content Editor
+                      </label>
+                      <textarea
+                        value={fileContentEdit}
+                        onChange={(e) => setFileContentEdit(e.target.value)}
+                        placeholder="Type file plain-text content here..."
+                        style={{
+                          flex: 1,
+                          width: '100%',
+                          minHeight: '250px',
+                          background: '#040209',
+                          border: '1px solid var(--glass-border)',
+                          borderRadius: '6px',
+                          padding: '12px',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '12px',
+                          color: '#00ffcc',
+                          lineHeight: '1.6',
+                          resize: 'vertical',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '15px' }}>
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleSaveSpiffsFileContent}
+                        disabled={isSavingFile || (!isCreatingNewFile && !selectedSpiffsFile)}
+                        style={{ width: 'auto', padding: '0 25px', height: '38px', fontSize: '12.5px' }}
+                      >
+                        {isSavingFile ? 'Saving Content...' : 'Save File to SPIFFS'}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-dim)', textAlign: 'center', padding: '40px' }}>
+                    <div style={{ fontSize: '48px', marginBottom: '15px' }}>📂</div>
+                    <h4>No File Loaded</h4>
+                    <p style={{ maxWidth: '300px', fontSize: '12.5px', marginTop: '5px' }}>
+                      Select a file from the list to view/edit its contents, or click "Create New File" to initialize a new config file.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </section>
+
           {/* ================= VIEW 5: APP SETTINGS (Requirement 6) ================= */}
           <section id="page-settings" className={`page-view ${activeTab === 'page-settings' ? 'active' : ''}`}>
             <header className="view-header">
@@ -3015,7 +3517,7 @@ export default function App() {
                     type="text"
                     value={dbUriInput}
                     onChange={(e) => setDbUriInput(e.target.value)}
-                    placeholder="mongodb://127.0.0.1:27017/iot_monitor"
+                    placeholder="mongodb://localhost:27017/IOT_System_Manager"
                   />
                 </div>
                 <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
@@ -3112,3 +3614,31 @@ export default function App() {
     </>
   );
 }
+
+const CertStatusBadge = ({ status }) => {
+  let color = 'var(--text-dim)';
+  let label = 'Pending';
+
+  if (status === 'downloading') {
+    color = '#00f0ff';
+    label = 'Downloading...';
+  } else if (status === 'downloaded') {
+    color = '#ffbb00';
+    label = 'Downloaded';
+  } else if (status === 'uploading') {
+    color = '#ffbb00';
+    label = 'Uploading...';
+  } else if (status === 'success') {
+    color = '#00ff66';
+    label = 'Success';
+  } else if (status === 'failed') {
+    color = '#ff3366';
+    label = 'Failed';
+  }
+
+  return (
+    <span style={{ fontSize: '11px', color, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+      ● {label}
+    </span>
+  );
+};
