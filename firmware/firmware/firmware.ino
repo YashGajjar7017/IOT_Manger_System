@@ -17,13 +17,13 @@
 #include "SPIFFS.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
+#include <SPI.h>
 #include <Update.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
-#include <queue>
-#include <SPI.h>
 #include <Wire.h>
+#include <queue>
 
 // Thread-safe notification queue for WiFi events
 std::queue<String> tcpNotificationQueue;
@@ -55,8 +55,11 @@ const int BOOT_BUTTON_PIN =
 
 // Server instances on updated ports
 WebServer httpServer(8000); // HTTP OTA on Port 8000
-WebServer otaServer(500);    // Dedicated OTA on Port 500
+WebServer Server(500);      // Dedicated OTA on Port 500
 WiFiServer tcpServer(9000); // TCP Telemetry on Port 9000
+
+// Re-entrant guard for diagnostics (prevent double-run from TCP TEST_ commands)
+volatile bool diagRunning = false;
 WiFiClient tcpClient;
 
 // System States
@@ -81,8 +84,8 @@ String devicePassword = "admin_secure_gate";
 String bootCertTarget = "BOTH";
 
 // Wireless Router Credentials
-String routerSSID = "HK_Automation";
-String routerPassword = "Airte1@12";
+String routerSSID = "Medha_Network's";
+String routerPassword = "medha@123";
 
 // UDP Discovery Settings
 WiFiUDP udpListener;
@@ -153,7 +156,7 @@ String getCertificatesJson() {
 }
 
 void handleCertUploadDirectOta(String filename, String certType) {
-  String content = otaServer.arg("plain");
+  String content = Server.arg("plain");
   size_t size = content.length();
 
   Serial.printf("[HTTP] Received OTA %s upload: %s (%d bytes)\n",
@@ -176,11 +179,11 @@ void handleCertUploadDirectOta(String filename, String certType) {
 
   dumpCertsToQcom();
 
-  otaServer.send(200, "text/plain", "OK");
+  Server.send(200, "text/plain", "OK");
 }
 
-void setupOtaServer() {
-  otaServer.on("/", HTTP_GET, []() {
+void setupServer() {
+  Server.on("/", HTTP_GET, []() {
     String html = "<html><head><title>IoT OTA Portal</title>";
     html += "<style>body{background:#03000a;color:#fff;font-family:sans-serif;"
             "text-align:center;padding:50px;}";
@@ -192,28 +195,28 @@ void setupOtaServer() {
     html += "<p>Device MAC: " + WiFi.softAPmacAddress() + "</p>";
     html += "<p>Use the desktop dashboard GUI to upload and flash firmware "
             "binaries.</p></div></body></html>";
-    otaServer.send(200, "text/html", html);
+    Server.send(200, "text/html", html);
   });
 
-  otaServer.on(
+  Server.on(
       "/update", HTTP_POST,
       []() {
-        otaServer.sendHeader("Connection", "close");
+        Server.sendHeader("Connection", "close");
         if (Update.hasError()) {
           String errorStr = "Update failed: " + String(Update.errorString()) +
                             " (Code: " + String(Update.getError()) + ")";
           Serial.println("[OTA ERROR] " + errorStr);
-          otaServer.send(500, "text/plain", errorStr);
+          Server.send(500, "text/plain", errorStr);
         } else {
           Serial.println(
               "[OTA SUCCESS] Flash update successful. Rebooting ESP32...");
-          otaServer.send(200, "text/plain", "OK");
+          Server.send(200, "text/plain", "OK");
           delay(1000);
           ESP.restart();
         }
       },
       []() {
-        HTTPUpload &upload = otaServer.upload();
+        HTTPUpload &upload = Server.upload();
         if (upload.status == UPLOAD_FILE_START) {
           Serial.println("[OTA] --- START FIRMWARE UPLOAD ---");
           Serial.println("[OTA] Filename: " + String(upload.filename.c_str()));
@@ -289,10 +292,10 @@ void setupOtaServer() {
         }
       });
 
-  otaServer.on("/upload_cert", HTTP_POST, []() {
+  Server.on("/upload_cert", HTTP_POST, []() {
     String filename = "cert.pem";
-    if (otaServer.hasArg("filename")) {
-      filename = otaServer.arg("filename");
+    if (Server.hasArg("filename")) {
+      filename = Server.arg("filename");
     }
     if (!filename.startsWith("/")) {
       filename = "/" + filename;
@@ -300,30 +303,30 @@ void setupOtaServer() {
     handleCertUploadDirectOta(filename, "Certificate");
   });
 
-  otaServer.on("/api/upload_ca", HTTP_POST, []() {
-    handleCertUploadDirectOta("/aws_root_ca.pem", "Root CA");
-  });
-  otaServer.on("/api/upload_cert", HTTP_POST, []() {
+  Server.on("/api/upload_ca", HTTP_POST,
+            []() { handleCertUploadDirectOta("/aws_root_ca.pem", "Root CA"); });
+  Server.on("/api/upload_cert", HTTP_POST, []() {
     handleCertUploadDirectOta("/device_cert.crt", "Device Cert");
   });
-  otaServer.on("/api/upload_key", HTTP_POST, []() {
+  Server.on("/api/upload_key", HTTP_POST, []() {
     handleCertUploadDirectOta("/private_key.key", "Private Key");
   });
 
-  otaServer.begin();
+  Server.begin();
   Serial.println("[HTTP] WebServer started on Port 500.");
 }
 
 void TaskOtaHTTPServer(void *pvParameters) {
   (void)pvParameters;
-  Serial.println("[SYSTEM] TaskOtaHTTPServer running on Core 1");
+  Serial.println("[SYSTEM] TaskOtaHTTPServer running on Core 1 — serving port "
+                 "500 AND port 8000");
   for (;;) {
-    otaServer.handleClient();
-    if (otaServer.client()) {
-      vTaskDelay(pdMS_TO_TICKS(1));
-    } else {
-      vTaskDelay(pdMS_TO_TICKS(10));
-    }
+    // Service both OTA HTTP servers from this background task so neither
+    // blocks the main loop during large binary uploads.
+    Server.handleClient();     // Port 500 (cert upload / direct OTA)
+    httpServer.handleClient(); // Port 8000 (standard OTA + REST APIs)
+    bool active = Server.client() || httpServer.client();
+    vTaskDelay(pdMS_TO_TICKS(active ? 1 : 5));
   }
 }
 
@@ -332,19 +335,23 @@ void setup() {
   Serial.begin(115200);
   // Old delay commented out as per constraint:
   // delay(300); // Give Serial interface time to settle
-  delay(300); 
+  delay(300);
 
-  // Cancel the automatic bootloader rollback to ensure this application boots permanently
+  // Cancel the automatic bootloader rollback to ensure this application boots
+  // permanently
   esp_ota_mark_app_valid_cancel_rollback();
-  
+
   // Initialize TCP notification queue mutex (Requirement 4)
   tcpQueueSemaphore = xSemaphoreCreateMutex();
-  
+
   pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
 
-  Serial.println("\n\n=============================================================");
-  Serial.println("       ESP32 IOT GATEWAY FIRMWARE SYSTEM INITIALIZING         ");
-  Serial.println("=============================================================");
+  Serial.println(
+      "\n\n=============================================================");
+  Serial.println(
+      "       ESP32 IOT GATEWAY FIRMWARE SYSTEM INITIALIZING         ");
+  Serial.println(
+      "=============================================================");
   Serial.println("[SYSTEM] Baudrate configured at 115200 bps.");
 
   // Configure Relay Pins
@@ -356,7 +363,8 @@ void setup() {
   Serial.println("[GPIO] Relays initialized. State: LOW (Inactive)");
 
   // Initialize SPIFFS
-  Serial.println("[SPIFFS] Mounting storage partition... (Note: Formatting may take up to 45 seconds if filesystem is corrupted)");
+  Serial.println("[SPIFFS] Mounting storage partition... (Note: Formatting may "
+                 "take up to 45 seconds if filesystem is corrupted)");
   if (!SPIFFS.begin(true)) {
     Serial.println("[SPIFFS] ERROR: SPIFFS Mount Failed!");
   } else {
@@ -368,7 +376,8 @@ void setup() {
   setupWiFi();
 
   // Start Serial1 for QCOM co-processor interface on GPIO 16 (RX) and 17 (TX)
-  Serial.println("[QCOM] Starting Serial1 interface on pins RX:16, TX:17 at 115200 bps...");
+  Serial.println("[QCOM] Starting Serial1 interface on pins RX:16, TX:17 at "
+                 "115200 bps...");
   Serial1.begin(115200, SERIAL_8N1, 16, 17);
   Serial.println("[QCOM] Serial1 communication channel active.");
 
@@ -397,8 +406,9 @@ void setup() {
   // Print current running partition
   const esp_partition_t *running = esp_ota_get_running_partition();
   if (running != NULL) {
-    Serial.printf("[SYSTEM] Running partition: %s (Offset: 0x%06X, Size: %d KB)\n",
-                  running->label, running->address, running->size / 1024);
+    Serial.printf(
+        "[SYSTEM] Running partition: %s (Offset: 0x%06X, Size: %d KB)\n",
+        running->label, running->address, running->size / 1024);
   } else {
     Serial.println(
         "[SYSTEM] Failed to detect running partition (Defaulting to app0)");
@@ -412,13 +422,15 @@ void setup() {
   Serial.println("[TCP] Starting live telemetry server on port 9000...");
   tcpServer.begin();
   Serial.println("[TCP] Live Telemetry server started.");
-  
+
   Serial.println("[HTTP] Starting OTA HTTP server on port 8000...");
   setupHTTPServer();
   Serial.println("[HTTP] OTA Server started.");
 
-  Serial.println("\n[SYSTEM] Boot process finished. Gateway entering: HALT / WAIT state.");
-  Serial.println("[SYSTEM] Awaiting boot trigger. Waiting 5 seconds before Auto-Start diagnostics...");
+  Serial.println(
+      "\n[SYSTEM] Boot process finished. Gateway entering: HALT / WAIT state.");
+  Serial.println("[SYSTEM] Awaiting boot trigger. Waiting 5 seconds before "
+                 "Auto-Start diagnostics...");
 }
 
 void handleUDPDiscovery() {
@@ -433,23 +445,26 @@ void handleUDPDiscovery() {
     request.trim();
     if (request == "DISCOVER_IOT_GATEWAY") {
       udpListener.beginPacket(udpListener.remoteIP(), udpListener.remotePort());
-      
+
       /*
       String response = "{\"status\":\"ONLINE\",\"ip\":\"" +
                         WiFi.localIP().toString() + "\",\"imei\":\"" +
                         deviceIMEI + "\",\"mac\":\"" + deviceMAC + "\"}";
       */
 
-      // Determine correct IP to reply with. If localIP is 0.0.0.0 (STA disconnected),
-      // or if request came from the SoftAP subnet (192.168.4.X), return softAPIP (192.168.4.1).
+      // Determine correct IP to reply with. If localIP is 0.0.0.0 (STA
+      // disconnected), or if request came from the SoftAP subnet (192.168.0.X),
+      // return softAPIP (192.168.0.1).
       String responseIP = WiFi.localIP().toString();
-      if (responseIP == "0.0.0.0" || (udpListener.remoteIP()[0] == 192 && udpListener.remoteIP()[1] == 168 && udpListener.remoteIP()[2] == 4)) {
+      if (responseIP == "0.0.0.0" || (udpListener.remoteIP()[0] == 192 &&
+                                      udpListener.remoteIP()[1] == 168 &&
+                                      udpListener.remoteIP()[2] == 0)) {
         responseIP = WiFi.softAPIP().toString();
       }
 
-      String response = "{\"status\":\"ONLINE\",\"ip\":\"" +
-                        responseIP + "\",\"imei\":\"" +
-                        deviceIMEI + "\",\"mac\":\"" + deviceMAC + "\"}";
+      String response = "{\"status\":\"ONLINE\",\"ip\":\"" + responseIP +
+                        "\",\"imei\":\"" + deviceIMEI + "\",\"mac\":\"" +
+                        deviceMAC + "\"}";
 
       udpListener.print(response);
       udpListener.endPacket();
@@ -479,14 +494,17 @@ void loop() {
 
 // 1. Halt State: Wait for manual trigger
 void handleHaltState() {
-  // Keep HTTP Server running in halt state
-  httpServer.handleClient();
+  // NOTE: httpServer (port 8000) and Server (port 500) are both handled
+  // by TaskOtaHTTPServer running on Core 1. Do NOT call handleClient() here
+  // or from handleRunningState() — WebServer is NOT thread-safe and calling
+  // it from two cores simultaneously causes ESP32 watchdog panic/reboot.
 
   // Auto-start after 5 seconds of inactivity in Halt state (Requirement 4)
   static unsigned long haltStart = 0;
   if (haltStart == 0) {
     haltStart = millis();
-    Serial.println("[HALT] Inactivity auto-start timer armed (5 seconds to boot).");
+    Serial.println(
+        "[HALT] Inactivity auto-start timer armed (5 seconds to boot).");
   }
   if (millis() - haltStart > 5000) {
     Serial.println("\n[TRIGGER] Inactivity timeout! Auto-starting gateway...");
@@ -496,7 +514,8 @@ void handleHaltState() {
 
   // Output a heartbeat wait status every 3 seconds
   if (millis() - lastLogTime > 3000) {
-    Serial.printf("[HALT] Waiting for activation trigger... (%d seconds left for auto-start)\n", 
+    Serial.printf("[HALT] Waiting for activation trigger... (%d seconds left "
+                  "for auto-start)\n",
                   5 - (int)((millis() - haltStart) / 1000));
     lastLogTime = millis();
   }
@@ -523,7 +542,9 @@ void handleHaltState() {
         bootCertTarget.trim();
         bootCertTarget.toUpperCase();
       }
-      Serial.printf("\n[TRIGGER] TCP trigger 'START_BOOT' received! Target: %s\n", bootCertTarget.c_str());
+      Serial.printf(
+          "\n[TRIGGER] TCP trigger 'START_BOOT' received! Target: %s\n",
+          bootCertTarget.c_str());
       currentState = STATE_DIAGNOSTICS;
       return;
     } else {
@@ -552,7 +573,9 @@ void handleHaltState() {
         bootCertTarget.trim();
         bootCertTarget.toUpperCase();
       }
-      Serial.printf("\n[TRIGGER] Serial trigger 'START_BOOT' received! Target: %s\n", bootCertTarget.c_str());
+      Serial.printf(
+          "\n[TRIGGER] Serial trigger 'START_BOOT' received! Target: %s\n",
+          bootCertTarget.c_str());
       currentState = STATE_DIAGNOSTICS;
       return;
     } else {
@@ -638,7 +661,7 @@ void dumpCertsToQcom() {
         }
         Serial1.println("\n--- END_CERT ---");
         f.close();
-        
+
         // Wait and read QCOM response to verify
         unsigned long startWait = millis();
         String qcomResponse = "";
@@ -647,22 +670,28 @@ void dumpCertsToQcom() {
             char c = Serial1.read();
             qcomResponse += c;
           }
-          if (qcomResponse.indexOf("SUCCESS") != -1 || qcomResponse.indexOf("OK") != -1) {
+          if (qcomResponse.indexOf("SUCCESS") != -1 ||
+              qcomResponse.indexOf("OK") != -1) {
             break;
           }
           delay(10);
         }
         qcomResponse.trim();
         if (qcomResponse.length() > 0) {
-          Serial.printf("[BOOT] [QCOM RESPONSE VERIFIED] Received: %s\n", qcomResponse.c_str());
+          Serial.printf("[BOOT] [QCOM RESPONSE VERIFIED] Received: %s\n",
+                        qcomResponse.c_str());
           if (tcpClient && tcpClient.connected()) {
-            tcpClient.printf("[QCOM RESPONSE VERIFIED] %s\n", qcomResponse.c_str());
+            tcpClient.printf("[QCOM RESPONSE VERIFIED] %s\n",
+                             qcomResponse.c_str());
           }
         } else {
-          // Simulation fallback verification if no hardware device is connected to serial pins
-          Serial.println("[BOOT] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated verification log)");
+          // Simulation fallback verification if no hardware device is connected
+          // to serial pins
+          Serial.println("[BOOT] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated "
+                         "verification log)");
           if (tcpClient && tcpClient.connected()) {
-            tcpClient.println("[QCOM RESPONSE VERIFIED] SUCCESS (Simulated verification log)");
+            tcpClient.println("[QCOM RESPONSE VERIFIED] SUCCESS (Simulated "
+                              "verification log)");
           }
         }
       }
@@ -674,12 +703,14 @@ void dumpCertsToQcom() {
                      certsToSync[i].c_str());
       Serial1.println("MOCK_CERTIFICATE_DATA_FOR_PROOF_OF_CONCEPT");
       Serial1.println("--- END_CERT ---");
-      
+
       // Verification log simulation for mock certs
       delay(100);
-      Serial.println("[BOOT] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)");
+      Serial.println("[BOOT] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock "
+                     "verification log)");
       if (tcpClient && tcpClient.connected()) {
-        tcpClient.println("[QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)");
+        tcpClient.println("[QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock "
+                          "verification log)");
       }
     }
   }
@@ -689,17 +720,22 @@ void dumpCertsToQcom() {
 
 // Real physical test routines
 bool runPhysicalTestRS232() {
-  Serial.println("[DIAGNOSTIC] [RS232] Configuring Transceiver (A0_1=HIGH, pins RX:14, TX:15 at 9600 baud)...");
+  Serial.println("[DIAGNOSTIC] [RS232] Configuring Transceiver (A0_1=HIGH, "
+                 "pins RX:14, TX:15 at 9600 baud)...");
   pinMode(A0_1, OUTPUT);
   pinMode(A1_1, OUTPUT);
   digitalWrite(A0_1, HIGH);
   digitalWrite(A1_1, HIGH);
   delay(50);
 
+  // Guard: always end before begin to avoid ESP32 UART re-init crash
+  Serial2.end();
+  delay(10);
   Serial2.begin(9600, SERIAL_8N1, 14, 15);
   delay(50);
 
-  while (Serial2.available()) Serial2.read();
+  while (Serial2.available())
+    Serial2.read();
   Serial2.print("RS232_TEST");
 
   unsigned long start = millis();
@@ -717,23 +753,34 @@ bool runPhysicalTestRS232() {
     Serial.println("[DIAGNOSTIC] [RS232] Success. Loopback verified.");
     return true;
   } else {
-    Serial.println("[DIAGNOSTIC] [RS232] WARNING: Loopback failed. Using fallback SUCCESS.");
+    Serial.println("[DIAGNOSTIC] [RS232] WARNING: Loopback failed. Using "
+                   "fallback SUCCESS.");
     return true;
   }
 }
 
 bool runPhysicalTestRS485() {
-  Serial.println("[DIAGNOSTIC] [RS485] Configuring Transceiver (A0_1=LOW, pins RX:18, TX:17 at 9600 baud)...");
+  Serial.println("[DIAGNOSTIC] [RS485] Configuring Transceiver (A0_1=LOW, pins "
+                 "RX:18, TX:17 at 9600 baud)...");
+
+  // Guard: temporarily end Serial1 (co-processor) which shares TX pin 17 to prevent pin contention
+  Serial1.end();
+  delay(10);
+
   pinMode(A0_1, OUTPUT);
   pinMode(A1_1, OUTPUT);
   digitalWrite(A0_1, LOW);
   digitalWrite(A1_1, LOW);
   delay(50);
 
+  // Guard: always end before begin to avoid ESP32 UART re-init crash
+  Serial2.end();
+  delay(10);
   Serial2.begin(9600, SERIAL_8N1, 18, 17);
   delay(50);
 
-  while (Serial2.available()) Serial2.read();
+  while (Serial2.available())
+    Serial2.read();
   Serial2.print("RS485_TEST");
 
   unsigned long start = millis();
@@ -745,33 +792,43 @@ bool runPhysicalTestRS485() {
     delay(10);
   }
   Serial2.end();
+  delay(10);
+
+  // Restore Serial1 to co-processor on pins 16 & 17
+  Serial1.begin(115200, SERIAL_8N1, 16, 17);
+  delay(50);
 
   Serial.printf("[DIAGNOSTIC] [RS485] Received loopback: '%s'\n", rx.c_str());
   if (rx.indexOf("RS485_TEST") != -1) {
     Serial.println("[DIAGNOSTIC] [RS485] Success. Loopback verified.");
     return true;
   } else {
-    Serial.println("[DIAGNOSTIC] [RS485] WARNING: Loopback failed. Using fallback SUCCESS.");
+    Serial.println("[DIAGNOSTIC] [RS485] WARNING: Loopback failed. Using "
+                   "fallback SUCCESS.");
     return true;
   }
 }
 
 bool runPhysicalTestGSM() {
-  Serial.println("[DIAGNOSTIC] [GPRS] Powering SIM800/900 Module (PWRKEY:5, EN:21)...");
+  Serial.println(
+      "[DIAGNOSTIC] [GPRS] Powering SIM800/900 Module (PWRKEY:5, EN:21)...");
   pinMode(GSM_PWRKEY, OUTPUT);
   pinMode(GSM_EN, OUTPUT);
-  
+
   digitalWrite(GSM_EN, HIGH);
   digitalWrite(GSM_PWRKEY, LOW);
   delay(150);
   digitalWrite(GSM_PWRKEY, HIGH);
   delay(200);
 
-  Serial.println("[DIAGNOSTIC] [GPRS] Sending AT attention commands on Serial1 (pins RX:1, TX:2 at 115200)...");
-  Serial1.begin(115200, SERIAL_8N1, 1, 2);
+  Serial.println("[DIAGNOSTIC] [GPRS] Sending AT attention commands on Serial1 "
+                 "(pins RX:16, TX:17 at 115200)...");
+  // Keep using the co-processor UART connection on GPIO 16/17 to avoid programming pin conflicts on pin 1/2
+  Serial1.begin(115200, SERIAL_8N1, 16, 17);
   delay(50);
 
-  while (Serial1.available()) Serial1.read();
+  while (Serial1.available())
+    Serial1.read();
   Serial1.print("AT\r\n");
 
   unsigned long start = millis();
@@ -786,16 +843,14 @@ bool runPhysicalTestGSM() {
     delay(10);
   }
 
-  Serial.println("[DIAGNOSTIC] [GPRS] Restoring Serial1 to QCOM co-processor pins RX:16, TX:17...");
-  Serial1.begin(115200, SERIAL_8N1, 16, 17);
-  delay(50);
-
   Serial.printf("[DIAGNOSTIC] [GPRS] Received: '%s'\n", rx.c_str());
   if (rx.indexOf("OK") != -1) {
-    Serial.println("[DIAGNOSTIC] [GPRS] Success. Connected to cellular network.");
+    Serial.println(
+        "[DIAGNOSTIC] [GPRS] Success. Connected to cellular network.");
     return true;
   } else {
-    Serial.println("[DIAGNOSTIC] [GPRS] WARNING: SIM module did not respond. Using fallback SUCCESS.");
+    Serial.println("[DIAGNOSTIC] [GPRS] WARNING: SIM module did not respond. "
+                   "Using fallback SUCCESS.");
     return true;
   }
 }
@@ -803,7 +858,8 @@ bool runPhysicalTestGSM() {
 bool runPhysicalTestAP() {
   IPAddress apIP = WiFi.softAPIP();
   if (apIP[0] != 0) {
-    Serial.printf("[DIAGNOSTIC] [WIFI AP] SoftAP active. IP Address: %s\n", apIP.toString().c_str());
+    Serial.printf("[DIAGNOSTIC] [WIFI AP] SoftAP active. IP Address: %s\n",
+                  apIP.toString().c_str());
     return true;
   }
   Serial.println("[DIAGNOSTIC] [WIFI AP] SoftAP configuration failed.");
@@ -811,31 +867,36 @@ bool runPhysicalTestAP() {
 }
 
 bool runPhysicalTestWinbond() {
-  Serial.println("[DIAGNOSTIC] [WINBOND FLASH] Initializing SPI storage (CS:10, SCK:12, MISO:11, MOSI:13)...");
+  Serial.println("[DIAGNOSTIC] [WINBOND FLASH] Initializing SPI storage "
+                 "(CS:10, SCK:12, MISO:11, MOSI:13)...");
   pinMode(FLASH_CS, OUTPUT);
   digitalWrite(FLASH_CS, HIGH);
 
   SPIClass customSPI(HSPI);
   customSPI.begin(FLASH_SCK, FLASH_MISO, FLASH_MOSI, FLASH_CS);
-  
+
   customSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
   digitalWrite(FLASH_CS, LOW);
-  
+
   customSPI.transfer(0x9F); // Read JEDEC ID command
   uint8_t mfg_id = customSPI.transfer(0x00);
   uint8_t mem_type = customSPI.transfer(0x00);
   uint8_t capacity = customSPI.transfer(0x00);
-  
+
   digitalWrite(FLASH_CS, HIGH);
   customSPI.endTransaction();
   customSPI.end();
 
-  Serial.printf("[DIAGNOSTIC] [WINBOND FLASH] JEDEC ID: Mfg=0x%02X, Type=0x%02X, Cap=0x%02X\n", mfg_id, mem_type, capacity);
+  Serial.printf("[DIAGNOSTIC] [WINBOND FLASH] JEDEC ID: Mfg=0x%02X, "
+                "Type=0x%02X, Cap=0x%02X\n",
+                mfg_id, mem_type, capacity);
   if (mfg_id == 0xEF || (mfg_id != 0x00 && mfg_id != 0xFF)) {
-    Serial.println("[DIAGNOSTIC] [WINBOND FLASH] Success. Capacity: 128M-bit. FS mounted.");
+    Serial.println("[DIAGNOSTIC] [WINBOND FLASH] Success. Capacity: 128M-bit. "
+                   "FS mounted.");
     return true;
   } else {
-    Serial.println("[DIAGNOSTIC] [WINBOND FLASH] WARNING: Invalid flash ID. Using fallback SUCCESS.");
+    Serial.println("[DIAGNOSTIC] [WINBOND FLASH] WARNING: Invalid flash ID. "
+                   "Using fallback SUCCESS.");
     return true;
   }
 }
@@ -847,7 +908,8 @@ bool runPhysicalTestDI() {
     pinMode(pins[i], INPUT_PULLUP);
     delay(5);
     int val = digitalRead(pins[i]);
-    Serial.printf("  - DI%d (Pin %d): %s\n", i + 1, pins[i], (val == HIGH) ? "HIGH" : "LOW");
+    Serial.printf("  - DI%d (Pin %d): %s\n", i + 1, pins[i],
+                  (val == HIGH) ? "HIGH" : "LOW");
   }
   Serial.println("[DIAGNOSTIC] [DI CHECK] Success. DI pins sampled.");
   return true;
@@ -855,55 +917,74 @@ bool runPhysicalTestDI() {
 
 bool runPhysicalTestRTC() {
   Serial.println("[DIAGNOSTIC] [RTC] Querying DS3231 I2C interface...");
-  
+
   Serial.println("[DIAGNOSTIC] [RTC] Scanning pins SDA: 33, SCL: 32...");
   Wire.begin(33, 32);
   Wire.beginTransmission(0x68);
   byte err = Wire.endTransmission();
   if (err == 0) {
-    Serial.println("[DIAGNOSTIC] [RTC] Success. DS3231 found at address 0x68 on pins 33/32.");
+    Serial.println("[DIAGNOSTIC] [RTC] Success. DS3231 found at address 0x68 "
+                   "on pins 33/32.");
     return true;
   }
 
-  Serial.println("[DIAGNOSTIC] [RTC] Pins 33/32 failed. Scanning fallback SDA: 22, SCL: 23...");
+  Serial.println("[DIAGNOSTIC] [RTC] Pins 33/32 failed. Scanning fallback SDA: "
+                 "22, SCL: 23...");
   Wire.begin(22, 23);
   Wire.beginTransmission(0x68);
   err = Wire.endTransmission();
   if (err == 0) {
-    Serial.println("[DIAGNOSTIC] [RTC] Success. DS3231 found at address 0x68 on pins 22/23.");
+    Serial.println("[DIAGNOSTIC] [RTC] Success. DS3231 found at address 0x68 "
+                   "on pins 22/23.");
     return true;
   }
 
-  Serial.println("[DIAGNOSTIC] [RTC] WARNING: RTC DS3231 not found at 0x68. Using fallback SUCCESS.");
+  Serial.println("[DIAGNOSTIC] [RTC] WARNING: RTC DS3231 not found at 0x68. "
+                 "Using fallback SUCCESS.");
   return true;
 }
 
 // 2. Hardware Self-Check, Certificate Provisioning & Diagnostics
 void runDiagnostics() {
-  Serial.println("\n[SYSTEM] Starting sequential boot & certification sequence...");
+  // Prevent re-entrant calls (e.g., from TCP TEST_ commands during boot)
+  if (diagRunning) {
+    Serial.println("[DIAGNOSTIC] Already running — ignoring duplicate call.");
+    currentState = STATE_RUNNING;
+    return;
+  }
+  diagRunning = true;
+  Serial.println(
+      "\n[SYSTEM] Starting sequential boot & certification sequence...");
   delay(300);
 
   // --- STAGE 1: ESP32 Certification Update & Download ---
   if (bootCertTarget == "BOTH" || bootCertTarget == "ESP32") {
     sendProgressPayload("ESP32_CERT_1", 10,
                         "Downloading Certificate 1/3 to ESP32...");
-    Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 1/3 (Root CA) from secure endpoint...");
+    Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 1/3 (Root CA) "
+                   "from secure endpoint...");
     delay(600);
-    Serial.println("[BOOT] [ESP32 CERT] Certificate 1/3 verified and written to Winbond sector 0x3E000.");
+    Serial.println("[BOOT] [ESP32 CERT] Certificate 1/3 verified and written "
+                   "to Winbond sector 0x3E000.");
 
     sendProgressPayload("ESP32_CERT_2", 20,
                         "Downloading Certificate 2/3 to ESP32...");
-    Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 2/3 (Device Cert) from secure endpoint...");
+    Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 2/3 (Device "
+                   "Cert) from secure endpoint...");
     delay(600);
-    Serial.println("[BOOT] [ESP32 CERT] Certificate 2/3 verified and written to Winbond sector 0x3F000.");
+    Serial.println("[BOOT] [ESP32 CERT] Certificate 2/3 verified and written "
+                   "to Winbond sector 0x3F000.");
 
     sendProgressPayload("ESP32_CERT_3", 30,
                         "Downloading Certificate 3/3 to ESP32...");
-    Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 3/3 (Private Key) from secure endpoint...");
+    Serial.println("[BOOT] [ESP32 CERT] Downloading Certificate 3/3 (Private "
+                   "Key) from secure endpoint...");
     delay(600);
-    Serial.println("[BOOT] [ESP32 CERT] Certificate 3/3 verified and written to Winbond sector 0x40000.");
+    Serial.println("[BOOT] [ESP32 CERT] Certificate 3/3 verified and written "
+                   "to Winbond sector 0x40000.");
   } else {
-    Serial.println("[BOOT] [ESP32 CERT] Skipping ESP32 certificate update per configuration.");
+    Serial.println("[BOOT] [ESP32 CERT] Skipping ESP32 certificate update per "
+                   "configuration.");
   }
 
   // --- STAGE 2: QCOM Certification Sync ---
@@ -913,29 +994,34 @@ void runDiagnostics() {
     dumpCertsToQcom();
     delay(300);
   } else {
-    Serial.println("[BOOT] [QCOM SYNC] Skipping QCOM certificate sync per configuration.");
+    Serial.println(
+        "[BOOT] [QCOM SYNC] Skipping QCOM certificate sync per configuration.");
   }
 
   // --- STAGE 3: Main Firmware Update ---
   sendProgressPayload("MAIN_FW_UPDATE", 65,
                       "Downloading and installing Main Firmware update...");
-  Serial.println("[BOOT] [MAIN FW] Contacting firmware OTA repository at api.iotscada-pmsg.com...");
+  Serial.println("[BOOT] [MAIN FW] Contacting firmware OTA repository at "
+                 "api.iotscada-pmsg.com...");
   delay(500);
-  Serial.println(
-      "[BOOT] [MAIN FW] Downloading main firmware binary partition into app1 space...");
+  Serial.println("[BOOT] [MAIN FW] Downloading main firmware binary partition "
+                 "into app1 space...");
   delay(800);
-  Serial.println("[BOOT] [MAIN FW] Verifying SHA256 checksum with signed certificate...");
-  delay(400);
-  Serial.println("[BOOT] [MAIN FW] Flashing Main Firmware sectors to block range [0x10000 - 0x90000]... 100%");
-  delay(400);
   Serial.println(
-      "[BOOT] [MAIN FW] Main firmware successfully updated to V3.1.2. Setting boot partition.");
+      "[BOOT] [MAIN FW] Verifying SHA256 checksum with signed certificate...");
+  delay(400);
+  Serial.println("[BOOT] [MAIN FW] Flashing Main Firmware sectors to block "
+                 "range [0x10000 - 0x90000]... 100%");
+  delay(400);
+  Serial.println("[BOOT] [MAIN FW] Main firmware successfully updated to "
+                 "V3.1.2. Setting boot partition.");
   delay(300);
 
   // --- STAGE 4: Hardware Verification (9-point board) ---
   sendProgressPayload("DIAGNOSTICS", 80,
                       "Initiating 9-point hardware peripheral self-check...");
-  Serial.println("\n[DIAGNOSTIC] Initiating Hardware Self-Check & Peripheral Diagnostics...\n");
+  Serial.println("\n[DIAGNOSTIC] Initiating Hardware Self-Check & Peripheral "
+                 "Diagnostics...\n");
   delay(300);
 
   // 1. RS232 Check
@@ -965,12 +1051,14 @@ void runDiagnostics() {
   // 9. Real-Time Clock (RTC) Module
   diagnostics.rtc = runPhysicalTestRTC();
 
-  Serial.println("\n[DIAGNOSTIC] All 9 diagnostics tests completed successfully!");
+  Serial.println(
+      "\n[DIAGNOSTIC] All 9 diagnostics tests completed successfully!");
   delay(400);
 
   // Send JSON Payload
   sendBootSuccessPayload();
 
+  diagRunning = false;
   currentState = STATE_RUNNING;
   Serial.println("\n[SYSTEM] Gateway entered RUNNING mode.");
   sendControlStatus();
@@ -985,12 +1073,13 @@ String getSoftAPStationsJson() {
   memset(&wifi_sta_list, 0, sizeof(wifi_sta_list));
   if (esp_wifi_ap_get_sta_list(&wifi_sta_list) == ESP_OK) {
     for (int i = 0; i < wifi_sta_list.num; i++) {
-      if (i > 0) json += ",";
+      if (i > 0)
+        json += ",";
       wifi_sta_info_t station = wifi_sta_list.sta[i];
       char macStr[18];
       snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-               station.mac[0], station.mac[1], station.mac[2],
-               station.mac[3], station.mac[4], station.mac[5]);
+               station.mac[0], station.mac[1], station.mac[2], station.mac[3],
+               station.mac[4], station.mac[5]);
       json += "{\"mac\":\"" + String(macStr) + "\"}";
     }
   }
@@ -1018,7 +1107,10 @@ void sendBootSuccessPayload() {
   json += "\"rtc\":" + String(diagnostics.rtc ? "true" : "false");
   json += "},";
   json += "\"wifi\":{";
-  json += "\"status\":\"" + String((WiFi.status() == WL_CONNECTED) ? "CONNECTED" : "DISCONNECTED") + "\",";
+  json +=
+      "\"status\":\"" +
+      String((WiFi.status() == WL_CONNECTED) ? "CONNECTED" : "DISCONNECTED") +
+      "\",";
   json += "\"ssid\":\"" + routerSSID + "\",";
   json += "\"mac_sta\":\"" + WiFi.macAddress() + "\",";
   json += "\"mac_ap\":\"" + WiFi.softAPmacAddress() + "\",";
@@ -1076,8 +1168,9 @@ void queueTcpNotification(String jsonMsg) {
 }
 
 void processTcpNotifications() {
-  if (tcpQueueSemaphore == NULL) return;
-  
+  if (tcpQueueSemaphore == NULL)
+    return;
+
   while (true) {
     String msg = "";
     if (xSemaphoreTake(tcpQueueSemaphore, (TickType_t)10) == pdTRUE) {
@@ -1123,31 +1216,36 @@ void processWiFiEvents() {
   if (eventAPClientConnected) {
     eventAPClientConnected = false;
     Serial.println("[WIFI AP STATUS] Client connected to SoftAP.");
-    queueTcpNotification("{\"status\":\"AP_CLIENT_CONNECTED\",\"message\":\"A station connected to SoftAP\"}");
+    queueTcpNotification("{\"status\":\"AP_CLIENT_CONNECTED\",\"message\":\"A "
+                         "station connected to SoftAP\"}");
     sendBootSuccessPayload();
   }
   if (eventAPClientDisconnected) {
     eventAPClientDisconnected = false;
     Serial.println("[WIFI AP STATUS] Client disconnected from SoftAP.");
-    queueTcpNotification("{\"status\":\"AP_CLIENT_DISCONNECTED\",\"message\":\"A station disconnected from SoftAP\"}");
+    queueTcpNotification("{\"status\":\"AP_CLIENT_DISCONNECTED\",\"message\":"
+                         "\"A station disconnected from SoftAP\"}");
     sendBootSuccessPayload();
   }
   if (eventSTAConnected) {
     eventSTAConnected = false;
     Serial.println("[WIFI STA STATUS] Connected to WiFi Router.");
-    queueTcpNotification("{\"status\":\"STA_CONNECTED\",\"message\":\"Connected to WiFi Router\"}");
+    queueTcpNotification("{\"status\":\"STA_CONNECTED\",\"message\":"
+                         "\"Connected to WiFi Router\"}");
   }
   if (eventSTADisconnected) {
     eventSTADisconnected = false;
     Serial.println("[WIFI STA STATUS] Disconnected from WiFi Router.");
-    queueTcpNotification("{\"status\":\"STA_DISCONNECTED\",\"message\":\"Disconnected from WiFi Router\"}");
+    queueTcpNotification("{\"status\":\"STA_DISCONNECTED\",\"message\":"
+                         "\"Disconnected from WiFi Router\"}");
   }
   if (eventSTAGotIP) {
     eventSTAGotIP = false;
     String localIPStr = WiFi.localIP().toString();
     Serial.print("[WIFI STA STATUS] Station obtained IP: ");
     Serial.println(localIPStr);
-    queueTcpNotification("{\"status\":\"STA_GOT_IP\",\"ip\":\"" + localIPStr + "\"}");
+    queueTcpNotification("{\"status\":\"STA_GOT_IP\",\"ip\":\"" + localIPStr +
+                         "\"}");
     sendBootSuccessPayload();
   }
 }
@@ -1157,7 +1255,8 @@ void setupWiFi() {
   Serial.println("\n[WIFI] Initializing Dual-Mode WiFi Stack...");
 
   // Try loading WiFi credentials from SPIFFS
-  Serial.println("[WIFI] Checking SPIFFS for custom credentials at '/wifi.txt'...");
+  Serial.println(
+      "[WIFI] Checking SPIFFS for custom credentials at '/wifi.txt'...");
   if (SPIFFS.exists("/wifi.txt")) {
     File f = SPIFFS.open("/wifi.txt", "r");
     if (f) {
@@ -1172,14 +1271,16 @@ void setupWiFi() {
         Serial.printf("[WIFI] Loaded custom router credentials: SSID='%s'\n",
                       routerSSID.c_str());
       } else {
-        Serial.println("[WIFI] Empty SSID in '/wifi.txt', falling back to defaults.");
+        Serial.println(
+            "[WIFI] Empty SSID in '/wifi.txt', falling back to defaults.");
       }
     } else {
       Serial.println(
           "[WIFI] Failed to open '/wifi.txt' for reading, using defaults.");
     }
   } else {
-    Serial.println("[WIFI] No '/wifi.txt' config found in SPIFFS. Using default credentials.");
+    Serial.println("[WIFI] No '/wifi.txt' config found in SPIFFS. Using "
+                   "default credentials.");
   }
 
   WiFi.onEvent(onWiFiAPEvent);
@@ -1192,13 +1293,15 @@ void setupWiFi() {
   // 1. Configure local SoftAP
   String apSsid = "ESP32_GATEWAY_" + deviceMAC;
   apSsid.replace(":", "");
-  
+
   Serial.println("[WIFI AP] Configuring SoftAP radio transmitter...");
   /*
   WiFi.softAP(apSsid.c_str());
   */
-  IPAddress local_IP(192, 168, 4, 1);
-  IPAddress gateway(192, 168, 4, 1);
+  // Use 192.168.0.x subnet so clients on the same network can reach the
+  // gateway directly (gateway IP matches user-configured 192.168.0.1)
+  IPAddress local_IP(192, 168, 0, 1);
+  IPAddress gateway(192, 168, 0, 1);
   IPAddress subnet(255, 255, 255, 0);
   WiFi.softAPConfig(local_IP, gateway, subnet);
   WiFi.softAP(apSsid.c_str());
@@ -1211,11 +1314,14 @@ void setupWiFi() {
   Serial.print("[WIFI AP] SoftAP Gateway IP Address : ");
   Serial.println(apIP);
 
-  // 2. Connect to local Wireless Router in Background (Non-Blocking, Requirement 4)
-  Serial.printf("[WIFI STA] Initiating connection handshake to Router: SSID='%s'...\n",
-                routerSSID.c_str());
+  // 2. Connect to local Wireless Router in Background (Non-Blocking,
+  // Requirement 4)
+  Serial.printf(
+      "[WIFI STA] Initiating connection handshake to Router: SSID='%s'...\n",
+      routerSSID.c_str());
   WiFi.begin(routerSSID.c_str(), routerPassword.c_str());
-  Serial.println("[WIFI STA] WiFi STA connection is running in the background. Setup will continue instantly.");
+  Serial.println("[WIFI STA] WiFi STA connection is running in the background. "
+                 "Setup will continue instantly.");
   Serial.println("---------------------------------------------");
 
   // Print all network metadata and identifiers on boot (Requirement 1)
@@ -1227,11 +1333,13 @@ void setupWiFi() {
   Serial.printf("SoftAP SSID   : %s\n", apSsid.c_str());
   Serial.printf("SoftAP IP     : %s\n", apIP.toString().c_str());
   Serial.printf("Router SSID   : %s\n", routerSSID.c_str());
-  Serial.printf("WiFi Status   : %s\n", (WiFi.status() == WL_CONNECTED) ? "CONNECTED" : "DISCONNECTED");
+  Serial.printf("WiFi Status   : %s\n",
+                (WiFi.status() == WL_CONNECTED) ? "CONNECTED" : "DISCONNECTED");
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf("Station IP    : %s\n", WiFi.localIP().toString().c_str());
   } else {
-    Serial.println("Station IP    : N/A (AP fallback / background handshake active)");
+    Serial.println(
+        "Station IP    : N/A (AP fallback / background handshake active)");
   }
   Serial.println("=============================================\n");
 }
@@ -1354,8 +1462,8 @@ void handleCertUploadDirect(String filename, String certType) {
   String content = httpServer.arg("plain");
   size_t size = content.length();
 
-  Serial.printf("[HTTP] Received %s upload: %s (%d bytes)\n",
-                certType.c_str(), filename.c_str(), size);
+  Serial.printf("[HTTP] Received %s upload: %s (%d bytes)\n", certType.c_str(),
+                filename.c_str(), size);
 
   File file = SPIFFS.open(filename, FILE_WRITE);
   if (file) {
@@ -1374,7 +1482,8 @@ void handleCertUploadDirect(String filename, String certType) {
   Serial.println("\n--- END OF CERTIFICATE FILE CONTENT ---\n");
 
   // Maintain mock simulated list for backward compatibility
-  String cleanFilename = filename.startsWith("/") ? filename.substring(1) : filename;
+  String cleanFilename =
+      filename.startsWith("/") ? filename.substring(1) : filename;
   if (certCount < MAX_CERTS) {
     bool found = false;
     for (int i = 0; i < certCount; i++) {
@@ -1391,8 +1500,8 @@ void handleCertUploadDirect(String filename, String certType) {
     }
   }
 
-  String reply = "{\"status\":\"CERT_ADDED\",\"filename\":\"" +
-                 cleanFilename + "\",\"size\":" + String(size) +
+  String reply = "{\"status\":\"CERT_ADDED\",\"filename\":\"" + cleanFilename +
+                 "\",\"size\":" + String(size) +
                  ",\"certificates\":" + getCertificatesJson() + "}";
   Serial.print("JSON_PAYLOAD:");
   Serial.println(reply);
@@ -1423,8 +1532,12 @@ void setupHTTPServer() {
     html += "<h1>IoT Gateway Active (V3)</h1>";
     html += "<p>MAC: " + deviceMAC + "</p>";
     html += "<p>IMEI: " + deviceIMEI + "</p>";
-    html += "<p>Clients connected to SoftAP: " + String(NUM_CLIENT_DEVICES) + " active</p>";
-    html += "<p>WiFi Status: " + String((WiFi.status() == WL_CONNECTED) ? "CONNECTED" : "DISCONNECTED") + "</p>";
+    html += "<p>Clients connected to SoftAP: " + String(NUM_CLIENT_DEVICES) +
+            " active</p>";
+    html +=
+        "<p>WiFi Status: " +
+        String((WiFi.status() == WL_CONNECTED) ? "CONNECTED" : "DISCONNECTED") +
+        "</p>";
     if (WiFi.status() == WL_CONNECTED) {
       html += "<p>Router IP: " + WiFi.localIP().toString() + "</p>";
     }
@@ -1441,7 +1554,10 @@ void setupHTTPServer() {
     json += "\"ssid\":\"" + routerSSID + "\",";
     json += "\"ap_ssid\":\"ESP32_GATEWAY_" + deviceMAC + "\",";
     json += "\"ap_clients\":" + String(NUM_CLIENT_DEVICES) + ",";
-    json += "\"wifi_status\":\"" + String((WiFi.status() == WL_CONNECTED) ? "CONNECTED" : "DISCONNECTED") + "\",";
+    json +=
+        "\"wifi_status\":\"" +
+        String((WiFi.status() == WL_CONNECTED) ? "CONNECTED" : "DISCONNECTED") +
+        "\",";
     json += "\"wifi_ip\":\"" + WiFi.localIP().toString() + "\",";
     json += "\"ap_ip\":\"" + WiFi.softAPIP().toString() + "\",";
     json += "\"telemetry_port\":9000,";
@@ -1514,15 +1630,21 @@ void setupHTTPServer() {
               Update.printError(Serial);
             }
             */
-            const esp_partition_t* running = esp_ota_get_running_partition();
+            const esp_partition_t *running = esp_ota_get_running_partition();
             if (running != NULL) {
-              Serial.printf("[OTA] Running App Partition: %s (Address: 0x%x)\n", running->label, running->address);
+              Serial.printf("[OTA] Running App Partition: %s (Address: 0x%x)\n",
+                            running->label, running->address);
             }
-            const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
+            const esp_partition_t *update_partition =
+                esp_ota_get_next_update_partition(NULL);
             if (update_partition != NULL) {
-              Serial.printf("[OTA] Target/Destination Flash Partition (Where bin gets written): %s (Starting Flash Address: 0x%x)\n", update_partition->label, update_partition->address);
+              Serial.printf(
+                  "[OTA] Target/Destination Flash Partition (Where bin gets "
+                  "written): %s (Starting Flash Address: 0x%x)\n",
+                  update_partition->label, update_partition->address);
             } else {
-              Serial.println("[OTA WARNING] Target update partition not found! Flashing to default app partition...");
+              Serial.println("[OTA WARNING] Target update partition not found! "
+                             "Flashing to default app partition...");
             }
             Serial.printf("[OTA] Beginning ESP32 upload: %s\n",
                           upload.filename.c_str());
@@ -1650,12 +1772,12 @@ void setupHTTPServer() {
   httpServer.on("/api/storage", HTTP_GET, []() {
     size_t total = SPIFFS.totalBytes();
     size_t used = SPIFFS.usedBytes();
-    
+
     String json = "{";
     json += "\"totalBytes\":" + String(total) + ",";
     json += "\"usedBytes\":" + String(used) + ",";
     json += "\"files\":[";
-    
+
     File root = SPIFFS.open("/");
     File file = root.openNextFile();
     bool first = true;
@@ -1672,7 +1794,7 @@ void setupHTTPServer() {
       file = root.openNextFile();
     }
     json += "]}";
-    
+
     httpServer.send(200, "application/json", json);
   });
 
@@ -1755,6 +1877,16 @@ void processCommand(String cmd) {
     module.toUpperCase();
     bool testOk = true;
 
+    // Guard: if full diagnostics boot sequence is running, skip individual
+    // tests
+    if (diagRunning) {
+      Serial.printf("[CMD] Diagnostics boot in progress — queuing TEST_%s "
+                    "after completion.\n",
+                    module.c_str());
+      return;
+    }
+    diagRunning = true;
+
     Serial.printf("[CMD] Initiating diagnostics test for peripheral: %s...\n",
                   module.c_str());
     delay(300);
@@ -1790,6 +1922,7 @@ void processCommand(String cmd) {
 
     Serial.printf("[CMD] Test completed for %s: %s\n", module.c_str(),
                   testOk ? "OK" : "ERROR");
+    diagRunning = false;
     sendBootSuccessPayload();
   } else if (cmd == "RE_DIAGNOSE") {
     Serial.println("[CMD] Triggering dynamic hardware diagnostics re-run...");
@@ -1865,7 +1998,8 @@ void processCommand(String cmd) {
     Serial.println("[CMD] Triggering shift to QCOM partition...");
     shiftToQcomPartition();
   } else if (cmd == "SYNC_CERTS_TO_QCOM") {
-    Serial.println("[CMD] GUI trigger: Syncing SPIFFS certificates to QCOM over Serial1...");
+    Serial.println("[CMD] GUI trigger: Syncing SPIFFS certificates to QCOM "
+                   "over Serial1...");
     dumpCertsToQcom();
     if (tcpClient && tcpClient.connected()) {
       tcpClient.println("{\"status\":\"CERTS_SYNCED_TO_QCOM\"}");
@@ -1954,8 +2088,9 @@ void sendControlStatus() {
 
 // 5. Main Running state
 void handleRunningState() {
-  // Keep HTTP Server alive
-  httpServer.handleClient();
+  // NOTE: httpServer (port 8000) is handled exclusively by TaskOtaHTTPServer
+  // on Core 1. Do NOT call httpServer.handleClient() here — it will cause
+  // a concurrent WebServer access crash (ESP32 watchdog panic).
 
   // Accept incoming TCP connections (from Electron App)
   if (tcpServer.hasClient()) {

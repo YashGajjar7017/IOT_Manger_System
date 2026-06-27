@@ -133,6 +133,24 @@ export default function App() {
     { id: 4, label: 'App Firmware', address: '0x10000', checked: true, file: null, status: 'idle', progress: 0 },
   ]);
   const [isFlashingAdvanced, setIsFlashingAdvanced] = useState(false);
+
+  // Dynamic Theme, Font, and GitHub Integration States
+  const [currentTheme, setCurrentTheme] = useState(() => localStorage.getItem('theme') || 'quantum-indigo');
+  const [currentFont, setCurrentFont] = useState(() => localStorage.getItem('font') || 'outfit');
+  const [gitHubUser, setGitHubUser] = useState(() => {
+    const saved = localStorage.getItem('github_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', currentTheme);
+    localStorage.setItem('theme', currentTheme);
+  }, [currentTheme]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-font', currentFont);
+    localStorage.setItem('font', currentFont);
+  }, [currentFont]);
   const [autoRebootAdvanced, setAutoRebootAdvanced] = useState(true);
   const flashingQueueRef = useRef([]);
   const currentSlotRef = useRef(null);
@@ -1053,6 +1071,23 @@ export default function App() {
     setTimeout(() => setCertUploadProgress(75), 500);
   };
 
+  // GitHub Integration Handler
+  const handleGitHubSignIn = () => {
+    if (gitHubUser) {
+      setGitHubUser(null);
+      localStorage.removeItem('github_user');
+      addLogLine('[GITHUB] Signed out from GitHub integration.', 'system');
+      return;
+    }
+    const mockUser = {
+      username: 'YashGajjar7017',
+      avatarUrl: 'https://github.com/YashGajjar7017.png'
+    };
+    setGitHubUser(mockUser);
+    localStorage.setItem('github_user', JSON.stringify(mockUser));
+    addLogLine('[GITHUB] OAuth authorization successful! Syncing environment workspace to "YashGajjar7017".', 'success');
+  };
+
   // Trigger Connections
   const connectSerial = () => {
     if (!selectedSerialPort) return;
@@ -1426,6 +1461,16 @@ export default function App() {
                 <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
               </svg>
               <span>MongoDB History</span>
+            </button>
+
+            <button className={`nav-item ${activeTab === 'page-device-registry' ? 'active' : ''}`} onClick={() => setActiveTab('page-device-registry')}>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
+                <line x1="6" y1="6" x2="6.01" y2="6" />
+                <line x1="6" y1="18" x2="6.01" y2="18" />
+              </svg>
+              <span>Device Registry</span>
             </button>
 
             <button className={`nav-item ${activeTab === 'page-security' ? 'active' : ''}`} onClick={() => setActiveTab('page-security')}>
@@ -1931,16 +1976,14 @@ export default function App() {
 
           </section>
 
-          {/* ================= VIEW 2: MONGODB DATABASE LOGS & REGISTRY ================= */}
+          {/* ================= VIEW 2: MONGODB DATABASE LOGS ================= */}
           <section id="page-database" className={`page-view ${activeTab === 'page-database' ? 'active' : ''}`}>
             <header className="view-header">
               <div>
                 <h1>MERN Database Dashboard</h1>
-                <p>Review telemetry history logs and manage registered device configurations stored in MongoDB</p>
+                <p>Review telemetry history logs stored in MongoDB</p>
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button className={`btn ${dbSubTab === 'tab-db-history' ? 'btn-primary' : 'btn-secondary'} small`} onClick={() => setDbSubTab('tab-db-history')} style={{ minWidth: 'auto', padding: '0 15px', height: '36px' }}>Telemetry History</button>
-                <button className={`btn ${dbSubTab === 'tab-db-devices' ? 'btn-primary' : 'btn-secondary'} small`} onClick={() => setDbSubTab('tab-db-devices')} style={{ minWidth: 'auto', padding: '0 15px', height: '36px' }}>Device Registry</button>
                 <button className="btn btn-danger small" style={{ width: 'auto', height: '36px' }} onClick={clearDatabaseLogs}>Clear database logs</button>
               </div>
             </header>
@@ -1965,217 +2008,224 @@ export default function App() {
                 </div>
               </div>
 
-              {dbSubTab === 'tab-db-history' ? (
-                /* logs display */
-                <div className="glass-card" style={{ padding: '0px' }}>
-                  {dbHistory.length === 0 ? (
-                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>
-                      No logs found. Connect your gateway, start the socket telemetry stream, and records will save automatically.
+              {/* logs display */}
+              <div className="glass-card" style={{ padding: '0px' }}>
+                {dbHistory.length === 0 ? (
+                  <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>
+                    No logs found. Connect your gateway, start the socket telemetry stream, and records will save automatically.
+                  </div>
+                ) : (
+                  <div className="db-history-table">
+                    <div className="db-table-header" style={{ display: 'grid', gridTemplateColumns: '150px 100px 1fr 100px', padding: '15px 20px', borderBottom: '1px solid var(--glass-border)', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-pink)' }}>
+                      <span>Timestamp</span>
+                      <span>Clients</span>
+                      <span>Nodes Summary</span>
+                      <span style={{ textAlign: 'right' }}>Details</span>
+                    </div>
+
+                    <div className="db-table-body" style={{ maxHeight: '420px', overflowY: 'auto' }}>
+                      {dbHistory.map((record) => {
+                        const isExpanded = expandedLogId === record._id || expandedLogId === record.timestamp;
+                        const recordId = record._id || record.timestamp;
+
+                        return (
+                          <div key={recordId} style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '150px 100px 1fr 100px', padding: '12px 20px', fontSize: '13px', alignItems: 'center' }}>
+                              <span style={{ fontFamily: 'var(--font-mono)' }}>{new Date(record.timestamp).toLocaleTimeString()}</span>
+                              <span>{record.count} clients</span>
+                              <span style={{ color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {record.devices.slice(0, 8).map(d => `#${d.id}(${d.temp}°C)`).join(', ')}...
+                              </span>
+                              <button className="btn btn-secondary small-btn" style={{ marginLeft: 'auto' }} onClick={() => setExpandedLogId(isExpanded ? null : recordId)}>
+                                {isExpanded ? 'Hide' : 'Expand'}
+                              </button>
+                            </div>
+
+                            {isExpanded && (
+                              <div style={{ padding: '15px 25px', background: 'rgba(3, 0, 10, 0.5)', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px', borderTop: '1px dashed var(--glass-border)' }}>
+                                {record.devices.map((d) => (
+                                  <div key={d.id} style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column' }}>
+                                    <span style={{ fontWeight: 'bold' }}>Node #{d.id}</span>
+                                    <span style={{ color: 'var(--accent-orange)' }}>Temp: {parseFloat(d.temp).toFixed(1)}°C</span>
+                                    <span>Signal: {d.rssi}dBm</span>
+                                    <span>Bat: {d.bat}%</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </section>
+
+          {/* ================= VIEW: DEVICE REGISTRY (PROMOTED) ================= */}
+          <section id="page-device-registry" className={`page-view ${activeTab === 'page-device-registry' ? 'active' : ''}`}>
+            <header className="view-header">
+              <div>
+                <h1>Device Configuration Registry</h1>
+                <p>Register and manage configurations associated with specific device IMEI identifiers</p>
+              </div>
+            </header>
+
+            <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
+              {/* Registry Form */}
+              <div className="glass-card">
+                <h3><span className="icon">📝</span> Register Device Config</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                  Register or modify settings associated with a specific device IMEI ID. Settings automatically sync upon connection.
+                </p>
+
+                <form onSubmit={handleRegisterDevice}>
+                  <div className="input-group">
+                    <label>Device IMEI ID *</label>
+                    <input
+                      type="text"
+                      value={regImei}
+                      onChange={(e) => setRegImei(e.target.value)}
+                      placeholder="e.g. 866738083623502"
+                      required
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label>PCB Serial Number</label>
+                    <input
+                      type="text"
+                      value={regPcb}
+                      onChange={(e) => setRegPcb(e.target.value)}
+                      placeholder="e.g. PCB-ESP32-v3-987"
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label>Gateway Password</label>
+                    <input
+                      type="password"
+                      value={regPass}
+                      onChange={(e) => setRegPass(e.target.value)}
+                      placeholder="Device credentials password"
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label>Target Router SSID</label>
+                    <input
+                      type="text"
+                      value={regSsid}
+                      onChange={(e) => setRegSsid(e.target.value)}
+                      placeholder="SSID of Wireless Router"
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label>Router Password</label>
+                    <input
+                      type="password"
+                      value={regWifiPass}
+                      onChange={(e) => setRegWifiPass(e.target.value)}
+                      placeholder="Router WPA2 Passphrase"
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label>Telemetry Interval (ms)</label>
+                    <input
+                      type="number"
+                      value={regInterval}
+                      onChange={(e) => setRegInterval(e.target.value)}
+                      placeholder="1500"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={isRegisteringDevice}
+                    style={{ marginTop: '15px', width: '100%' }}
+                  >
+                    {isRegisteringDevice ? 'Saving Registry...' : 'Save Configuration Profile'}
+                  </button>
+                </form>
+              </div>
+
+              {/* Registered Devices List Table */}
+              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
+                <h3><span className="icon">📡</span> Registered Device Profiles ({registeredDevices.length})</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                  List of device configurations registered inside the MongoDB database.
+                </p>
+
+                <div style={{ maxHeight: '420px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)', flex: 1 }}>
+                  {registeredDevices.length === 0 ? (
+                    <div style={{ padding: '40px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
+                      No configurations found in database registry. Fill form to register.
                     </div>
                   ) : (
-                    <div className="db-history-table">
-                      <div className="db-table-header" style={{ display: 'grid', gridTemplateColumns: '150px 100px 1fr 100px', padding: '15px 20px', borderBottom: '1px solid var(--glass-border)', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-pink)' }}>
-                        <span>Timestamp</span>
-                        <span>Clients</span>
-                        <span>Nodes Summary</span>
-                        <span style={{ textAlign: 'right' }}>Details</span>
-                      </div>
-
-                      <div className="db-table-body" style={{ maxHeight: '420px', overflowY: 'auto' }}>
-                        {dbHistory.map((record) => {
-                          const isExpanded = expandedLogId === record._id || expandedLogId === record.timestamp;
-                          const recordId = record._id || record.timestamp;
-
-                          return (
-                            <div key={recordId} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                              <div style={{ display: 'grid', gridTemplateColumns: '150px 100px 1fr 100px', padding: '12px 20px', fontSize: '13px', alignItems: 'center' }}>
-                                <span style={{ fontFamily: 'var(--font-mono)' }}>{new Date(record.timestamp).toLocaleTimeString()}</span>
-                                <span>{record.count} clients</span>
-                                <span style={{ color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {record.devices.slice(0, 8).map(d => `#${d.id}(${d.temp}°C)`).join(', ')}...
-                                </span>
-                                <button className="btn btn-secondary small-btn" style={{ marginLeft: 'auto' }} onClick={() => setExpandedLogId(isExpanded ? null : recordId)}>
-                                  {isExpanded ? 'Hide' : 'Expand'}
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
+                          <th style={{ padding: '8px' }}>IMEI / PCB Serial</th>
+                          <th style={{ padding: '8px' }}>Password</th>
+                          <th style={{ padding: '8px' }}>SSID Target</th>
+                          <th style={{ padding: '8px' }}>Rate Interval</th>
+                          <th style={{ padding: '8px', textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {registeredDevices.map((dev) => (
+                          <tr key={dev._id || dev.imei} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
+                            <td style={{ padding: '8px' }}>
+                              <div style={{ fontWeight: 'bold', color: 'white' }}>{dev.imei}</div>
+                              <div style={{ fontSize: '10.5px', color: 'var(--text-dim)' }}>{dev.pcbNumber || 'No PCB Serial'}</div>
+                            </td>
+                            <td style={{ padding: '8px', fontFamily: 'monospace' }}>{dev.password || 'admin_secure_gate'}</td>
+                            <td style={{ padding: '8px' }}>{dev.routerSSID || '--'}</td>
+                            <td style={{ padding: '8px', fontFamily: 'monospace' }}>{dev.telemetryInterval}ms</td>
+                            <td style={{ padding: '8px', textAlign: 'right' }}>
+                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                <button
+                                  className="btn btn-secondary small"
+                                  style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto' }}
+                                  onClick={() => {
+                                    setRegImei(dev.imei);
+                                    setRegPcb(dev.pcbNumber || '');
+                                    setRegPass(dev.password || 'admin_secure_gate');
+                                    setRegSsid(dev.routerSSID || '');
+                                    setRegWifiPass(dev.routerPassword || '');
+                                    setRegInterval(String(dev.telemetryInterval || 1500));
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  className="btn btn-accent small"
+                                  style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto' }}
+                                  onClick={() => handlePushDeviceConfig(dev)}
+                                >
+                                  Push
+                                </button>
+                                <button
+                                  className="btn btn-danger small"
+                                  style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', background: 'rgba(255, 0, 85, 0.1)', border: '1px solid rgba(255, 0, 85, 0.3)', color: '#ff0055' }}
+                                  onClick={() => handleDeleteDevice(dev.imei)}
+                                >
+                                  Delete
                                 </button>
                               </div>
-
-                              {isExpanded && (
-                                <div style={{ padding: '15px 25px', background: 'rgba(3, 0, 10, 0.5)', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px', borderTop: '1px dashed var(--glass-border)' }}>
-                                  {record.devices.map((d) => (
-                                    <div key={d.id} style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column' }}>
-                                      <span style={{ fontWeight: 'bold' }}>Node #{d.id}</span>
-                                      <span style={{ color: 'var(--accent-orange)' }}>Temp: {parseFloat(d.temp).toFixed(1)}°C</span>
-                                      <span>Signal: {d.rssi}dBm</span>
-                                      <span>Bat: {d.bat}%</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   )}
                 </div>
-              ) : (
-                /* registered devices registry view */
-                <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px', marginTop: '15px' }}>
-                  {/* Registry Form */}
-                  <div className="glass-card">
-                    <h3><span className="icon">📝</span> Register Device Config</h3>
-                    <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
-                      Register or modify target settings associated with a specific device IMEI ID. Settings automatically sync upon connection.
-                    </p>
-
-                    <form onSubmit={handleRegisterDevice}>
-                      <div className="input-group">
-                        <label>Device IMEI ID *</label>
-                        <input
-                          type="text"
-                          value={regImei}
-                          onChange={(e) => setRegImei(e.target.value)}
-                          placeholder="e.g. 866738083623502"
-                          required
-                        />
-                      </div>
-
-                      <div className="input-group">
-                        <label>PCB Serial Number</label>
-                        <input
-                          type="text"
-                          value={regPcb}
-                          onChange={(e) => setRegPcb(e.target.value)}
-                          placeholder="e.g. PCB-ESP32-v3-987"
-                        />
-                      </div>
-
-                      <div className="input-group">
-                        <label>Gateway Password</label>
-                        <input
-                          type="password"
-                          value={regPass}
-                          onChange={(e) => setRegPass(e.target.value)}
-                          placeholder="Device credentials password"
-                        />
-                      </div>
-
-                      <div className="input-group">
-                        <label>Target Router SSID</label>
-                        <input
-                          type="text"
-                          value={regSsid}
-                          onChange={(e) => setRegSsid(e.target.value)}
-                          placeholder="SSID of Wireless Router"
-                        />
-                      </div>
-
-                      <div className="input-group">
-                        <label>Router Password</label>
-                        <input
-                          type="password"
-                          value={regWifiPass}
-                          onChange={(e) => setRegWifiPass(e.target.value)}
-                          placeholder="Router WPA2 Passphrase"
-                        />
-                      </div>
-
-                      <div className="input-group">
-                        <label>Telemetry Interval (ms)</label>
-                        <input
-                          type="number"
-                          value={regInterval}
-                          onChange={(e) => setRegInterval(e.target.value)}
-                          placeholder="1500"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="btn btn-primary"
-                        disabled={isRegisteringDevice}
-                        style={{ marginTop: '15px', width: '100%' }}
-                      >
-                        {isRegisteringDevice ? 'Saving Registry...' : 'Save Configuration Profile'}
-                      </button>
-                    </form>
-                  </div>
-
-                  {/* Registered Devices List Table */}
-                  <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
-                    <h3><span className="icon">📡</span> Registered Device Profiles ({registeredDevices.length})</h3>
-                    <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
-                      List of device configurations registered inside the MongoDB database.
-                    </p>
-
-                    <div style={{ maxHeight: '420px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)', flex: 1 }}>
-                      {registeredDevices.length === 0 ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
-                          No configurations found in database registry. Fill form to register.
-                        </div>
-                      ) : (
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                          <thead>
-                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
-                              <th style={{ padding: '8px' }}>IMEI / PCB Serial</th>
-                              <th style={{ padding: '8px' }}>Password</th>
-                              <th style={{ padding: '8px' }}>SSID Target</th>
-                              <th style={{ padding: '8px' }}>Rate Interval</th>
-                              <th style={{ padding: '8px', textAlign: 'right' }}>Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {registeredDevices.map((dev) => (
-                              <tr key={dev._id || dev.imei} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
-                                <td style={{ padding: '8px' }}>
-                                  <div style={{ fontWeight: 'bold', color: 'white' }}>{dev.imei}</div>
-                                  <div style={{ fontSize: '10.5px', color: 'var(--text-dim)' }}>{dev.pcbNumber || 'No PCB Serial'}</div>
-                                </td>
-                                <td style={{ padding: '8px', fontFamily: 'monospace' }}>{dev.password || 'admin_secure_gate'}</td>
-                                <td style={{ padding: '8px' }}>{dev.routerSSID || '--'}</td>
-                                <td style={{ padding: '8px', fontFamily: 'monospace' }}>{dev.telemetryInterval}ms</td>
-                                <td style={{ padding: '8px', textAlign: 'right' }}>
-                                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                    <button
-                                      className="btn btn-secondary small"
-                                      style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto' }}
-                                      onClick={() => {
-                                        setRegImei(dev.imei);
-                                        setRegPcb(dev.pcbNumber || '');
-                                        setRegPass(dev.password || 'admin_secure_gate');
-                                        setRegSsid(dev.routerSSID || '');
-                                        setRegWifiPass(dev.routerPassword || '');
-                                        setRegInterval(String(dev.telemetryInterval || 1500));
-                                      }}
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      className="btn btn-accent small"
-                                      style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto' }}
-                                      onClick={() => handlePushDeviceConfig(dev)}
-                                    >
-                                      Push
-                                    </button>
-                                    <button
-                                      className="btn btn-danger small"
-                                      style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', background: 'rgba(255, 0, 85, 0.1)', border: '1px solid rgba(255, 0, 85, 0.3)', color: '#ff0055' }}
-                                      onClick={() => handleDeleteDevice(dev.imei)}
-                                    >
-                                      Delete
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
+              </div>
             </div>
           </section>
 
@@ -3530,6 +3580,96 @@ export default function App() {
                     {dbReconnectStatus}
                   </div>
                 )}
+              </div>
+
+              {/* App Theme & Personalization Card */}
+              <div className="glass-card">
+                <h3><span className="icon">🎨</span> Theme & Personalization</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                  Choose from curated dark modes and modern typography fonts. Changes apply instantly.
+                </p>
+
+                {/* Theme Preset Selection */}
+                <div style={{ marginBottom: '20px' }}>
+                  <label className="control-title" style={{ fontSize: '10px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold' }}>Color Theme</label>
+                  <div className="theme-presets-grid">
+                    <div 
+                      className={`theme-preset-card ${currentTheme === 'quantum-indigo' ? 'active' : ''}`}
+                      onClick={() => setCurrentTheme('quantum-indigo')}
+                      style={{ '--theme-card-border': '#7000ff', '--theme-card-bg-rgb': '112, 0, 255', '--theme-preview-grad': 'linear-gradient(135deg, #7000ff 0%, #00c6ff 100%)' }}
+                    >
+                      <div className="theme-preview-bar"></div>
+                      <span className="theme-preset-name">Quantum Indigo</span>
+                    </div>
+
+                    <div 
+                      className={`theme-preset-card ${currentTheme === 'cyber-orchid' ? 'active' : ''}`}
+                      onClick={() => setCurrentTheme('cyber-orchid')}
+                      style={{ '--theme-card-border': '#f953c6', '--theme-card-bg-rgb': '249, 83, 198', '--theme-preview-grad': 'linear-gradient(135deg, #f953c6 0%, #7000ff 100%)' }}
+                    >
+                      <div className="theme-preview-bar"></div>
+                      <span className="theme-preset-name">Cyber Orchid</span>
+                    </div>
+
+                    <div 
+                      className={`theme-preset-card ${currentTheme === 'mint-aurora' ? 'active' : ''}`}
+                      onClick={() => setCurrentTheme('mint-aurora')}
+                      style={{ '--theme-card-border': '#00e676', '--theme-card-bg-rgb': '0, 230, 118', '--theme-preview-grad': 'linear-gradient(135deg, #00e676 0%, #00c6ff 100%)' }}
+                    >
+                      <div className="theme-preview-bar"></div>
+                      <span className="theme-preset-name">Mint Aurora</span>
+                    </div>
+
+                    <div 
+                      className={`theme-preset-card ${currentTheme === 'solar-flare' ? 'active' : ''}`}
+                      onClick={() => setCurrentTheme('solar-flare')}
+                      style={{ '--theme-card-border': '#ff7300', '--theme-card-bg-rgb': '255, 115, 0', '--theme-preview-grad': 'linear-gradient(135deg, #ff7300 0%, #f953c6 100%)' }}
+                    >
+                      <div className="theme-preview-bar"></div>
+                      <span className="theme-preset-name">Solar Flare</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Font Preset Selection */}
+                <div style={{ marginBottom: '20px' }}>
+                  <label className="control-title" style={{ fontSize: '10px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold' }}>Typography Font</label>
+                  <div className="font-presets-grid">
+                    <div className={`font-preset-card ${currentFont === 'outfit' ? 'active' : ''}`} onClick={() => setCurrentFont('outfit')} style={{ fontFamily: 'Outfit, sans-serif' }}>
+                      Outfit Sans
+                    </div>
+                    <div className={`font-preset-card ${currentFont === 'mono' ? 'active' : ''}`} onClick={() => setCurrentFont('mono')} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px' }}>
+                      JB Mono
+                    </div>
+                    <div className={`font-preset-card ${currentFont === 'space' ? 'active' : ''}`} onClick={() => setCurrentFont('space')} style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+                      Space Grotesk
+                    </div>
+                  </div>
+                </div>
+
+                {/* GitHub Authentication Integration */}
+                <div style={{ marginTop: '25px', paddingTop: '20px', borderTop: '1px solid var(--glass-border)' }}>
+                  <label className="control-title" style={{ fontSize: '10px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold' }}>GitHub Cloud Workspace</label>
+                  {gitHubUser ? (
+                    <div className="github-widget" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '10px' }}>
+                      <div className="github-avatar" style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundImage: `url(${gitHubUser.avatarUrl})`, backgroundSize: 'cover' }}></div>
+                      <div className="github-info" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                        <span className="github-username" style={{ fontSize: '13px', fontWeight: 'bold', color: 'white' }}>@{gitHubUser.username}</span>
+                        <span className="github-status" style={{ fontSize: '10px', color: 'var(--accent-emerald)' }}>Workspace Sync Active</span>
+                      </div>
+                      <button className="btn btn-secondary small" style={{ margin: 0, padding: '4px 10px', fontSize: '10px', height: '24px', minWidth: 'auto', background: 'rgba(255,51,102,0.1)', border: '1px solid rgba(255,51,102,0.3)', color: '#ff3366' }} onClick={handleGitHubSignIn}>
+                        Disconnect
+                      </button>
+                    </div>
+                  ) : (
+                    <button className="btn btn-secondary" onClick={handleGitHubSignIn} style={{ width: '100%', marginTop: '10px', gap: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+                      </svg>
+                      Sign in with GitHub
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Ports & Communication Config Card */}

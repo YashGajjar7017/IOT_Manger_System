@@ -1,46 +1,95 @@
 /* ==========================================================================
    NEBULA CYBER-NEON COLOR SYSTEM & VARIABLES
    ========================================================================== */
+/* ==========================================================================
+   DYNAMIC THEME & COLOR PRESETS OVERRIDES
+   ========================================================================== */
+:root, [data-theme="quantum-indigo"] {
+  --bg-space: #070a17;
+  --bg-terminal: #020408;
+  --accent-primary: #7000ff;   /* Quantum Violet */
+  --accent-secondary: #00c6ff; /* Electric Sapphire */
+  --accent-glow: rgba(112, 0, 255, 0.4);
+  --grad-primary: linear-gradient(135deg, #7000ff 0%, #00c6ff 100%);
+  --grad-primary-rgb: 112, 0, 255;
+  --glow-theme: 0 0 22px rgba(112, 0, 255, 0.35), inset 0 0 10px rgba(112, 0, 255, 0.15);
+}
+
+[data-theme="cyber-orchid"] {
+  --bg-space: #0c0516;
+  --bg-terminal: #05010a;
+  --accent-primary: #f953c6;   /* Lustrous Rose */
+  --accent-secondary: #7000ff; /* Quantum Violet */
+  --accent-glow: rgba(249, 83, 198, 0.45);
+  --grad-primary: linear-gradient(135deg, #f953c6 0%, #7000ff 100%);
+  --grad-primary-rgb: 249, 83, 198;
+  --glow-theme: 0 0 22px rgba(249, 83, 198, 0.35), inset 0 0 10px rgba(249, 83, 198, 0.15);
+}
+
+[data-theme="mint-aurora"] {
+  --bg-space: #020a0e;
+  --bg-terminal: #010406;
+  --accent-primary: #00e676;   /* Mint Emerald */
+  --accent-secondary: #00c6ff; /* Electric Sapphire */
+  --accent-glow: rgba(0, 230, 118, 0.4);
+  --grad-primary: linear-gradient(135deg, #00e676 0%, #00c6ff 100%);
+  --grad-primary-rgb: 0, 230, 118;
+  --glow-theme: 0 0 22px rgba(0, 230, 118, 0.35), inset 0 0 10px rgba(0, 230, 118, 0.15);
+}
+
+[data-theme="solar-flare"] {
+  --bg-space: #0d0602;
+  --bg-terminal: #050201;
+  --accent-primary: #ff7300;   /* Sunset Orange */
+  --accent-secondary: #f953c6; /* Lustrous Rose */
+  --accent-glow: rgba(255, 115, 0, 0.45);
+  --grad-primary: linear-gradient(135deg, #ff7300 0%, #f953c6 100%);
+  --grad-primary-rgb: 255, 115, 0;
+  --glow-theme: 0 0 22px rgba(255, 115, 0, 0.35), inset 0 0 10px rgba(255, 115, 0, 0.15);
+}
+
+/* Dynamic Fonts Selector */
+:root, [data-font="outfit"] {
+  --font-sans: 'Outfit', sans-serif;
+}
+[data-font="mono"] {
+  --font-sans: 'JetBrains Mono', monospace;
+}
+[data-font="space"] {
+  --font-sans: 'Space Grotesk', sans-serif;
+}
+
 :root {
-  --bg-space: #070b16;
-  --bg-terminal: #04060b;
-  
-  /* Vibrant Cyber-Neon Accents Overhauled to Quantum Indigo */
-  --accent-blue: #00c6ff;      /* Electric Sapphire */
-  --accent-pink: #f953c6;      /* Lustrous Rose Orchid */
-  --accent-purple: #7000ff;    /* Quantum Violet */
+  /* Text and base variables mapped dynamically to the chosen presets */
+  --accent-blue: var(--accent-secondary);
+  --accent-pink: var(--accent-primary);
+  --accent-purple: var(--accent-primary);
   --accent-emerald: #00e676;   /* Mint Emerald */
   --accent-orange: #ff7300;    /* Sunset Orange */
   --accent-red: #ff4e50;       /* Coral Warning Red */
   
-  /* Text colors */
   --text-white: #ffffff;
-  --text-cyan: #e3f2fd;        /* Soft Blue-White */
-  --text-dim: #94a3b8;         /* Modern Slate */
-  --text-muted: #475569;       /* Muted Charcoal */
+  --text-cyan: #e3f2fd;
+  --text-dim: #94a3b8;
+  --text-muted: #475569;
   
-  /* Borders and Backgrounds */
   --glass-bg: rgba(13, 20, 38, 0.45);
   --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-border-hover: rgba(0, 198, 255, 0.4);
+  --glass-border-hover: var(--accent-secondary);
   --input-bg: rgba(6, 10, 20, 0.6);
   
-  /* Gradients */
-  --grad-pink-blue: linear-gradient(135deg, var(--accent-pink) 0%, var(--accent-blue) 100%);
-  --grad-cyan-purple: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
-  --grad-emerald-cyan: linear-gradient(135deg, var(--accent-emerald) 0%, var(--accent-blue) 100%);
+  --grad-pink-blue: var(--grad-primary);
+  --grad-cyan-purple: linear-gradient(135deg, var(--accent-secondary) 0%, var(--accent-primary) 100%);
+  --grad-emerald-cyan: linear-gradient(135deg, var(--accent-emerald) 0%, var(--accent-secondary) 100%);
   --grad-orange-pink: linear-gradient(135deg, var(--accent-orange) 0%, var(--accent-pink) 100%);
   --grad-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
   
-  /* Intense Glowing Box Shadows */
-  --glow-blue: 0 0 20px rgba(0, 198, 255, 0.3), inset 0 0 10px rgba(0, 198, 255, 0.1);
-  --glow-pink: 0 0 20px rgba(249, 83, 198, 0.3), inset 0 0 10px rgba(249, 83, 198, 0.1);
-  --glow-emerald: 0 0 20px rgba(0, 230, 118, 0.3), inset 0 0 10px rgba(0, 230, 118, 0.1);
-  --glow-purple: 0 0 25px rgba(112, 0, 255, 0.25);
+  --glow-blue: 0 0 20px rgba(0, 198, 255, 0.25), inset 0 0 10px rgba(0, 198, 255, 0.1);
+  --glow-pink: var(--glow-theme);
+  --glow-emerald: 0 0 20px rgba(0, 230, 118, 0.25), inset 0 0 10px rgba(0, 230, 118, 0.1);
+  --glow-purple: 0 0 25px var(--accent-glow);
   --shadow-card: 0 8px 32px 0 rgba(4, 6, 11, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 0 rgba(0, 0, 0, 0.2);
   
-  /* Fonts */
-  --font-sans: 'Outfit', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
 
@@ -557,6 +606,14 @@ select {
 
 .select-wrapper select {
   flex: 1;
+}
+
+/* Force select option text to be white and readable on a dark background */
+select option,
+.input-group select option,
+.select-wrapper select option {
+  background-color: #15141b !important;
+  color: #ffffff !important;
 }
 
 /* Button Classes */
@@ -1938,6 +1995,7 @@ input, select, textarea {
 */
 
 /* Enhanced overrides for interactive elements and text entry */
+/* Enhanced overrides for interactive elements and text entry */
 input, select, textarea, button, .btn {
   -webkit-app-region: no-drag !important;
 }
@@ -1945,11 +2003,224 @@ input, select, textarea {
   user-select: text !important;
   -webkit-user-select: text !important;
   cursor: text !important;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .console-terminal, .terminal-line, .console-box {
   user-select: text !important;
   -webkit-user-select: text !important;
 }
+
+/* ==========================================================================
+   PREMIUM SEXY GRADIENT LIGHTS & MICRO-ANIMATIONS
+   ========================================================================== */
+
+/* Smooth Tab Page Fade-In Animation */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-view.active {
+  display: flex;
+  animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Body global animation transitions */
+body {
+  transition: background-color 0.4s ease, background-image 0.4s ease;
+}
+
+/* Floating Navigation Items and Hover Enhancements */
+.nav-item {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.nav-item:hover {
+  background-color: rgba(var(--grad-primary-rgb), 0.08) !important;
+  border-color: rgba(var(--grad-primary-rgb), 0.25) !important;
+  color: var(--text-white) !important;
+  transform: translateX(4px);
+  box-shadow: 0 4px 15px rgba(var(--grad-primary-rgb), 0.15) !important;
+}
+.nav-item:hover svg {
+  color: var(--accent-pink) !important;
+  transform: scale(1.1) rotate(3deg);
+}
+
+.nav-item.active {
+  background: var(--grad-primary) !important;
+  box-shadow: var(--glow-theme) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Brand icon pulsing */
+.brand-icon {
+  background: var(--grad-primary) !important;
+  box-shadow: var(--glow-theme) !important;
+  animation: pulse-glow-theme 3s infinite alternate;
+}
+
+@keyframes pulse-glow-theme {
+  0% {
+    box-shadow: 0 0 15px rgba(var(--grad-primary-rgb), 0.3);
+  }
+  100% {
+    box-shadow: 0 0 25px rgba(var(--grad-primary-rgb), 0.6);
+  }
+}
+
+/* Glass Card Upgrades */
+.glass-card {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.3s ease,
+              box-shadow 0.3s ease !important;
+}
+.glass-card:hover {
+  transform: translateY(-3px) !important;
+  border-color: var(--accent-primary) !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), var(--glow-theme) !important;
+}
+
+/* Theme Presets Styling Settings Card */
+.theme-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.theme-preset-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.theme-preset-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.theme-preset-card.active {
+  background: rgba(var(--theme-card-bg-rgb, 112, 0, 255), 0.08);
+  border-color: var(--theme-card-border, #7000ff);
+  box-shadow: 0 0 12px rgba(var(--theme-card-bg-rgb, 112, 0, 255), 0.2);
+}
+
+.theme-preview-bar {
+  height: 6px;
+  border-radius: 3px;
+  width: 100%;
+  background: var(--theme-preview-grad);
+}
+
+.theme-preset-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-white);
+}
+
+/* Font Presets Styling settings Card */
+.font-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.font-preset-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  transition: all 0.2s ease;
+}
+
+.font-preset-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-white);
+}
+
+.font-preset-card.active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent-secondary);
+  color: var(--text-white);
+  box-shadow: 0 0 8px rgba(0, 198, 255, 0.2);
+}
+
+/* Device Registry List Styling */
+.registry-list-item {
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.registry-list-item:hover {
+  border-color: var(--accent-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  transform: translateX(4px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Github Account Widget */
+.github-widget {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 15px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.github-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent-secondary);
+  background-size: cover;
+  box-shadow: 0 0 8px rgba(0, 198, 255, 0.3);
+}
+
+.github-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.github-username {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-white);
+}
+
+.github-status {
+  font-size: 10px;
+  color: var(--accent-emerald);
+}
+
 
 
 

@@ -17,6 +17,9 @@ let tcpBuffer = '';
 let expressServer = null;
 let currentDeviceDbId = null;
 let currentPcbNumber = '';
+let lastConnectedTcpConfig = null;
+let isExplicitlyDisconnected = false;
+let tcpReconnectTimeout = null;
 
 // ── Worker thread for off-main-thread JSON parsing + DB writes ──────────────
 let dataWorker = null;
@@ -1649,9 +1652,21 @@ ipcMain.on('send-serial-command', (event, command) => {
 // IPC Handlers: TCP Network Communication
 // -------------------------------------------------------------
 
-ipcMain.on('connect-tcp', (event, { ip, port, pcbNumber }) => {
+function reconnectTcp(event) {
+  if (isExplicitlyDisconnected || !lastConnectedTcpConfig) return;
+  const { ip, port, pcbNumber } = lastConnectedTcpConfig;
+  event.reply('console-log', `[TCP Warning] Socket dropped unexpectedly. Retrying connection in 3 seconds...`);
+
+  tcpReconnectTimeout = setTimeout(() => {
+    if (isExplicitlyDisconnected) return;
+    event.reply('console-log', `[TCP] Reconnecting to gateway telemetry server at ${ip}:${port}...`);
+    connectTcpSocket(event, { ip, port, pcbNumber });
+  }, 3000);
+}
+
+function connectTcpSocket(event, { ip, port, pcbNumber }) {
   cleanupConnections();
-  const hostIP = ip || '192.168.4.1';
+  const hostIP = ip || '192.168.0.1';
   const hostPort = parseInt(port) || 9000;
   currentPcbNumber = pcbNumber || '';
   currentDeviceDbId = null;
@@ -1669,7 +1684,8 @@ ipcMain.on('connect-tcp', (event, { ip, port, pcbNumber }) => {
   event.reply('console-log', `[TCP] Connecting to telemetry socket at ${hostIP}:${hostPort}...`);
 
   activeTcpSocket = new net.Socket();
-  activeTcpSocket.setTimeout(6000);
+  activeTcpSocket.setTimeout(60000);
+  activeTcpSocket.setKeepAlive(true, 5000);
 
   activeTcpSocket.connect(hostPort, hostIP, () => {
     event.reply('connection-status', { status: 'connected', type: 'tcp', target: `${hostIP}:${hostPort}` });
@@ -1686,11 +1702,9 @@ ipcMain.on('connect-tcp', (event, { ip, port, pcbNumber }) => {
     const trimmedLines = lines.map(l => l.trim()).filter(Boolean);
     if (trimmedLines.length === 0) return;
 
-    // Route all lines through the worker thread (off main thread)
     if (dataWorker) {
       dataWorker.postMessage({ type: 'PARSE_LINES', lines: trimmedLines });
     } else {
-      // Fallback: process on main thread if worker is unavailable
       for (const line of trimmedLines) {
         try {
           const payload = JSON.parse(line);
@@ -1719,19 +1733,32 @@ ipcMain.on('connect-tcp', (event, { ip, port, pcbNumber }) => {
   });
 
   activeTcpSocket.on('timeout', () => {
-    event.reply('console-log', '[TCP] Connection timeout threshold reached.');
-    activeTcpSocket.destroy();
+    event.reply('console-log', '[TCP] Connection idle for 60s — still alive, waiting for ESP32 activity...');
+    activeTcpSocket.setTimeout(60000);
   });
 
   activeTcpSocket.on('close', () => {
     event.reply('connection-status', { status: 'disconnected' });
     event.reply('console-log', '[TCP] Client socket disconnected.');
+    if (!isExplicitlyDisconnected) {
+      reconnectTcp(event);
+    }
   });
 
   activeTcpSocket.on('error', (err) => {
     event.reply('connection-status', { status: 'error', message: `TCP Socket Error: ${err.message}` });
     event.reply('console-log', `[TCP ERROR] ${err.message}`);
   });
+}
+
+ipcMain.on('connect-tcp', (event, { ip, port, pcbNumber }) => {
+  isExplicitlyDisconnected = false;
+  if (tcpReconnectTimeout) {
+    clearTimeout(tcpReconnectTimeout);
+    tcpReconnectTimeout = null;
+  }
+  lastConnectedTcpConfig = { ip, port, pcbNumber };
+  connectTcpSocket(event, { ip, port, pcbNumber });
 });
 
 ipcMain.on('send-tcp-command', (event, command) => {
@@ -1749,6 +1776,11 @@ ipcMain.on('send-tcp-command', (event, command) => {
 });
 
 ipcMain.on('disconnect-active', (event) => {
+  isExplicitlyDisconnected = true;
+  if (tcpReconnectTimeout) {
+    clearTimeout(tcpReconnectTimeout);
+    tcpReconnectTimeout = null;
+  }
   cleanupConnections();
   event.reply('connection-status', { status: 'disconnected' });
   event.reply('console-log', '[SYSTEM] Interface disconnected.');
@@ -2577,29 +2609,55 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port }) => 
       event.reply('console-log', `[CERTS] [STEP 1/3] Downloading ${file} locally from: ${fileUrl}...`);
 
       try {
-        const content = await new Promise((resolve, reject) => {
-          const urlObj = new URL(fileUrl);
-          const isHttps = urlObj.protocol === 'https:';
-          const client = isHttps ? require('https') : require('http');
+        const downloadFileWithRedirects = (initialUrl) => {
+          return new Promise((resolve, reject) => {
+            const fetchUrl = (currentUrl, redirectsRemaining = 5) => {
+              if (redirectsRemaining === 0) {
+                reject(new Error('Too many redirects'));
+                return;
+              }
+              try {
+                const urlObj = new URL(currentUrl);
+                const isHttps = urlObj.protocol === 'https:';
+                const client = isHttps ? require('https') : require('http');
 
-          const getOptions = {
-            hostname: urlObj.hostname,
-            port: urlObj.port || (isHttps ? 443 : 80),
-            path: urlObj.pathname + urlObj.search,
-            method: 'GET',
-            rejectUnauthorized: false // Ignore self-signed or invalid SSL cert validation (Requirement 1)
-          };
+                const getOptions = {
+                  hostname: urlObj.hostname,
+                  port: urlObj.port || (isHttps ? 443 : 80),
+                  path: urlObj.pathname + urlObj.search,
+                  method: 'GET',
+                  rejectUnauthorized: false
+                };
 
-          client.get(getOptions, (res) => {
-            if (res.statusCode !== 200) {
-              reject(new Error(`Failed to download ${file}, HTTP Code: ${res.statusCode}`));
-              return;
-            }
-            let data = '';
-            res.on('data', chunk => data += chunk.toString());
-            res.on('end', () => resolve(data));
-          }).on('error', err => reject(err));
-        });
+                client.get(getOptions, (res) => {
+                  if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    let redirectUrl = res.headers.location;
+                    if (!redirectUrl.startsWith('http')) {
+                      redirectUrl = `${urlObj.protocol}//${urlObj.host}${redirectUrl}`;
+                    }
+                    event.reply('console-log', `[CERTS] Redirect encountered. Following to: ${redirectUrl}`);
+                    fetchUrl(redirectUrl, redirectsRemaining - 1);
+                    return;
+                  }
+
+                  if (res.statusCode !== 200) {
+                    reject(new Error(`Failed to download ${file}, HTTP Code: ${res.statusCode}`));
+                    return;
+                  }
+
+                  let data = [];
+                  res.on('data', chunk => data.push(chunk));
+                  res.on('end', () => resolve(Buffer.concat(data).toString('utf8')));
+                }).on('error', err => reject(err));
+              } catch (e) {
+                reject(e);
+              }
+            };
+            fetchUrl(initialUrl);
+          });
+        };
+
+        const content = await downloadFileWithRedirects(fileUrl);
 
         fs.writeFileSync(localFilePath, content, 'utf8');
         event.reply('cert-status-update', { file, status: 'downloaded' });
