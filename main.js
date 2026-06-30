@@ -2898,6 +2898,139 @@ ipcMain.handle('get-app-config', () => {
   return appConfig;
 });
 
+ipcMain.handle('query-device-info', async (event, { ip, port }) => {
+  return new Promise((resolve) => {
+    const gatewayIP = ip || '192.168.4.1';
+    const gatewayPort = parseInt(port) || 8000;
+
+    const options = {
+      hostname: gatewayIP,
+      port: gatewayPort,
+      path: '/api/info',
+      method: 'GET',
+      timeout: 3000
+    };
+
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk.toString());
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            const info = JSON.parse(data);
+            resolve({ success: true, info });
+          } catch (e) {
+            resolve({ success: false, error: 'Failed to parse JSON device info' });
+          }
+        } else {
+          resolve({ success: false, error: `Server responded with status ${res.statusCode}` });
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({ success: false, error: `Connection failed: ${err.message}` });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ success: false, error: 'Request timed out' });
+    });
+
+    req.end();
+  });
+});
+
+ipcMain.handle('set-wifi-http', async (event, { ip, port, ssid, pass }) => {
+  return new Promise((resolve) => {
+    const gatewayIP = ip || '192.168.4.1';
+    const gatewayPort = parseInt(port) || 8000;
+    const postData = `ssid=${encodeURIComponent(ssid)}&pass=${encodeURIComponent(pass)}`;
+
+    const options = {
+      hostname: gatewayIP,
+      port: gatewayPort,
+      path: '/api/set_wifi',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postData)
+      },
+      timeout: 3000
+    };
+
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk.toString());
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            resolve({ success: true, response: JSON.parse(data) });
+          } catch (e) {
+            resolve({ success: false, error: 'Failed to parse JSON response' });
+          }
+        } else {
+          resolve({ success: false, error: `Server responded with status ${res.statusCode}` });
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({ success: false, error: `Request failed: ${err.message}` });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ success: false, error: 'Request timed out' });
+    });
+
+    req.write(postData);
+    req.end();
+  });
+});
+
+ipcMain.handle('reboot-http', async (event, { ip, port }) => {
+  return new Promise((resolve) => {
+    const gatewayIP = ip || '192.168.4.1';
+    const gatewayPort = parseInt(port) || 8000;
+
+    const options = {
+      hostname: gatewayIP,
+      port: gatewayPort,
+      path: '/api/reboot',
+      method: 'POST',
+      timeout: 3000
+    };
+
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk.toString());
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            resolve({ success: true, response: JSON.parse(data) });
+          } catch (e) {
+            resolve({ success: false, error: 'Failed to parse JSON response' });
+          }
+        } else {
+          resolve({ success: false, error: `Server responded with status ${res.statusCode}` });
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({ success: false, error: `Request failed: ${err.message}` });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ success: false, error: 'Request timed out' });
+    });
+
+    req.end();
+  });
+});
+
 ipcMain.on('save-app-config', (event, newConfig) => {
   saveConfig(newConfig);
   event.reply('console-log', '[CONFIG] App configuration updated successfully.');

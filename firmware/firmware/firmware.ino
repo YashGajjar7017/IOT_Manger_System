@@ -1554,6 +1554,7 @@ void setupHTTPServer() {
     json += "\"ssid\":\"" + routerSSID + "\",";
     json += "\"ap_ssid\":\"ESP32_GATEWAY_" + deviceMAC + "\",";
     json += "\"ap_clients\":" + String(NUM_CLIENT_DEVICES) + ",";
+    json += "\"ap_clients_list\":" + getSoftAPStationsJson() + ",";
     json +=
         "\"wifi_status\":\"" +
         String((WiFi.status() == WL_CONNECTED) ? "CONNECTED" : "DISCONNECTED") +
@@ -1564,10 +1565,48 @@ void setupHTTPServer() {
     json += "\"ota_port\":8000,";
     json += "\"relay1\":" + String(relay1State ? "true" : "false") + ",";
     json += "\"relay2\":" + String(relay2State ? "true" : "false") + ",";
-    json += "\"interval\":" + String(telemetryInterval);
+    json += "\"interval\":" + String(telemetryInterval) + ",";
+    json += "\"fw_version\":\"3.2.0\",";
+    json += "\"architecture\":\"ESP32 (Dual-Core Tensilica LX6)\",";
+    json += "\"sdk_ver\":\"Arduino v2.0.6 / ESP-IDF\",";
+    json += "\"filesystem\":\"SPIFFS (FatFS over Flash)\",";
+    json += "\"free_heap\":" + String(ESP.getFreeHeap());
     json += "}";
     httpServer.send(200, "application/json", json);
     Serial.println("[HTTP] Serviced /api/info JSON status request.");
+  });
+
+  // API to update Wi-Fi credentials over HTTP AP connection
+  httpServer.on("/api/set_wifi", HTTP_POST, []() {
+    if (httpServer.hasArg("ssid") && httpServer.hasArg("pass")) {
+      String ssid = httpServer.arg("ssid");
+      String pass = httpServer.arg("pass");
+      ssid.trim();
+      pass.trim();
+
+      File f = SPIFFS.open("/wifi.txt", "w");
+      if (f) {
+        f.println(ssid);
+        f.println(pass);
+        f.close();
+        routerSSID = ssid;
+        routerPassword = pass;
+        Serial.printf("[WIFI] New credentials saved to SPIFFS via HTTP API: SSID='%s'\n", ssid.c_str());
+        httpServer.send(200, "application/json", "{\"status\":\"WIFI_UPDATED\",\"ssid\":\"" + ssid + "\"}");
+      } else {
+        httpServer.send(500, "application/json", "{\"status\":\"ERROR\",\"message\":\"Failed to save wifi.txt\"}");
+      }
+    } else {
+      httpServer.send(400, "application/json", "{\"status\":\"ERROR\",\"message\":\"SSID or Pass missing in request parameters\"}");
+    }
+  });
+
+  // API to reboot the device over HTTP AP connection
+  httpServer.on("/api/reboot", HTTP_POST, []() {
+    httpServer.send(200, "application/json", "{\"status\":\"REBOOTING\"}");
+    Serial.println("[HTTP] Reboot request received. Restarting ESP32 Gateway...");
+    delay(1000);
+    ESP.restart();
   });
 
   // OTA Updates Handler
