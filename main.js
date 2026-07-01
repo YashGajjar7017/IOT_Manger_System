@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -15,6 +15,7 @@ let activeTcpSocket = null;
 let serialBuffer = '';
 let tcpBuffer = '';
 let expressServer = null;
+let tcpTelemetryServer = null;
 let currentDeviceDbId = null;
 let currentPcbNumber = '';
 let lastConnectedTcpConfig = null;
@@ -465,7 +466,7 @@ function startExpressServer() {
     const filename = req.headers['x-filename'] || 'firmware.bin';
     const fileSize = parseInt(req.headers['content-length']) || 0;
 
-    let gatewayIP = '192.168.4.1';
+    let gatewayIP = '192.168.0.1';
     if (activeTcpSocket && !activeTcpSocket.destroyed && activeTcpSocket.remoteAddress) {
       gatewayIP = activeTcpSocket.remoteAddress;
     }
@@ -529,7 +530,7 @@ function startExpressServer() {
       return res.status(400).json({ error: 'Missing remote url' });
     }
 
-    let gatewayIP = '192.168.4.1';
+    let gatewayIP = '192.168.0.1';
     if (activeTcpSocket && !activeTcpSocket.destroyed && activeTcpSocket.remoteAddress) {
       gatewayIP = activeTcpSocket.remoteAddress;
     }
@@ -949,7 +950,7 @@ function startOtaLocalServer() {
       const stats = fs.statSync(tempPath);
       const fileSize = stats.size;
       
-      let gatewayIP = '192.168.4.1';
+      let gatewayIP = '192.168.0.1';
       if (activeTcpSocket && !activeTcpSocket.destroyed && activeTcpSocket.remoteAddress) {
         gatewayIP = activeTcpSocket.remoteAddress;
       }
@@ -1026,7 +1027,7 @@ function startOtaLocalServer() {
     const filename = req.headers['x-filename'] || 'firmware.bin';
     const fileSize = parseInt(req.headers['content-length']) || 0;
 
-    let gatewayIP = '192.168.4.1';
+    let gatewayIP = '192.168.0.1';
     if (activeTcpSocket && !activeTcpSocket.destroyed && activeTcpSocket.remoteAddress) {
       gatewayIP = activeTcpSocket.remoteAddress;
     }
@@ -1277,6 +1278,7 @@ app.whenReady().then(async () => {
 
   await startExpressServer();
   startOtaLocalServer();
+  startTcpTelemetryServer();
   createWindow();
 
   // Register Standard Application Menu for Edit (Copy, Paste, Undo, Redo, Select All) support in production (Requirement 3)
@@ -1358,6 +1360,9 @@ app.on('window-all-closed', () => {
   cleanupConnections();
   if (expressServer) {
     expressServer.close();
+  }
+  if (tcpTelemetryServer) {
+    try { tcpTelemetryServer.close(); } catch (e) {}
   }
   // Terminate the worker thread gracefully
   if (dataWorker) {
@@ -1446,7 +1451,7 @@ function startBackgroundScanning(webContents) {
       });
     }
 
-    // 2. Background UDP Discovery targeting local subnet and direct SoftAP IP 192.168.4.1
+    // 2. Background UDP Discovery targeting local subnet and direct SoftAP IP 192.168.0.1
     try {
       const socket = dgram.createSocket('udp4');
       socket.bind(0, () => {
@@ -1458,8 +1463,8 @@ function startBackgroundScanning(webContents) {
           if (err) console.error('[UDP BG] Broadcast error:', err.message);
         });
 
-        // Target B: Direct ESP32 SoftAP gateway IP (192.168.4.1)
-        socket.send(message, 0, message.length, appConfig.udpPort, '192.168.4.1', (err) => {
+        // Target B: Direct ESP32 SoftAP gateway IP (192.168.0.1)
+        socket.send(message, 0, message.length, appConfig.udpPort, '192.168.0.1', (err) => {
           if (err) console.error('[UDP BG] Direct IP error:', err.message);
         });
       });
@@ -1509,6 +1514,24 @@ function cleanupConnections() {
 // IPC Handlers: Serial Communication
 // -------------------------------------------------------------
 
+/**
+ * Garbage-line filter: rejects lines that are mostly non-printable bytes.
+ * The ESP32 ROM bootloader runs at 74880 baud; when the UART is open at
+ * 115200 those bytes decode as ⸮⸮⸮ garbage.  A line is considered readable
+ * when ≥60% of its characters fall in the printable ASCII range (0x20-0x7E),
+ * or the line is very short (≤2 chars).
+ */
+function isReadableLine(line) {
+  if (!line || line.length === 0) return false;
+  if (line.length <= 2) return true;
+  let printable = 0;
+  for (let i = 0; i < line.length; i++) {
+    const code = line.charCodeAt(i);
+    if (code >= 32 && code <= 126) printable++;
+  }
+  return (printable / line.length) >= 0.60;
+}
+
 ipcMain.handle('list-ports', async () => {
   try {
     const ports = await SerialPort.list();
@@ -1550,36 +1573,35 @@ ipcMain.on('connect-serial', (event, { portPath, baudRate, pcbNumber }) => {
         return;
       }
 
-      // De-assert DTR & RTS to release reset state and allow booting
-      /*
+      // Release both control lines so we do NOT accidentally reset the ESP32.
+      // The old code pulsed RTS=HIGH which pulled the EN pin LOW through the
+      // board's auto-reset capacitor, causing the ROM bootloader to run at
+      // 74880 baud and produce the ⸮⸮⸮ garbage the user was seeing.
+      // If the user wants a deliberate reset they can use the UI "Reset Device"
+      // button which sends the 'reset-serial-device' IPC.
       activeSerialPort.set({ dtr: false, rts: false }, (setErr) => {
-        if (setErr) console.warn('[SERIAL] Failed to set DTR/RTS initial lines:', setErr.message);
-      });
-      */
-
-      // Explicit hardware reset EN toggle on opening connection to ensure firmware boots automatically (Requirement 2)
-      activeSerialPort.set({ dtr: false, rts: true }, (setErr) => {
-        if (!setErr) {
-          setTimeout(() => {
-            activeSerialPort.set({ dtr: false, rts: false }, (resetErr) => {
-              if (!resetErr) {
-                event.reply('console-log', '[SERIAL] Hardware auto-reset triggered on connection open. Booting gateway...');
-              }
-            });
-          }, 100);
-        }
+        if (setErr) console.warn('[SERIAL] Failed to release DTR/RTS lines:', setErr.message);
+        else event.reply('console-log', '[SERIAL] Port opened. Signal lines released. Listening for firmware output...');
       });
 
       event.reply('connection-status', { status: 'connected', type: 'serial', target: portPath });
       serialBuffer = '';
 
       activeSerialPort.on('data', (chunk) => {
-        serialBuffer += chunk.toString();
+        // Use 'latin1' so raw bytes are never corrupted by utf-8 multi-byte
+        // interpretation.  The garbage filter below then drops ROM-bootloader
+        // noise before it ever reaches the UI.
+        serialBuffer += chunk.toString('latin1');
 
         let lines = serialBuffer.split('\n');
         serialBuffer = lines.pop(); // Keep partial line
 
-        const trimmedLines = lines.map(l => l.trim()).filter(Boolean);
+        // Strip carriage returns, trim whitespace, drop empty lines, and
+        // drop any line that failed the readable-ASCII check (garbage bytes).
+        const trimmedLines = lines
+          .map(l => l.replace(/\r/g, '').trim())
+          .filter(l => l.length > 0 && isReadableLine(l));
+
         if (trimmedLines.length === 0) return;
 
         // Route all lines through the worker thread (off main thread)
@@ -1648,6 +1670,35 @@ ipcMain.on('send-serial-command', (event, command) => {
   }
 });
 
+// IPC: Explicit hardware reset — pulses RTS/EN LOW then releases so firmware
+// boots into normal mode (NOT download mode).  Safe because DTR stays LOW
+// (GPIO0 stays HIGH = normal firmware boot, not bootloader).
+ipcMain.on('reset-serial-device', (event) => {
+  if (!activeSerialPort || !activeSerialPort.isOpen) {
+    event.reply('console-log', '[SERIAL] No active serial port — cannot reset device.');
+    return;
+  }
+  event.reply('console-log', '[SERIAL] Sending hardware reset pulse to ESP32 EN pin via RTS...');
+  // Pull EN LOW (reset)
+  activeSerialPort.set({ dtr: false, rts: true }, (err) => {
+    if (err) {
+      event.reply('console-log', `[SERIAL ERROR] Failed to assert RTS for reset: ${err.message}`);
+      return;
+    }
+    // Hold reset for 200 ms then release — firmware boots normally
+    setTimeout(() => {
+      if (!activeSerialPort || !activeSerialPort.isOpen) return;
+      activeSerialPort.set({ dtr: false, rts: false }, (releaseErr) => {
+        if (releaseErr) {
+          event.reply('console-log', `[SERIAL ERROR] Failed to release RTS after reset: ${releaseErr.message}`);
+        } else {
+          event.reply('console-log', '[SERIAL] Reset pulse complete. ESP32 is booting firmware — expect output in ~500 ms...');
+        }
+      });
+    }, 200);
+  });
+});
+
 // -------------------------------------------------------------
 // IPC Handlers: TCP Network Communication
 // -------------------------------------------------------------
@@ -1664,10 +1715,126 @@ function reconnectTcp(event) {
   }, 3000);
 }
 
-function connectTcpSocket(event, { ip, port, pcbNumber }) {
-  cleanupConnections();
-  const hostIP = ip || '192.168.0.1';
-  const hostPort = parseInt(port) || 9000;
+function startTcpTelemetryServer() {
+  if (tcpTelemetryServer) {
+    try { tcpTelemetryServer.close(); } catch(e) {}
+  }
+
+  tcpTelemetryServer = net.createServer((socket) => {
+    if (activeTcpSocket && !activeTcpSocket.destroyed) {
+      console.log('[TCP SERVER] Closing previous active connection to accept new ESP32 client.');
+      activeTcpSocket.destroy();
+    }
+
+    activeTcpSocket = socket;
+    activeTcpSocket.setTimeout(60000);
+    activeTcpSocket.setKeepAlive(true, 5000);
+
+    const remoteAddress = socket.remoteAddress;
+    const remotePort = socket.remotePort;
+    console.log(`[TCP SERVER] ESP32 client connected from ${remoteAddress}:${remotePort}`);
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('connection-status', { status: 'connected', type: 'tcp', target: `${remoteAddress}:${remotePort}` });
+      mainWindow.webContents.send('console-log', `[TCP SERVER] ESP32 client connected from ${remoteAddress}:${remotePort}`);
+    }
+
+    tcpBuffer = '';
+
+    socket.on('data', (chunk) => {
+      tcpBuffer += chunk.toString();
+      let lines = tcpBuffer.split('\n');
+      tcpBuffer = lines.pop();
+
+      const trimmedLines = lines.map(l => l.trim()).filter(Boolean);
+      if (trimmedLines.length === 0) return;
+
+      if (dataWorker) {
+        dataWorker.postMessage({ type: 'PARSE_LINES', lines: trimmedLines });
+      } else {
+        // Fallback processing
+        for (const line of trimmedLines) {
+          try {
+            const payload = JSON.parse(line);
+            if (payload.type === 'telemetry') {
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('telemetry-payload', payload);
+              }
+              updateTelemetryCache(payload);
+              db.saveTelemetrySnapshot(payload);
+            } else if (payload.type === 'control_status') {
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('control-payload-sync', payload);
+              }
+            } else if (payload.type === 'pong') {
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('ping-pong-reply');
+              }
+            } else if (payload.status) {
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('hardware-payload', payload);
+              }
+              if (currentDeviceDbId && (payload.imei || payload.mac)) {
+                db.updateDeviceIdentification(currentDeviceDbId, {
+                  imei: payload.imei || '',
+                  mac: payload.mac || ''
+                });
+              }
+            }
+          } catch (e) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('console-log', `[TCP RX] ${line}`);
+            }
+          }
+        }
+      }
+    });
+
+    socket.on('timeout', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('console-log', '[TCP SERVER] Connection idle for 60s — waiting for ESP32 activity...');
+      }
+      socket.setTimeout(60000);
+    });
+
+    socket.on('close', () => {
+      console.log('[TCP SERVER] ESP32 client disconnected.');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('connection-status', { status: 'disconnected' });
+        mainWindow.webContents.send('console-log', '[TCP SERVER] ESP32 client socket closed.');
+      }
+      if (activeTcpSocket === socket) {
+        activeTcpSocket = null;
+      }
+    });
+
+    socket.on('error', (err) => {
+      console.error('[TCP SERVER] Socket error:', err.message);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('connection-status', { status: 'error', message: `TCP Socket Error: ${err.message}` });
+        mainWindow.webContents.send('console-log', `[TCP SERVER ERROR] ${err.message}`);
+      }
+    });
+  });
+
+  tcpTelemetryServer.on('error', (err) => {
+    console.error('[TCP SERVER ERROR]', err.message);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('console-log', `[TCP SERVER ERROR] Failed to start server: ${err.message}`);
+    }
+  });
+
+  const port = appConfig.telemetryPort || 9000;
+  tcpTelemetryServer.listen(port, '0.0.0.0', () => {
+    console.log(`[TCP SERVER] Listening for ESP32 telemetry on port ${port}`);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('console-log', `[TCP SERVER] Listening for ESP32 telemetry on port ${port}`);
+    }
+  });
+}
+
+ipcMain.on('connect-tcp', (event, { ip, port, pcbNumber }) => {
+  isExplicitlyDisconnected = false;
   currentPcbNumber = pcbNumber || '';
   currentDeviceDbId = null;
 
@@ -1675,90 +1842,18 @@ function connectTcpSocket(event, { ip, port, pcbNumber }) {
     db.createDeviceIdentification({
       pcbNumber: currentPcbNumber,
       connectionType: 'tcp',
-      target: `${hostIP}:${hostPort}`
+      target: `0.0.0.0:${port || appConfig.telemetryPort || 9000} (Listening)`
     }).then(id => {
       currentDeviceDbId = id;
     });
   }
 
-  event.reply('console-log', `[TCP] Connecting to telemetry socket at ${hostIP}:${hostPort}...`);
-
-  activeTcpSocket = new net.Socket();
-  activeTcpSocket.setTimeout(60000);
-  activeTcpSocket.setKeepAlive(true, 5000);
-
-  activeTcpSocket.connect(hostPort, hostIP, () => {
-    event.reply('connection-status', { status: 'connected', type: 'tcp', target: `${hostIP}:${hostPort}` });
-    event.reply('console-log', `[TCP] Connected to gateway socket at ${hostIP}:${hostPort}`);
-    tcpBuffer = '';
-  });
-
-  activeTcpSocket.on('data', (chunk) => {
-    tcpBuffer += chunk.toString();
-
-    let lines = tcpBuffer.split('\n');
-    tcpBuffer = lines.pop();
-
-    const trimmedLines = lines.map(l => l.trim()).filter(Boolean);
-    if (trimmedLines.length === 0) return;
-
-    if (dataWorker) {
-      dataWorker.postMessage({ type: 'PARSE_LINES', lines: trimmedLines });
-    } else {
-      for (const line of trimmedLines) {
-        try {
-          const payload = JSON.parse(line);
-          if (payload.type === 'telemetry') {
-            event.reply('telemetry-payload', payload);
-            updateTelemetryCache(payload);
-            db.saveTelemetrySnapshot(payload);
-          } else if (payload.type === 'control_status') {
-            event.reply('control-payload-sync', payload);
-          } else if (payload.type === 'pong') {
-            event.reply('ping-pong-reply');
-          } else if (payload.status) {
-            event.reply('hardware-payload', payload);
-            if (currentDeviceDbId && (payload.imei || payload.mac)) {
-              db.updateDeviceIdentification(currentDeviceDbId, {
-                imei: payload.imei || '',
-                mac: payload.mac || ''
-              });
-            }
-          }
-        } catch (e) {
-          event.reply('console-log', `[TCP RX] ${line}`);
-        }
-      }
-    }
-  });
-
-  activeTcpSocket.on('timeout', () => {
-    event.reply('console-log', '[TCP] Connection idle for 60s — still alive, waiting for ESP32 activity...');
-    activeTcpSocket.setTimeout(60000);
-  });
-
-  activeTcpSocket.on('close', () => {
-    event.reply('connection-status', { status: 'disconnected' });
-    event.reply('console-log', '[TCP] Client socket disconnected.');
-    if (!isExplicitlyDisconnected) {
-      reconnectTcp(event);
-    }
-  });
-
-  activeTcpSocket.on('error', (err) => {
-    event.reply('connection-status', { status: 'error', message: `TCP Socket Error: ${err.message}` });
-    event.reply('console-log', `[TCP ERROR] ${err.message}`);
-  });
-}
-
-ipcMain.on('connect-tcp', (event, { ip, port, pcbNumber }) => {
-  isExplicitlyDisconnected = false;
-  if (tcpReconnectTimeout) {
-    clearTimeout(tcpReconnectTimeout);
-    tcpReconnectTimeout = null;
+  // Ensure TCP server is running
+  if (!tcpTelemetryServer || !tcpTelemetryServer.listening) {
+    startTcpTelemetryServer();
+  } else {
+    event.reply('console-log', `[TCP SERVER] Server is already running and listening on port ${appConfig.telemetryPort || 9000}. Awaiting ESP32 connection...`);
   }
-  lastConnectedTcpConfig = { ip, port, pcbNumber };
-  connectTcpSocket(event, { ip, port, pcbNumber });
 });
 
 ipcMain.on('send-tcp-command', (event, command) => {
@@ -1792,7 +1887,7 @@ ipcMain.on('disconnect-active', (event) => {
 
 /*
 ipcMain.on('start-ota', (event, { filePath, ip, port, target }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   const gatewayPort = parseInt(port) || 8000;
   const targetName = target || 'esp32';
   event.reply('console-log', `[OTA] Streaming binary firmware for ${targetName.toUpperCase()} to http://${gatewayIP}:${gatewayPort}/update?target=${targetName}...`);
@@ -1887,7 +1982,7 @@ ipcMain.on('start-ota', (event, { filePath, ip, port, target }) => {
 // Updated buffer-based start-ota handler to resolve file path limitations inside web app context
 /*
 ipcMain.on('start-ota', (event, { fileBuffer, filename, ip, port, target }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   const gatewayPort = parseInt(port) || 8000;
   const targetName = target || 'esp32';
   event.reply('console-log', `[OTA] Streaming buffer-based binary firmware for ${targetName.toUpperCase()} to http://${gatewayIP}:${gatewayPort}/update?target=${targetName}...`);
@@ -2090,7 +2185,7 @@ const streamFirmwareToESP32 = (buffer, options, filename, event, targetName) => 
 
 /*
 ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, filePath }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   const gatewayPort = parseInt(port) || 8000;
   const targetName = target || 'esp32';
   const localSourcePath = filePath || filename || 'firmware.bin';
@@ -2129,7 +2224,7 @@ ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, 
 */
 
 ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, filePath, address, reboot }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   const gatewayPort = parseInt(port) || 8000;
   const targetName = target || 'esp32';
   const localSourcePath = filePath || filename || 'firmware.bin';
@@ -2180,7 +2275,7 @@ ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, 
 
 // IPC Handler: upload-certificate to ESP32 WebServer via HTTP POST with dynamic fallback
 ipcMain.on('upload-certificate', async (event, { filePath, ip, port }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   const targetPort1 = parseInt(port) || 8000;
   const targetPort2 = targetPort1 === 8000 ? (appConfig.otaPort || 500) : 8000;
 
@@ -2308,10 +2403,10 @@ ipcMain.on('start-udp-discovery', (event) => {
       }
     });
 
-    // Send directly to ESP32 SoftAP default IP (192.168.4.1) for router-less setups
-    socket.send(message, 0, message.length, appConfig.udpPort, '192.168.4.1', (err) => {
+    // Send directly to ESP32 SoftAP default IP (192.168.0.1) for router-less setups
+    socket.send(message, 0, message.length, appConfig.udpPort, '192.168.0.1', (err) => {
       if (err) {
-        event.reply('console-log', `[UDP ERROR] Direct send to 192.168.4.1 failed: ${err.message}`);
+        event.reply('console-log', `[UDP ERROR] Direct send to 192.168.0.1 failed: ${err.message}`);
       }
     });
   });
@@ -2341,7 +2436,7 @@ ipcMain.on('start-udp-discovery', (event) => {
 // Dynamic Certificate Downloader & Provisioner
 /*
 ipcMain.on('download-and-provision-certs', async (event, { baseUrl, ip }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   event.reply('console-log', `[CERTS] Downloading certificates from: ${baseUrl}...`);
   
   const files = ['aws_root_ca.pem', 'device_cert.crt', 'private_key.key'];
@@ -2412,7 +2507,7 @@ ipcMain.on('download-and-provision-certs', async (event, { baseUrl, ip }) => {
 // Updated Certificate Downloader supporting 3 separate URLs and auto-syncing to QCOM (Requirement 3)
 /*
 ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   event.reply('console-log', `[CERTS] Starting download of 3 certificates from separate URLs...`);
   
   try {
@@ -2490,7 +2585,7 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
 /*
 // Original download-and-provision-certs IPC handler commented out as per constraint:
 ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   event.reply('console-log', `[CERTS] Starting step-by-step certificate provisioning process...`);
   
   const scratchDir = path.join(__dirname, 'scratch', 'certs');
@@ -2585,7 +2680,7 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
 */
 
 ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   const targetPort1 = parseInt(port) || 8000;
   const targetPort2 = targetPort1 === 8000 ? (appConfig.otaPort || 500) : 8000;
 
@@ -2744,7 +2839,7 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port }) => 
 
 // IPC Handler: Download firmware from URL locally and flash to ESP32 (Requirement 3)
 ipcMain.on('download-and-flash-firmware', async (event, { firmwareUrl, ip, port, target }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   const gatewayPort = parseInt(port) || 8000;
   const targetName = target || 'esp32';
 
@@ -2900,7 +2995,7 @@ ipcMain.handle('get-app-config', () => {
 
 ipcMain.handle('query-device-info', async (event, { ip, port }) => {
   return new Promise((resolve) => {
-    const gatewayIP = ip || '192.168.4.1';
+    const gatewayIP = ip || '192.168.0.1';
     const gatewayPort = parseInt(port) || 8000;
 
     const options = {
@@ -2943,7 +3038,7 @@ ipcMain.handle('query-device-info', async (event, { ip, port }) => {
 
 ipcMain.handle('set-wifi-http', async (event, { ip, port, ssid, pass }) => {
   return new Promise((resolve) => {
-    const gatewayIP = ip || '192.168.4.1';
+    const gatewayIP = ip || '192.168.0.1';
     const gatewayPort = parseInt(port) || 8000;
     const postData = `ssid=${encodeURIComponent(ssid)}&pass=${encodeURIComponent(pass)}`;
 
@@ -2991,7 +3086,7 @@ ipcMain.handle('set-wifi-http', async (event, { ip, port, ssid, pass }) => {
 
 ipcMain.handle('reboot-http', async (event, { ip, port }) => {
   return new Promise((resolve) => {
-    const gatewayIP = ip || '192.168.4.1';
+    const gatewayIP = ip || '192.168.0.1';
     const gatewayPort = parseInt(port) || 8000;
 
     const options = {
@@ -3039,7 +3134,7 @@ ipcMain.on('save-app-config', (event, newConfig) => {
 
 // IPC Handler: Retrieve ESP32 SPIFFS Storage data (Requirement 4 & 5)
 ipcMain.on('get-spiffs-storage', (event, { ip, port }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   // Fix Issue 1: Safely parse port - ensure it is a valid integer between 1-65535
   const parsedPort = parseInt(port);
   const gatewayPort = (!isNaN(parsedPort) && parsedPort > 0 && parsedPort < 65536) ? parsedPort : 8000;
@@ -3083,7 +3178,7 @@ ipcMain.on('get-spiffs-storage', (event, { ip, port }) => {
 
 // IPC Handler: Delete file from ESP32 SPIFFS Storage (Requirement 4 & 5)
 ipcMain.on('delete-spiffs-file', (event, { ip, port, filename }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   const gatewayPort = parseInt(port) || 8000;
 
   event.reply('console-log', `[SPIFFS] Requesting deletion of '${filename}' from http://${gatewayIP}:${gatewayPort}...`);
@@ -3120,7 +3215,7 @@ ipcMain.on('delete-spiffs-file', (event, { ip, port, filename }) => {
 
 // IPC Handler: Read file content from ESP32 SPIFFS Storage
 ipcMain.on('read-spiffs-file', (event, { ip, port, filename }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   const gatewayPort = parseInt(port) || 8000;
 
   event.reply('console-log', `[SPIFFS] Requesting content of '${filename}' from http://${gatewayIP}:${gatewayPort}...`);
@@ -3157,7 +3252,7 @@ ipcMain.on('read-spiffs-file', (event, { ip, port, filename }) => {
 
 // IPC Handler: Update file content in ESP32 SPIFFS Storage
 ipcMain.on('update-spiffs-file', (event, { ip, port, filename, content }) => {
-  const gatewayIP = ip || '192.168.4.1';
+  const gatewayIP = ip || '192.168.0.1';
   const gatewayPort = parseInt(port) || 8000;
 
   event.reply('console-log', `[SPIFFS] Requesting update of '${filename}' to http://${gatewayIP}:${gatewayPort}...`);
@@ -3196,4 +3291,38 @@ ipcMain.on('update-spiffs-file', (event, { ip, port, filename, content }) => {
   req.write(content);
   req.end();
 });
+
+// IPC Handler: Save debug console logs to txt locally
+ipcMain.handle('save-log-file', async (event, logContent) => {
+  const { filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save Debug Console Logs',
+    defaultPath: path.join(app.getPath('documents'), 'gateway_debug_console.txt'),
+    filters: [
+      { name: 'Text Files', extensions: ['txt'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  });
+
+  if (filePath) {
+    try {
+      fs.writeFileSync(filePath, logContent, 'utf-8');
+      return { success: true, filePath };
+    } catch (err) {
+      console.error('[GUI] Failed to save log file:', err);
+      return { success: false, error: err.message };
+    }
+  }
+  return { success: false, cancelled: true };
+});
+
+// IPC Handler: Continuously append console logs to gateway_debug.log in the workspace root
+const LOG_FILE_PATH = path.join(__dirname, 'gateway_debug.log');
+ipcMain.on('append-to-log-file', (event, text) => {
+  const timestamp = new Date().toLocaleString();
+  const logLine = `[${timestamp}] ${text}\n`;
+  fs.appendFile(LOG_FILE_PATH, logLine, (err) => {
+    if (err) console.error('[LOG ERROR] Failed to write to log file:', err);
+  });
+});
+
 

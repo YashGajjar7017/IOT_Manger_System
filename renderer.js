@@ -374,7 +374,7 @@ ipcRenderer.on('hardware-payload', (event, payload) => {
     diagImei.textContent = `IMEI: ${payload.imei || '--'}`;
     diagMac.textContent = `MAC: ${payload.mac || '--'}`;
     
-    inputOtaIp.value = '192.168.4.1'; // Default
+    inputOtaIp.value = '192.168.0.1'; // Default
     
     appendLogLine('[SYS] Received self-test success payload from gateway.', 'success');
 

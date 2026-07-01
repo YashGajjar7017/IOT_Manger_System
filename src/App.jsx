@@ -10,7 +10,7 @@ export default function App() {
 
   // Connection State
   const [connection, setConnection] = useState({ type: null, target: null });
-  const [wifiIp, setWifiIp] = useState('192.168.4.1');
+  const [wifiIp, setWifiIp] = useState('192.168.0.1');
   const [wifiPort, setWifiPort] = useState('9000');
   const [serialPorts, setSerialPorts] = useState([]);
   const [selectedSerialPort, setSelectedSerialPort] = useState('');
@@ -19,7 +19,7 @@ export default function App() {
   const [usbDetect, setUsbDetect] = useState({ detected: false, port: null, ports: [] });
 
   // Direct Wifi/AP & Manual Connection states
-  const [directConnectIp, setDirectConnectIp] = useState('192.168.4.1');
+  const [directConnectIp, setDirectConnectIp] = useState('192.168.0.1');
   const [directHttpPort, setDirectHttpPort] = useState('8000');
   const [directSocketPort, setDirectSocketPort] = useState('9000');
   const [queriedInfo, setQueriedInfo] = useState(null);
@@ -104,7 +104,7 @@ export default function App() {
   const [isRegisteringDevice, setIsRegisteringDevice] = useState(false);
 
   // OTA Updates State
-  const [otaIp, setOtaIp] = useState('192.168.4.1');
+  const [otaIp, setOtaIp] = useState('192.168.0.1');
   const [otaPort, setOtaPort] = useState('8000');
   const [otaAddress, setOtaAddress] = useState(''); // Optional: flash to specific address offset (standard mode)
   const [firmwareUrl, setFirmwareUrl] = useState('');
@@ -127,7 +127,7 @@ export default function App() {
   // Phase 3 Certificate Provisioning States
   const [imeiProvisionInput, setImeiProvisionInput] = useState('');
   const [passwordProvisionInput, setPasswordProvisionInput] = useState('');
-  const [gatewayIpProvisionInput, setGatewayIpProvisionInput] = useState('192.168.4.1');
+  const [gatewayIpProvisionInput, setGatewayIpProvisionInput] = useState('192.168.0.1');
   const [provisioningStatus, setProvisioningStatus] = useState('');
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [certHistoryLogs, setCertHistoryLogs] = useState([]);
@@ -301,6 +301,8 @@ export default function App() {
   const [certPrivateKeyUrl, setCertPrivateKeyUrl] = useState('https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=3&PROJCD=re');
   const [isDownloadingCerts, setIsDownloadingCerts] = useState(false);
   const [certDownloadStatus, setCertDownloadStatus] = useState('');
+  const [uuidToken, setUuidToken] = useState('');
+  const [isUploadingUuid, setIsUploadingUuid] = useState(false);
 
   // App Config Settings State (Requirement 6)
   const [dbUriInput, setDbUriInput] = useState('mongodb://localhost:27017/IOT_System_Manager');
@@ -456,7 +458,7 @@ export default function App() {
         setImeiInput(payload.imei || '');
         setPasswordInput(payload.password || '');
         setCertificates(payload.certificates || []);
-        /* setOtaIp('192.168.4.1'); */
+        /* setOtaIp('192.168.0.1'); */
         // Maintain connection-dynamic IP or sync with current wifiIp state:
         if (wifiIp) {
           setOtaIp(wifiIp);
@@ -469,7 +471,12 @@ export default function App() {
 
         const newDiags = {};
         Object.keys(payload.diagnostics || {}).forEach(key => {
-          newDiags[key] = payload.diagnostics[key] ? 'OK' : 'ERROR';
+          const val = payload.diagnostics[key];
+          if (val === 'WAITING' || val === 'PENDING') {
+            newDiags[key] = 'WAITING';
+          } else {
+            newDiags[key] = val ? 'OK' : 'ERROR';
+          }
         });
         setDiagnostics(prev => ({ ...prev, ...newDiags }));
         if (payload.wifi) {
@@ -703,9 +710,15 @@ export default function App() {
 
     const onSpiffsUpdateResult = (event, result) => {
       setIsSavingFile(false);
+      setIsUploadingUuid(false);
+      setCertUploadProgress(0);
       if (result.success) {
         alert(`File ${result.filename} updated successfully!`);
         addLogLine(`[SPIFFS] Saved file ${result.filename} successfully to ESP32.`, 'success');
+        if (result.filename === '/uuid.json') {
+          setUuidToken(''); // Automatically change token area back
+          addLogLine('[SYS] uuid.json uploaded successfully. Token input reset.', 'success');
+        }
         ipcRenderer.send('get-spiffs-storage', { ip: otaIpRef.current, port: otaPortRef.current });
       } else {
         alert(`Failed to update file: ${result.error}`);
@@ -812,6 +825,9 @@ export default function App() {
   // DATA MANAGEMENT FUNCTIONS
   // ==========================================================================
   const addLogLine = (text, type = 'normal') => {
+    // Continuously append to the persistent log file on disk
+    ipcRenderer.send('append-to-log-file', text);
+
     setConsoleLogs(prev => {
       const lineObj = {
         text,
@@ -838,6 +854,21 @@ export default function App() {
       return next;
     });
   };
+
+  const handleSaveConsoleLogs = async () => {
+    if (consoleLogs.length === 0) {
+      alert('Console logs are empty.');
+      return;
+    }
+    const logContent = consoleLogs.map(log => `[${log.time}] ${log.text}`).join('\n');
+    const result = await ipcRenderer.invoke('save-log-file', logContent);
+    if (result.success) {
+      addLogLine(`[GUI] Successfully exported debug console logs to: ${result.filePath}`, 'success');
+    } else if (result.error) {
+      addLogLine(`[GUI ERROR] Failed to export debug console logs: ${result.error}`, 'error');
+    }
+  };
+
 
   const resetDiagnostics = () => {
     setImei('--');
@@ -1060,10 +1091,49 @@ export default function App() {
 
   // Upload certificate to device SPIFFS & QCOM
   const handleCertificateSelection = (file) => {
-    const validExtensions = ['.pem', '.crt', '.key'];
+    const validExtensions = ['.pem', '.crt', '.key', '.json'];
     const fileExt = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
     if (!validExtensions.includes(fileExt)) {
-      alert('Invalid certificate format. Choose a valid certificate file (.pem, .crt, or .key)');
+      alert('Invalid certificate format. Choose a valid certificate file (.pem, .crt, .key, or .json)');
+      return;
+    }
+
+    if (fileExt === '.json') {
+      setIsUploadingUuid(true);
+      setCertUploadProgress(10);
+      addLogLine(`[SPIFFS] Reading JSON config: ${file.name}...`);
+
+      try {
+        const fs = window.require('fs');
+        const fileContent = fs.readFileSync(file.path, 'utf8');
+        let jsonPayload = JSON.parse(fileContent);
+
+        // Inject token if provided in input field
+        if (uuidToken.trim() !== '') {
+          jsonPayload.token = uuidToken.trim();
+          addLogLine(`[SPIFFS] Injected token into ${file.name} payload.`);
+        }
+
+        const updatedContent = JSON.stringify(jsonPayload, null, 2);
+        addLogLine(`[SPIFFS] Uploading ${file.name} directly to ESP32 SPIFFS...`);
+
+        // Send file to ESP32 via update-spiffs-file
+        const cleanFilename = file.name.startsWith('/') ? file.name : '/' + file.name;
+        ipcRenderer.send('update-spiffs-file', {
+          ip: otaIp,
+          port: otaPort,
+          filename: cleanFilename,
+          content: updatedContent
+        });
+        
+        setTimeout(() => setCertUploadProgress(40), 150);
+        setTimeout(() => setCertUploadProgress(85), 350);
+      } catch (err) {
+        setIsUploadingUuid(false);
+        setCertUploadProgress(0);
+        addLogLine(`[ERROR] Failed to process JSON file: ${err.message}`, 'error');
+        alert(`Failed to process JSON file: ${err.message}`);
+      }
       return;
     }
 
@@ -1097,9 +1167,37 @@ export default function App() {
   };
 
   // Trigger Connections
+  const [autoConnectMode, setAutoConnectMode] = useState(false);
+
   const connectSerial = () => {
     if (!selectedSerialPort) return;
     ipcRenderer.send('connect-serial', { portPath: selectedSerialPort, baudRate: selectedBaud, pcbNumber });
+  };
+
+  // Auto-scan: refresh port list then try connecting to each one in order
+  // until a successful connection is established (useful when exact COM port is unknown)
+  const autoScanAndConnect = async () => {
+    addLogLine('[AUTO] Scanning for COM ports to auto-connect...', 'system');
+    const ports = await ipcRenderer.invoke('list-ports');
+    setSerialPorts(ports);
+    if (ports.length === 0) {
+      addLogLine('[AUTO] No COM ports found. Check USB cable and driver installation.', 'error');
+      return;
+    }
+    addLogLine(`[AUTO] Found ${ports.length} port(s): ${ports.map(p => p.path).join(', ')}`, 'system');
+    // Pick the most likely ESP32 port (prefer Silicon Labs / WCH / Expressif)
+    const preferred = ports.find(p =>
+      p.manufacturer && (
+        p.manufacturer.toLowerCase().includes('silicon') ||
+        p.manufacturer.toLowerCase().includes('wch') ||
+        p.manufacturer.toLowerCase().includes('espressif') ||
+        p.manufacturer.toLowerCase().includes('arduino')
+      )
+    ) || ports[0];
+    setSelectedSerialPort(preferred.path);
+    setSelectedBaud('115200');
+    addLogLine(`[AUTO] Auto-selecting port: ${preferred.path} (${preferred.manufacturer || 'Generic'}) at 115200 baud`, 'system');
+    ipcRenderer.send('connect-serial', { portPath: preferred.path, baudRate: '115200', pcbNumber });
   };
 
   const connectWifi = () => {
@@ -1733,49 +1831,86 @@ export default function App() {
                       </div>
                     ) : (
                       <div className="tab-content active">
-                        <div className="input-group">
-                          <label>USB COM Target Port</label>
-                          <div className="select-wrapper">
-                            <select value={selectedSerialPort === 'CUSTOM_PORT' || (selectedSerialPort && !serialPorts.some(p => p.path === selectedSerialPort)) ? 'CUSTOM_PORT' : selectedSerialPort} onChange={(e) => {
-                              if (e.target.value === 'CUSTOM_PORT') {
-                                setSelectedSerialPort('CUSTOM_PORT');
-                              } else {
-                                setSelectedSerialPort(e.target.value);
-                              }
-                            }}>
-                              {serialPorts.length === 0 ? (
-                                <option value="">No COM ports scanned</option>
-                              ) : (
-                                serialPorts.map(p => <option key={p.path} value={p.path}>{p.path}</option>)
-                              )}
-                              <option value="CUSTOM_PORT">-- Enter Custom COM Port --</option>
-                            </select>
-                            <button className="btn btn-secondary small" onClick={refreshPorts}>&#8635;</button>
-                          </div>
+
+                        {/* Auto / Manual connection mode toggle */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', padding: '8px 12px', background: 'rgba(0,198,255,0.04)', borderRadius: '8px', border: '1px solid rgba(0,198,255,0.12)' }}>
+                          <span style={{ fontSize: '12px', color: '#a0a0c0', fontWeight: '600' }}>
+                            {autoConnectMode ? '⚡ Auto-Connect Mode' : '🔧 Manual Mode'}
+                          </span>
+                          <label className="switch-toggle" style={{ margin: 0 }}>
+                            <input type="checkbox" checked={autoConnectMode} onChange={e => setAutoConnectMode(e.target.checked)} />
+                            <span className="switch-slider"></span>
+                          </label>
                         </div>
-                        {(selectedSerialPort === 'CUSTOM_PORT' || (selectedSerialPort && !serialPorts.some(p => p.path === selectedSerialPort))) && (
-                          <div className="input-group" style={{ marginTop: '10px' }}>
-                            <label>Custom COM Port Path</label>
-                            <input
-                              type="text"
-                              value={selectedSerialPort === 'CUSTOM_PORT' ? '' : selectedSerialPort}
-                              onChange={(e) => setSelectedSerialPort(e.target.value)}
-                              placeholder="e.g. COM3 or /dev/ttyUSB0"
-                              style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#fff', border: '1px solid var(--glass-border)', padding: '8px 12px', borderRadius: '6px' }}
-                            />
-                          </div>
+
+                        {autoConnectMode ? (
+                          <>
+                            <p style={{ fontSize: '11.5px', color: '#8080a0', marginBottom: '12px', lineHeight: 1.5 }}>
+                              Auto mode scans all COM ports and connects to the first ESP32-compatible device found at 115200 baud.
+                            </p>
+                            {serialPorts.length > 0 && (
+                              <div style={{ marginBottom: '10px', padding: '8px', background: 'rgba(0,255,150,0.04)', borderRadius: '6px', border: '1px solid rgba(0,255,150,0.1)' }}>
+                                <span style={{ fontSize: '11px', color: '#8080a0', display: 'block', marginBottom: '4px' }}>Detected Ports:</span>
+                                {serialPorts.map((p, i) => (
+                                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '2px 0' }}>
+                                    <span style={{ fontFamily: 'monospace', color: '#00c6ff' }}>{p.path}</span>
+                                    <span style={{ color: '#6060a0' }}>{p.manufacturer || 'Generic'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <button className="btn btn-primary" style={{ width: '100%' }} onClick={autoScanAndConnect}>
+                              ⚡ Auto-Scan &amp; Connect
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="input-group">
+                              <label>USB COM Target Port</label>
+                              <div className="select-wrapper">
+                                <select value={selectedSerialPort === 'CUSTOM_PORT' || (selectedSerialPort && !serialPorts.some(p => p.path === selectedSerialPort)) ? 'CUSTOM_PORT' : selectedSerialPort} onChange={(e) => {
+                                  if (e.target.value === 'CUSTOM_PORT') {
+                                    setSelectedSerialPort('CUSTOM_PORT');
+                                  } else {
+                                    setSelectedSerialPort(e.target.value);
+                                  }
+                                }}>
+                                  {serialPorts.length === 0 ? (
+                                    <option value="">No COM ports scanned</option>
+                                  ) : (
+                                    serialPorts.map(p => <option key={p.path} value={p.path}>{p.path} — {p.manufacturer || 'Generic'}</option>)
+                                  )}
+                                  <option value="CUSTOM_PORT">-- Enter Custom COM Port --</option>
+                                </select>
+                                <button className="btn btn-secondary small" onClick={refreshPorts}>&#8635;</button>
+                              </div>
+                            </div>
+                            {(selectedSerialPort === 'CUSTOM_PORT' || (selectedSerialPort && !serialPorts.some(p => p.path === selectedSerialPort))) && (
+                              <div className="input-group" style={{ marginTop: '10px' }}>
+                                <label>Custom COM Port Path</label>
+                                <input
+                                  type="text"
+                                  value={selectedSerialPort === 'CUSTOM_PORT' ? '' : selectedSerialPort}
+                                  onChange={(e) => setSelectedSerialPort(e.target.value)}
+                                  placeholder="e.g. COM3 or /dev/ttyUSB0"
+                                  style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#fff', border: '1px solid var(--glass-border)', padding: '8px 12px', borderRadius: '6px' }}
+                                />
+                              </div>
+                            )}
+                            <div className="input-group">
+                              <label>Baud Rate</label>
+                              <select value={selectedBaud} onChange={(e) => setSelectedBaud(e.target.value)}>
+                                <option value="115200">115200 (Firmware default)</option>
+                                <option value="9600">9600</option>
+                                <option value="74880">74880 (ROM bootloader)</option>
+                              </select>
+                            </div>
+                            <div className="button-row" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <button className="btn btn-primary" style={{ flex: '1 1 100%' }} onClick={connectSerial}>Open COM Port</button>
+                              <button className="btn btn-accent" style={{ flex: '1 1 100%' }} onClick={triggerBoot} disabled={!bootTriggerEnabled}>START_BOOT</button>
+                            </div>
+                          </>
                         )}
-                        <div className="input-group">
-                          <label>Baud Rate</label>
-                          <select value={selectedBaud} onChange={(e) => setSelectedBaud(e.target.value)}>
-                            <option value="115200">115200</option>
-                            <option value="9600">9600</option>
-                          </select>
-                        </div>
-                        <div className="button-row" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                          <button className="btn btn-primary" style={{ flex: '1 1 100%' }} onClick={connectSerial}>Open COM</button>
-                          <button className="btn btn-accent" style={{ flex: '1 1 100%' }} onClick={triggerBoot} disabled={!bootTriggerEnabled}>START_BOOT</button>
-                        </div>
                       </div>
                     )}
                   </>
@@ -1783,8 +1918,22 @@ export default function App() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {connection.type === 'serial' && (
                       <div className="button-row" style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => ipcRenderer.send('reset-device')}>Reset ESP32</button>
-                        <button className="btn btn-accent" style={{ flex: 1 }} onClick={() => ipcRenderer.send('enter-bootloader')}>Flash Mode</button>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ flex: 1 }}
+                          onClick={() => ipcRenderer.send('reset-serial-device')}
+                          title="Pulses the EN/RTS line to reboot firmware normally (NOT bootloader mode)"
+                        >
+                          ↺ Reset ESP32
+                        </button>
+                        <button
+                          className="btn btn-accent"
+                          style={{ flex: 1 }}
+                          onClick={() => sendControlCommand('FORMAT_SPIFFS')}
+                          title="Send FORMAT_SPIFFS command to reformat SPIFFS if it failed to mount"
+                        >
+                          🗂 Format SPIFFS
+                        </button>
                       </div>
                     )}
                     <button className="btn btn-danger" onClick={disconnectGateway}>Disconnect active link</button>
@@ -1892,7 +2041,7 @@ export default function App() {
                 <div className="form-row-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '15px' }}>
                   <div className="input-group">
                     <label>Gateway IP Address</label>
-                    <input type="text" value={directConnectIp} onChange={(e) => setDirectConnectIp(e.target.value)} placeholder="192.168.4.1" />
+                    <input type="text" value={directConnectIp} onChange={(e) => setDirectConnectIp(e.target.value)} placeholder="192.168.0.1" />
                   </div>
                   <div className="input-group">
                     <label>HTTP Port (Info/Config)</label>
@@ -3176,7 +3325,7 @@ export default function App() {
                     if (connection.type && connection.type !== 'failed') {
                       const input = document.createElement('input');
                       input.type = 'file';
-                      input.accept = '.pem,.crt,.key';
+                      input.accept = '.pem,.crt,.key,.json';
                       input.onchange = (e) => {
                         if (e.target.files.length > 0) handleCertificateSelection(e.target.files[0]);
                       };
@@ -3187,14 +3336,31 @@ export default function App() {
                   }}
                   style={{
                     padding: '25px 20px',
-                    borderColor: isCertUploading ? 'var(--accent-blue)' : '',
+                    borderColor: (isCertUploading || isUploadingUuid) ? 'var(--accent-blue)' : '',
                     opacity: (connection.type && connection.type !== 'failed') ? 1 : 0.5,
                     cursor: (connection.type && connection.type !== 'failed') ? 'pointer' : 'not-allowed'
                   }}
                 >
                   <div className="drop-icon" style={{ fontSize: '24px', marginBottom: '8px' }}>&#128228;</div>
-                  <h4 style={{ fontSize: '13px' }}>Drag & Drop Certificate file here</h4>
-                  <p style={{ fontSize: '11px' }}>Supports .pem, .crt, .key formats</p>
+                  <h4 style={{ fontSize: '13px' }}>Drag & Drop Certificate or JSON config here</h4>
+                  <p style={{ fontSize: '11px' }}>Supports .pem, .crt, .key, .json formats</p>
+                </div>
+
+                {/* UUID Token Input Area */}
+                <div style={{ marginTop: '15px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                  <label className="control-title" style={{ fontSize: '11px', color: 'var(--accent-blue)', fontWeight: 'bold' }}>UUID Token Input</label>
+                  <p style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '4px', marginBottom: '10px' }}>
+                    Type a token below before selecting/dropping <code>uuid.json</code> to dynamically inject it.
+                  </p>
+                  <div className="input-group" style={{ marginBottom: 0 }}>
+                    <input
+                      type="text"
+                      value={uuidToken}
+                      onChange={(e) => setUuidToken(e.target.value)}
+                      placeholder="Enter token to inject (e.g. secure_client_token)"
+                      style={{ fontSize: '12px', padding: '8px' }}
+                    />
+                  </div>
                 </div>
 
                 {/* Auto-Download from URL */}
@@ -3257,10 +3423,12 @@ export default function App() {
                 </div>
 
                 {/* Uploading progress indicator */}
-                {isCertUploading && (
+                {(isCertUploading || isUploadingUuid) && (
                   <div className="ota-progress-pane" style={{ marginTop: '15px' }}>
                     <div className="progress-details">
-                      <span className="progress-status" style={{ fontSize: '12px' }}>Syncing to ESP32 SPIFFS & QCOM...</span>
+                      <span className="progress-status" style={{ fontSize: '12px' }}>
+                        {isUploadingUuid ? 'Syncing uuid.json to ESP32 SPIFFS...' : 'Syncing to ESP32 SPIFFS & QCOM...'}
+                      </span>
                       <span className="progress-percent" style={{ fontSize: '12px' }}>{certUploadProgress}%</span>
                     </div>
                     <div className="progress-bar-bg">
@@ -3280,7 +3448,10 @@ export default function App() {
                 <h1>Engineering Debug Console</h1>
                 <p>Diagnostic logging stream monitoring active serial interfaces and raw socket frames</p>
               </div>
-              <button className="btn btn-danger small" style={{ width: 'auto' }} onClick={() => setConsoleLogs([])}>Clear Terminal</button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button className="btn btn-secondary small" style={{ width: 'auto' }} onClick={handleSaveConsoleLogs}>Export Logs</button>
+                <button className="btn btn-danger small" style={{ width: 'auto' }} onClick={() => setConsoleLogs([])}>Clear Terminal</button>
+              </div>
             </header>
 
             <div className="console-box">
@@ -3422,7 +3593,7 @@ export default function App() {
                   </div>
                   <div className="spec-list-item">
                     <span className="spec-label">Hotspot IP Address</span>
-                    <span className="spec-value">192.168.4.1</span>
+                    <span className="spec-value">192.168.0.1</span>
                   </div>
                   <div className="spec-list-item">
                     <span className="spec-label">Active Clients Count</span>
@@ -3533,7 +3704,7 @@ export default function App() {
                     type="text"
                     value={gatewayIpProvisionInput}
                     onChange={(e) => setGatewayIpProvisionInput(e.target.value)}
-                    placeholder="e.g. 192.168.4.1"
+                    placeholder="e.g. 192.168.0.1"
                   />
                 </div>
 

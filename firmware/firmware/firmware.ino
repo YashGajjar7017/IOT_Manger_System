@@ -56,7 +56,13 @@ const int BOOT_BUTTON_PIN =
 // Server instances on updated ports
 WebServer httpServer(8000); // HTTP OTA on Port 8000
 WebServer Server(500);      // Dedicated OTA on Port 500
-WiFiServer tcpServer(9000); // TCP Telemetry on Port 9000
+// WiFiServer tcpServer(9000); // TCP Telemetry on Port 9000 (Deactivated, ESP32 is client now)
+
+// TCP Telemetry Client connection variables
+IPAddress electronServerIP;
+bool hasElectronServerIP = false;
+unsigned long lastConnectAttempt = 0;
+const unsigned long connectInterval = 5000;
 
 // Re-entrant guard for diagnostics (prevent double-run from TCP TEST_ commands)
 volatile bool diagRunning = false;
@@ -72,8 +78,8 @@ unsigned long telemetryInterval =
     1500; // Customizable telemetry frequency in milliseconds
 
 // Physical Relays/Outputs
-const int RELAY_1_PIN = 12;
-const int RELAY_2_PIN = 13;
+const int RELAY_1_PIN = 4;
+const int RELAY_2_PIN = 6;
 bool relay1State = false;
 bool relay2State = false;
 
@@ -113,6 +119,19 @@ struct DiagnosticReport {
   bool driver = false;
   bool rtc = false;
 } diagnostics;
+
+struct DiagnosticTested {
+  bool rs232 = false;
+  bool rs485 = false;
+  bool gprs = false;
+  bool bus = false;
+  bool ap = false;
+  bool flash = false;
+  bool di = false;
+  bool driver = false;
+  bool rtc = false;
+} diagnosticsTested;
+
 
 String getCertificatesJson() {
   String json = "[";
@@ -362,13 +381,22 @@ void setup() {
   digitalWrite(RELAY_2_PIN, LOW);
   Serial.println("[GPIO] Relays initialized. State: LOW (Inactive)");
 
-  // Initialize SPIFFS
-  Serial.println("[SPIFFS] Mounting storage partition... (Note: Formatting may "
-                 "take up to 45 seconds if filesystem is corrupted)");
-  if (!SPIFFS.begin(true)) {
-    Serial.println("[SPIFFS] ERROR: SPIFFS Mount Failed!");
+  // Initialize SPIFFS — formatOnFail=false so we NEVER silently hang for
+  // 45 seconds formatting.  If the partition is absent/corrupt the firmware
+  // continues running and logs a clear error.  Send "FORMAT_SPIFFS" over
+  // serial or TCP to explicitly format if needed.
+  Serial.println("[SPIFFS] Mounting SPIFFS partition (formatOnFail=DISABLED)...");
+  if (!SPIFFS.begin(false)) {
+    Serial.println("[SPIFFS] WARNING: Mount failed. Filesystem may be unformatted.");
+    Serial.println("[SPIFFS] Send command FORMAT_SPIFFS to format (takes ~5s).");
+    Serial.println("[SPIFFS] Continuing boot without persistent storage.");
   } else {
-    Serial.println("[SPIFFS] SPIFFS Mount Successful.");
+    size_t totalBytes = SPIFFS.totalBytes();
+    size_t usedBytes = SPIFFS.usedBytes();
+    Serial.printf("[SPIFFS] Mount OK. Total: %d KB | Used: %d KB | Free: %d KB\n",
+                  (int)(totalBytes / 1024),
+                  (int)(usedBytes  / 1024),
+                  (int)((totalBytes - usedBytes) / 1024));
   }
 
   // Auto-connect WiFi (SoftAP + STA) on boot (Non-blocking)
@@ -419,13 +447,26 @@ void setup() {
 
   // Start HTTP and TCP servers immediately on boot to listen in
   // HALT/Diagnostics state
-  Serial.println("[TCP] Starting live telemetry server on port 9000...");
-  tcpServer.begin();
-  Serial.println("[TCP] Live Telemetry server started.");
+  // Serial.println("[TCP] Starting live telemetry server on port 9000...");
+  // tcpServer.begin();
+  // Serial.println("[TCP] Live Telemetry server started.");
 
-  Serial.println("[HTTP] Starting OTA HTTP server on port 8000...");
+  Serial.println("[HTTP] Starting OTA HTTP servers (Port 500 & Port 8000)...");
+  setupServer();
   setupHTTPServer();
-  Serial.println("[HTTP] OTA Server started.");
+  Serial.println("[HTTP] OTA Servers initialized.");
+
+  // Spawn background task for HTTP/OTA servers handling on Core 1
+  xTaskCreatePinnedToCore(
+      TaskOtaHTTPServer,
+      "TaskOtaHTTPServer",
+      8192,
+      NULL,
+      1,
+      NULL,
+      1
+  );
+  Serial.println("[SYSTEM] TaskOtaHTTPServer spawned on Core 1.");
 
   Serial.println(
       "\n[SYSTEM] Boot process finished. Gateway entering: HALT / WAIT state.");
@@ -444,6 +485,8 @@ void handleUDPDiscovery() {
     String request = String(packetBuffer);
     request.trim();
     if (request == "DISCOVER_IOT_GATEWAY") {
+      electronServerIP = udpListener.remoteIP();
+      hasElectronServerIP = true;
       udpListener.beginPacket(udpListener.remoteIP(), udpListener.remotePort());
 
       /*
@@ -453,12 +496,9 @@ void handleUDPDiscovery() {
       */
 
       // Determine correct IP to reply with. If localIP is 0.0.0.0 (STA
-      // disconnected), or if request came from the SoftAP subnet (192.168.0.X),
-      // return softAPIP (192.168.0.1).
+      // disconnected), return softAPIP (192.168.0.1 or 192.168.4.1).
       String responseIP = WiFi.localIP().toString();
-      if (responseIP == "0.0.0.0" || (udpListener.remoteIP()[0] == 192 &&
-                                      udpListener.remoteIP()[1] == 168 &&
-                                      udpListener.remoteIP()[2] == 0)) {
+      if (responseIP == "0.0.0.0" || responseIP == "") {
         responseIP = WiFi.softAPIP().toString();
       }
 
@@ -520,14 +560,18 @@ void handleHaltState() {
     lastLogTime = millis();
   }
 
-  // Accept incoming TCP connections in Halt state
-  if (tcpServer.hasClient()) {
-    if (tcpClient && tcpClient.connected()) {
-      tcpClient.stop();
+  // Connect to the Electron server if not already connected
+  if ((WiFi.status() == WL_CONNECTED || WiFi.softAPIP()[0] != 0) && hasElectronServerIP && !tcpClient.connected()) {
+    if (millis() - lastConnectAttempt > connectInterval) {
+      lastConnectAttempt = millis();
+      Serial.printf("[TCP] Attempting to connect to Electron Server at %s:9000...\n", electronServerIP.toString().c_str());
+      if (tcpClient.connect(electronServerIP, 9000)) {
+        Serial.println("[TCP] Successfully connected to Electron Server in HALT mode!");
+        sendControlStatus();
+      } else {
+        Serial.println("[TCP] Connection to Electron Server failed.");
+      }
     }
-    tcpClient = tcpServer.available();
-    Serial.println("[TCP] Electron App connected to Gateway in HALT mode.");
-    sendControlStatus();
   }
 
   // Check for TCP command inputs
@@ -1055,6 +1099,15 @@ void runDiagnostics() {
       "\n[DIAGNOSTIC] All 9 diagnostics tests completed successfully!");
   delay(400);
 
+  diagnosticsTested.rs232 = true;
+  diagnosticsTested.rs485 = true;
+  diagnosticsTested.gprs = true;
+  diagnosticsTested.bus = true;
+  diagnosticsTested.ap = true;
+  diagnosticsTested.flash = true;
+  diagnosticsTested.di = true;
+  diagnosticsTested.driver = true;
+  diagnosticsTested.rtc = true;
   // Send JSON Payload
   sendBootSuccessPayload();
 
@@ -1096,15 +1149,15 @@ void sendBootSuccessPayload() {
   json += "\"password\":\"" + devicePassword + "\",";
   json += "\"certificates\":" + getCertificatesJson() + ",";
   json += "\"diagnostics\":{";
-  json += "\"rs232\":" + String(diagnostics.rs232 ? "true" : "false") + ",";
-  json += "\"rs485\":" + String(diagnostics.rs485 ? "true" : "false") + ",";
-  json += "\"gprs\":" + String(diagnostics.gprs ? "true" : "false") + ",";
-  json += "\"bus\":" + String(diagnostics.bus ? "true" : "false") + ",";
-  json += "\"ap\":" + String(diagnostics.ap ? "true" : "false") + ",";
-  json += "\"flash\":" + String(diagnostics.flash ? "true" : "false") + ",";
-  json += "\"di\":" + String(diagnostics.di ? "true" : "false") + ",";
-  json += "\"driver\":" + String(diagnostics.driver ? "true" : "false") + ",";
-  json += "\"rtc\":" + String(diagnostics.rtc ? "true" : "false");
+  json += "\"rs232\":" + String(diagnosticsTested.rs232 ? (diagnostics.rs232 ? "true" : "false") : "\"WAITING\"") + ",";
+  json += "\"rs485\":" + String(diagnosticsTested.rs485 ? (diagnostics.rs485 ? "true" : "false") : "\"WAITING\"") + ",";
+  json += "\"gprs\":" + String(diagnosticsTested.gprs ? (diagnostics.gprs ? "true" : "false") : "\"WAITING\"") + ",";
+  json += "\"bus\":" + String(diagnosticsTested.bus ? (diagnostics.bus ? "true" : "false") : "\"WAITING\"") + ",";
+  json += "\"ap\":" + String(diagnosticsTested.ap ? (diagnostics.ap ? "true" : "false") : "\"WAITING\"") + ",";
+  json += "\"flash\":" + String(diagnosticsTested.flash ? (diagnostics.flash ? "true" : "false") : "\"WAITING\"") + ",";
+  json += "\"di\":" + String(diagnosticsTested.di ? (diagnostics.di ? "true" : "false") : "\"WAITING\"") + ",";
+  json += "\"driver\":" + String(diagnosticsTested.driver ? (diagnostics.driver ? "true" : "false") : "\"WAITING\"") + ",";
+  json += "\"rtc\":" + String(diagnosticsTested.rtc ? (diagnostics.rtc ? "true" : "false") : "\"WAITING\"");
   json += "},";
   json += "\"wifi\":{";
   json +=
@@ -1135,6 +1188,19 @@ void sendBootSuccessPayload() {
   }
 }
 
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 2
+// In ESP32 Core 2.x/3.x, ensure macros map to their enum constants of the same name (which are of type arduino_event_id_t)
+#undef ARDUINO_EVENT_WIFI_AP_STACONNECTED
+#define ARDUINO_EVENT_WIFI_AP_STACONNECTED ARDUINO_EVENT_WIFI_AP_STACONNECTED
+#undef ARDUINO_EVENT_WIFI_AP_STADISCONNECTED
+#define ARDUINO_EVENT_WIFI_AP_STADISCONNECTED ARDUINO_EVENT_WIFI_AP_STADISCONNECTED
+#undef ARDUINO_EVENT_WIFI_STA_CONNECTED
+#define ARDUINO_EVENT_WIFI_STA_CONNECTED ARDUINO_EVENT_WIFI_STA_CONNECTED
+#undef ARDUINO_EVENT_WIFI_STA_DISCONNECTED
+#define ARDUINO_EVENT_WIFI_STA_DISCONNECTED ARDUINO_EVENT_WIFI_STA_DISCONNECTED
+#undef ARDUINO_EVENT_WIFI_STA_GOT_IP
+#define ARDUINO_EVENT_WIFI_STA_GOT_IP ARDUINO_EVENT_WIFI_STA_GOT_IP
+#else
 #ifndef ARDUINO_EVENT_WIFI_AP_STACONNECTED
 #define ARDUINO_EVENT_WIFI_AP_STACONNECTED SYSTEM_EVENT_AP_STACONNECTED
 #endif
@@ -1149,6 +1215,7 @@ void sendBootSuccessPayload() {
 #endif
 #ifndef ARDUINO_EVENT_WIFI_STA_GOT_IP
 #define ARDUINO_EVENT_WIFI_STA_GOT_IP SYSTEM_EVENT_STA_GOT_IP
+#endif
 #endif
 
 /*
@@ -1959,6 +2026,16 @@ void processCommand(String cmd) {
       testOk = diagnostics.rtc;
     }
 
+    if (module == "RS232") diagnosticsTested.rs232 = true;
+    else if (module == "RS485") diagnosticsTested.rs485 = true;
+    else if (module == "GPRS" || module == "GSM") diagnosticsTested.gprs = true;
+    else if (module == "BUS") diagnosticsTested.bus = true;
+    else if (module == "AP") diagnosticsTested.ap = true;
+    else if (module == "FLASH") diagnosticsTested.flash = true;
+    else if (module == "DI") diagnosticsTested.di = true;
+    else if (module == "DRIVER") diagnosticsTested.driver = true;
+    else if (module == "RTC") diagnosticsTested.rtc = true;
+
     Serial.printf("[CMD] Test completed for %s: %s\n", module.c_str(),
                   testOk ? "OK" : "ERROR");
     diagRunning = false;
@@ -1969,22 +2046,22 @@ void processCommand(String cmd) {
   } else if (cmd == "RELAY_1_ON") {
     relay1State = true;
     digitalWrite(RELAY_1_PIN, HIGH);
-    Serial.println("[CMD] Relay 1 turned ON (GPIO 12 = HIGH)");
+    Serial.println("[CMD] Relay 1 turned ON (GPIO 4 = HIGH)");
     sendControlStatus();
   } else if (cmd == "RELAY_1_OFF") {
     relay1State = false;
     digitalWrite(RELAY_1_PIN, LOW);
-    Serial.println("[CMD] Relay 1 turned OFF (GPIO 12 = LOW)");
+    Serial.println("[CMD] Relay 1 turned OFF (GPIO 4 = LOW)");
     sendControlStatus();
   } else if (cmd == "RELAY_2_ON") {
     relay2State = true;
     digitalWrite(RELAY_2_PIN, HIGH);
-    Serial.println("[CMD] Relay 2 turned ON (GPIO 13 = HIGH)");
+    Serial.println("[CMD] Relay 2 turned ON (GPIO 6 = HIGH)");
     sendControlStatus();
   } else if (cmd == "RELAY_2_OFF") {
     relay2State = false;
     digitalWrite(RELAY_2_PIN, LOW);
-    Serial.println("[CMD] Relay 2 turned OFF (GPIO 13 = LOW)");
+    Serial.println("[CMD] Relay 2 turned OFF (GPIO 6 = LOW)");
     sendControlStatus();
   } else if (cmd.startsWith("SET_WIFI:")) {
     int firstColon = cmd.indexOf(':');
@@ -2023,7 +2100,7 @@ void processCommand(String cmd) {
     long val = valStr.toInt();
     if (val >= 100 && val <= 10000) {
       telemetryInterval = val;
-      Serial.printf("[CMD] Telemetry rate set to: %d ms\n", telemetryInterval);
+      Serial.printf("[CMD] Telemetry rate set to: %d ms\n", (int)telemetryInterval);
       sendControlStatus();
     }
   } else if (cmd == "GET_INFO") {
@@ -2083,7 +2160,7 @@ void processCommand(String cmd) {
                     name.c_str());
       delay(200);
       Serial.printf("[SPIFFS] Write complete! Saved file size: %d bytes.\n",
-                    size);
+                    (int)size);
       delay(100);
       Serial.printf("[QCOM] Initiating certificate synchronization to QCOM "
                     "(core) partition...\n");
@@ -2105,6 +2182,17 @@ void processCommand(String cmd) {
       if (tcpClient && tcpClient.connected()) {
         tcpClient.println(reply);
       }
+    }
+  } else if (cmd == "FORMAT_SPIFFS") {
+    Serial.println("[SPIFFS] Explicit FORMAT_SPIFFS command received. Formatting...");
+    SPIFFS.format();
+    if (SPIFFS.begin(false)) {
+      Serial.println("[SPIFFS] Format & remount successful.");
+      String reply = "{\"status\":\"SPIFFS_FORMATTED\",\"ok\":true}";
+      Serial.print("JSON_PAYLOAD:"); Serial.println(reply);
+      if (tcpClient && tcpClient.connected()) tcpClient.println(reply);
+    } else {
+      Serial.println("[SPIFFS] ERROR: Remount after format failed!");
     }
   }
 }
@@ -2131,16 +2219,18 @@ void handleRunningState() {
   // on Core 1. Do NOT call httpServer.handleClient() here — it will cause
   // a concurrent WebServer access crash (ESP32 watchdog panic).
 
-  // Accept incoming TCP connections (from Electron App)
-  if (tcpServer.hasClient()) {
-    if (tcpClient && tcpClient.connected()) {
-      tcpClient.stop();
+  // Connect to the Electron server if not already connected
+  if ((WiFi.status() == WL_CONNECTED || WiFi.softAPIP()[0] != 0) && hasElectronServerIP && !tcpClient.connected()) {
+    if (millis() - lastConnectAttempt > connectInterval) {
+      lastConnectAttempt = millis();
+      Serial.printf("[TCP] Attempting to connect to Electron Server at %s:9000...\n", electronServerIP.toString().c_str());
+      if (tcpClient.connect(electronServerIP, 9000)) {
+        Serial.println("[TCP] Successfully connected to Electron Server in RUNNING mode!");
+        sendControlStatus();
+      } else {
+        Serial.println("[TCP] Connection to Electron Server failed.");
+      }
     }
-    tcpClient = tcpServer.available();
-    Serial.println("[TCP] Electron App connected to Telemetry Port 9000.");
-
-    // Automatically push initial configurations state
-    sendControlStatus();
   }
 
   // Check for commands from active TCP socket connection
