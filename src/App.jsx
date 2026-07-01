@@ -46,6 +46,8 @@ export default function App() {
   const [bootStep, setBootStep] = useState('');
   const [bootMessage, setBootMessage] = useState('');
   const [isBooting, setIsBooting] = useState(false);
+  const [bootManualStopped, setBootManualStopped] = useState(false);
+  const lastBootSuccessSignature = useRef('');
 
   // Device Credentials State
   const [password, setPassword] = useState('--');
@@ -363,6 +365,7 @@ export default function App() {
         setConnection({ type: data.type, target: data.target });
         setBootTriggerEnabled(true);
         setControlsDisabled(false);
+        setBootManualStopped(false);
         addLogLine(`Gateway interface online: ${data.type.toUpperCase()} -> ${data.target}`, 'success');
 
         if (data.type === 'serial') {
@@ -390,6 +393,7 @@ export default function App() {
         setConnection({ type: data.status === 'error' ? 'failed' : null, target: data.message || null });
         setBootTriggerEnabled(false);
         setControlsDisabled(true);
+        setBootManualStopped(false);
         setPingLatency({ value: 'Offline', status: 'offline' });
         // Comment out resetDiagnostics() to preserve diagnostics, IMEI, and MAC details during device reboots
         // resetDiagnostics();
@@ -437,6 +441,10 @@ export default function App() {
         setPasswordInput(payload.password);
       }
 
+      if (bootManualStopped && (payload.status === 'BOOT_PROGRESS' || payload.status === 'BOOT_SUCCESS' || payload.step === 'QCOM_SHIFT')) {
+        return;
+      }
+
       if (payload.status === 'BOOT_PROGRESS' || payload.step === 'QCOM_SHIFT') {
         setBootProgress(payload.progress);
         setBootStep(payload.step);
@@ -448,6 +456,11 @@ export default function App() {
           setTimeout(() => setIsBooting(false), 2000);
         }
       } else if (payload.status === 'BOOT_SUCCESS') {
+        const successSignature = `${payload.imei || ''}|${payload.mac || ''}|${JSON.stringify(payload.diagnostics || {})}`;
+        if (lastBootSuccessSignature.current === successSignature && bootStep === 'COMPLETE') {
+          return;
+        }
+        lastBootSuccessSignature.current = successSignature;
         setIsBooting(false);
         setBootProgress(100);
         setBootStep('COMPLETE');
@@ -866,6 +879,48 @@ export default function App() {
       addLogLine(`[GUI] Successfully exported debug console logs to: ${result.filePath}`, 'success');
     } else if (result.error) {
       addLogLine(`[GUI ERROR] Failed to export debug console logs: ${result.error}`, 'error');
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    const totalCount = Object.keys(diagnostics).length;
+    const okCount = Object.values(diagnostics).filter(v => v === 'OK').length;
+    const errCount = Object.values(diagnostics).filter(v => v === 'ERROR').length;
+    const pendingCount = Object.values(diagnostics).filter(v => v === 'WAITING' || v === 'PENDING' || v === 'TESTING').length;
+
+    let overallStatus = 'PENDING';
+    if (errCount > 0) {
+      overallStatus = 'FAILING';
+    } else if (okCount === totalCount) {
+      overallStatus = 'SUCCESS';
+    }
+
+    const reportContent = `=========================================
+      IOT MONITORED GATEWAY CHECK REPORT
+=========================================
+Date/Time     : ${new Date().toLocaleString()}
+Device IMEI   : ${imei}
+Device MAC    : ${mac}
+Connection    : ${connection.type ? connection.type.toUpperCase() : 'DISCONNECTED'} (${connection.target || 'N/A'})
+
+PERIPHERAL MODULE TEST RESULTS:
+-----------------------------------------
+${Object.keys(diagnostics).map(key => `- ${key.toUpperCase().padEnd(17)}: ${diagnostics[key]}`).join('\n')}
+
+SUMMARY:
+-----------------------------------------
+Passed Modules : ${okCount}
+Failed Modules : ${errCount}
+Untested       : ${pendingCount}
+Overall Status : ${overallStatus}
+=========================================
+`;
+
+    const result = await ipcRenderer.invoke('save-log-file', reportContent);
+    if (result.success) {
+      addLogLine(`[GUI] Successfully exported diagnostics check report to: ${result.filePath}`, 'success');
+    } else if (result.error) {
+      addLogLine(`[GUI ERROR] Failed to export check report: ${result.error}`, 'error');
     }
   };
 
@@ -1379,7 +1434,34 @@ export default function App() {
   };
 
   const triggerBoot = () => {
+    if (!connection.type) {
+      alert('No active connection. Gateway must be connected (TCP or Serial) to start boot.');
+      return;
+    }
+
+    setBootManualStopped(false);
+    setIsBooting(true);
+    setBootTriggerEnabled(true);
+    setBootMessage('Starting manual boot sequence...');
+    setBootStep('START');
+    setBootProgress(10);
     sendControlCommand(`START_BOOT:${certPreUploadTarget}`);
+  };
+
+  const stopBootSequence = () => {
+    if (!isBooting && bootProgress === 0) {
+      addLogLine('[SYS] Boot sequence is not currently active.', 'warning');
+      return;
+    }
+
+    setBootManualStopped(true);
+    setBootMessage('Boot sequence manually stopped.');
+    setBootStep('');
+    setBootProgress(0);
+    setIsBooting(false);
+    setBootTriggerEnabled(true);
+    lastBootSuccessSignature.current = '';
+    addLogLine('[SYS] Boot sequence manually stopped by user.', 'warning');
   };
 
   // Switchboard Event Actions
@@ -1943,12 +2025,21 @@ export default function App() {
 
               {/* Diagnostic Checklist Panel */}
               <div className="glass-card diagnostic-board">
-                <div className="diag-header">
-                  <h3><span className="icon">&#9881;</span> Diagnostics status</h3>
-                  <div className="diag-meta">
-                    <span>IMEI: {imei}</span>
-                    <span>MAC: {mac}</span>
+                <div className="diag-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <h3><span className="icon">&#9881;</span> Diagnostics status</h3>
+                    <div className="diag-meta">
+                      <span>IMEI: {imei}</span>
+                      <span>MAC: {mac}</span>
+                    </div>
                   </div>
+                  <button
+                    className="btn btn-secondary small"
+                    style={{ width: 'auto', padding: '6px 12px', fontSize: '11px', height: 'auto', margin: 0 }}
+                    onClick={handleDownloadReport}
+                  >
+                    Download Report
+                  </button>
                 </div>
 
                 <div className="diag-checklist">
@@ -2230,6 +2321,15 @@ export default function App() {
                         style={{ height: '42px' }}
                       >
                         Skip Boot Diagnostics
+                      </button>
+                    )}
+                    {(isBooting || bootProgress > 0) && (
+                      <button
+                        className="btn btn-danger boot-stop-btn"
+                        onClick={stopBootSequence}
+                        style={{ height: '42px' }}
+                      >
+                        <span className="btn-icon">&#10074;&#10074;</span> Stop Boot
                       </button>
                     )}
                   </div>

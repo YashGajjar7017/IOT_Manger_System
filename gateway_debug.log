@@ -1,0 +1,2213 @@
+[7/1/2026, 12:34:13 PM] [WORKER] Failed to load database module: Cannot read properties of undefined (reading 'then')
+[7/1/2026, 12:34:13 PM] [WORKER] Data processing worker thread started.
+[7/1/2026, 12:34:25 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:34:25 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:34:26 PM] Gateway interface online: TCP -> 192.168.0.1:62157
+[7/1/2026, 12:34:26 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:34:26 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:62157
+[7/1/2026, 12:34:26 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:34:26 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:34:26 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:34:27 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:34:29 PM] [TX TCP] Send: PING
+[7/1/2026, 12:34:30 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:34:30 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:34:30 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:34:42 PM] Gateway interface closed.
+[7/1/2026, 12:34:42 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:34:42 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:34:42 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:39:17 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:39:17 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:39:37 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:39:37 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:39:38 PM] Gateway interface online: TCP -> 192.168.0.1:49934
+[7/1/2026, 12:39:38 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:39:38 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:49934
+[7/1/2026, 12:39:38 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:39:38 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:39:38 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:39:39 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:39:41 PM] [TX TCP] Send: PING
+[7/1/2026, 12:39:41 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:39:41 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:39:42 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:39:49 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:39:49 PM] Gateway interface closed.
+[7/1/2026, 12:39:49 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:39:49 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:39:49 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:39:49 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:39:53 PM] Gateway interface online: TCP -> 192.168.0.1:53659
+[7/1/2026, 12:39:53 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:39:53 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:53659
+[7/1/2026, 12:39:53 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:39:53 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:39:53 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:39:54 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:39:55 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:39:55 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:39:55 PM] Gateway interface closed.
+[7/1/2026, 12:39:55 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:39:58 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:39:58 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:39:59 PM] Gateway interface online: TCP -> 192.168.0.1:57001
+[7/1/2026, 12:39:59 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:39:59 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:57001
+[7/1/2026, 12:39:59 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:39:59 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:39:59 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:40:00 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:40:00 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:40:02 PM] [TX TCP] Send: PING
+[7/1/2026, 12:40:05 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:40:05 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:40:05 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:40:10 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:40:10 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:40:10 PM] Gateway interface closed.
+[7/1/2026, 12:40:10 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:40:13 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:40:13 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:40:14 PM] Gateway interface online: TCP -> 192.168.0.1:58869
+[7/1/2026, 12:40:14 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:58869
+[7/1/2026, 12:40:14 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:40:14 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:40:14 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:40:14 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:40:15 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:40:17 PM] [TX TCP] Send: PING
+[7/1/2026, 12:40:17 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:40:17 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:40:17 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:40:23 PM] [SYS] Boot diagnostics sequence bypassed from GUI.
+[7/1/2026, 12:40:25 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:40:25 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:40:25 PM] Gateway interface closed.
+[7/1/2026, 12:40:25 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:40:25 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:40:25 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:40:28 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:40:28 PM] Gateway interface online: TCP -> 192.168.0.1:60717
+[7/1/2026, 12:40:28 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:60717
+[7/1/2026, 12:40:28 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:40:28 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:40:28 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:40:29 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:40:31 PM] [TX TCP] Send: PING
+[7/1/2026, 12:40:32 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:40:32 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:40:32 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:40:41 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:40:41 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:40:41 PM] Gateway interface closed.
+[7/1/2026, 12:40:41 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:40:42 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:40:42 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:40:43 PM] Gateway interface online: TCP -> 192.168.0.1:50606
+[7/1/2026, 12:40:43 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:40:43 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:50606
+[7/1/2026, 12:40:43 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:40:43 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:40:43 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:40:44 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:40:46 PM] [TX TCP] Send: PING
+[7/1/2026, 12:40:46 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:40:47 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:40:47 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:40:56 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:40:56 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:40:56 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:40:56 PM] Gateway interface closed.
+[7/1/2026, 12:40:58 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:40:58 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:40:58 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:40:58 PM] Gateway interface online: TCP -> 192.168.0.1:57147
+[7/1/2026, 12:40:58 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:57147
+[7/1/2026, 12:40:58 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:40:58 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:40:58 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:40:59 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:41:01 PM] [TX TCP] Send: PING
+[7/1/2026, 12:41:01 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:41:01 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:41:02 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:41:10 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:41:10 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:41:10 PM] Gateway interface closed.
+[7/1/2026, 12:41:10 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:41:13 PM] Gateway interface online: TCP -> 192.168.0.1:61721
+[7/1/2026, 12:41:13 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:41:13 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:61721
+[7/1/2026, 12:41:13 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:41:13 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:41:13 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:41:14 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:41:14 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:41:16 PM] [TX TCP] Send: PING
+[7/1/2026, 12:41:16 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:41:16 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:41:16 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:41:25 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:41:25 PM] Gateway interface closed.
+[7/1/2026, 12:41:25 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:41:25 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:41:26 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:41:26 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:41:28 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:41:28 PM] Gateway interface online: TCP -> 192.168.0.1:60308
+[7/1/2026, 12:41:28 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:60308
+[7/1/2026, 12:41:28 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:41:28 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:41:28 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:41:29 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:41:29 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:41:31 PM] [TX TCP] Send: PING
+[7/1/2026, 12:41:31 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:41:31 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:41:31 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:41:40 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:41:40 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:41:40 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:41:40 PM] Gateway interface closed.
+[7/1/2026, 12:41:42 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:41:42 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:41:43 PM] Gateway interface online: TCP -> 192.168.0.1:50721
+[7/1/2026, 12:41:43 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:50721
+[7/1/2026, 12:41:43 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:41:43 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:41:43 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:41:43 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:41:44 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:41:44 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:41:46 PM] [TX TCP] Send: PING
+[7/1/2026, 12:41:46 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:41:46 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:41:46 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:41:54 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:41:54 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:41:54 PM] Gateway interface closed.
+[7/1/2026, 12:41:54 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:41:58 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:41:58 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:62556
+[7/1/2026, 12:41:58 PM] Gateway interface online: TCP -> 192.168.0.1:62556
+[7/1/2026, 12:41:58 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:41:58 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:41:58 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:41:59 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:41:59 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:42:01 PM] [TX TCP] Send: PING
+[7/1/2026, 12:42:01 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:42:01 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:42:01 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:42:09 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:42:09 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:42:09 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:42:09 PM] Gateway interface closed.
+[7/1/2026, 12:42:10 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:42:10 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:42:12 PM] Gateway interface online: TCP -> 192.168.0.1:62142
+[7/1/2026, 12:42:12 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:42:12 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:62142
+[7/1/2026, 12:42:12 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:42:12 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:42:13 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:42:13 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:42:14 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:42:15 PM] [TX TCP] Send: PING
+[7/1/2026, 12:42:16 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:42:16 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:42:16 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:42:24 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:42:24 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:42:24 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:42:24 PM] Gateway interface closed.
+[7/1/2026, 12:42:26 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:42:26 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:42:27 PM] Gateway interface online: TCP -> 192.168.0.1:63720
+[7/1/2026, 12:42:27 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:42:27 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:63720
+[7/1/2026, 12:42:27 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:42:27 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:42:27 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:42:28 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:42:28 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:42:30 PM] [TX TCP] Send: PING
+[7/1/2026, 12:42:31 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:42:31 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:42:31 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:42:36 PM] [SYS] Boot diagnostics sequence bypassed from GUI.
+[7/1/2026, 12:42:39 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 12:42:39 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 12:42:39 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:42:39 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:42:39 PM] Gateway interface closed.
+[7/1/2026, 12:42:39 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:42:42 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:42:42 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:42:42 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:42:42 PM] Gateway interface online: TCP -> 192.168.0.1:63323
+[7/1/2026, 12:42:42 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:42:42 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:63323
+[7/1/2026, 12:42:42 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:42:42 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:42:42 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:42:43 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:42:43 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:42:45 PM] [TX TCP] Send: PING
+[7/1/2026, 12:42:46 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:42:46 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:42:46 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:42:55 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:42:55 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:42:55 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:42:55 PM] Gateway interface closed.
+[7/1/2026, 12:42:57 PM] Gateway interface online: TCP -> 192.168.0.1:60120
+[7/1/2026, 12:42:57 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:42:57 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:60120
+[7/1/2026, 12:42:57 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:42:57 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:42:57 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:42:58 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:43:00 PM] [TX TCP] Send: PING
+[7/1/2026, 12:43:01 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:43:01 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:43:01 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:43:09 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:43:09 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:43:09 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:43:09 PM] Gateway interface closed.
+[7/1/2026, 12:43:10 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:43:10 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:43:12 PM] Gateway interface online: TCP -> 192.168.0.1:65092
+[7/1/2026, 12:43:12 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:65092
+[7/1/2026, 12:43:12 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:43:12 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:43:12 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:43:12 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:43:13 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:43:15 PM] [TX TCP] Send: PING
+[7/1/2026, 12:43:15 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:43:15 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:43:16 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:43:24 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:43:24 PM] Gateway interface closed.
+[7/1/2026, 12:43:24 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:43:24 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:43:26 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:43:26 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:43:27 PM] Gateway interface online: TCP -> 192.168.0.1:50592
+[7/1/2026, 12:43:27 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:43:27 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:50592
+[7/1/2026, 12:43:27 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:43:27 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:43:27 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:43:28 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:43:28 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:43:30 PM] [TX TCP] Send: PING
+[7/1/2026, 12:43:30 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:43:30 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:43:30 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:43:38 PM] Gateway interface closed.
+[7/1/2026, 12:43:38 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:43:38 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:43:38 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:43:42 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:43:42 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:43:42 PM] Gateway interface online: TCP -> 192.168.0.1:61588
+[7/1/2026, 12:43:42 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:43:42 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:61588
+[7/1/2026, 12:43:42 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:43:42 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:43:42 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:43:43 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:43:45 PM] [TX TCP] Send: PING
+[7/1/2026, 12:43:45 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:43:45 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:43:45 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:43:54 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:43:54 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:43:54 PM] Gateway interface closed.
+[7/1/2026, 12:43:54 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:43:57 PM] Gateway interface online: TCP -> 192.168.0.1:52461
+[7/1/2026, 12:43:57 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:43:57 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:52461
+[7/1/2026, 12:43:57 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:43:57 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:43:57 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:43:58 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:44:00 PM] [TX TCP] Send: PING
+[7/1/2026, 12:44:00 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:44:00 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:44:00 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:44:09 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:44:09 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:44:09 PM] Gateway interface closed.
+[7/1/2026, 12:44:09 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:44:10 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:44:10 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:44:11 PM] Gateway interface online: TCP -> 192.168.0.1:49422
+[7/1/2026, 12:44:11 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:44:11 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:49422
+[7/1/2026, 12:44:11 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:44:11 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:44:12 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:44:12 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:44:14 PM] [TX TCP] Send: PING
+[7/1/2026, 12:44:15 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:44:15 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:44:15 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:44:23 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:44:23 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:44:23 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:44:23 PM] Gateway interface closed.
+[7/1/2026, 12:44:26 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:44:26 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:44:26 PM] Gateway interface online: TCP -> 192.168.0.1:57673
+[7/1/2026, 12:44:26 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:44:26 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:57673
+[7/1/2026, 12:44:26 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:44:26 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:44:26 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:44:27 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:44:27 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:44:29 PM] [TX TCP] Send: PING
+[7/1/2026, 12:44:30 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:44:30 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:44:30 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:44:38 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:44:38 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:44:38 PM] Gateway interface closed.
+[7/1/2026, 12:44:38 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:44:38 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:44:38 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:44:41 PM] Gateway interface online: TCP -> 192.168.0.1:59402
+[7/1/2026, 12:44:41 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:44:41 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:59402
+[7/1/2026, 12:44:41 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:44:41 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:44:41 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:44:42 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:44:42 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:44:44 PM] [TX TCP] Send: PING
+[7/1/2026, 12:44:45 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:44:45 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:44:45 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:44:53 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:44:53 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:44:53 PM] Gateway interface closed.
+[7/1/2026, 12:44:53 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:44:54 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:44:54 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:44:56 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:44:56 PM] Gateway interface online: TCP -> 192.168.0.1:58173
+[7/1/2026, 12:44:56 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:58173
+[7/1/2026, 12:44:56 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:44:56 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:44:56 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:44:57 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:44:57 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:44:59 PM] [TX TCP] Send: PING
+[7/1/2026, 12:45:00 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:45:00 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:45:00 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:45:08 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:45:08 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:45:08 PM] Gateway interface closed.
+[7/1/2026, 12:45:08 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:45:10 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:45:10 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:45:11 PM] Gateway interface online: TCP -> 192.168.0.1:51335
+[7/1/2026, 12:45:11 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:45:11 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:51335
+[7/1/2026, 12:45:11 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:45:11 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:45:11 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:45:12 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:45:12 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:45:14 PM] [TX TCP] Send: PING
+[7/1/2026, 12:45:14 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:45:15 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:45:15 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:45:22 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:45:22 PM] Gateway interface closed.
+[7/1/2026, 12:45:22 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:45:22 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:45:26 PM] Gateway interface online: TCP -> 192.168.0.1:54391
+[7/1/2026, 12:45:26 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:45:26 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:54391
+[7/1/2026, 12:45:26 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:45:26 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:45:26 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:45:27 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:45:27 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 12:45:29 PM] [TX TCP] Send: PING
+[7/1/2026, 12:45:29 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:45:30 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:45:30 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:45:37 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:45:37 PM] Gateway interface closed.
+[7/1/2026, 12:45:37 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:45:37 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:45:38 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:45:38 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:45:41 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:55504
+[7/1/2026, 12:45:41 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:45:41 PM] Gateway interface online: TCP -> 192.168.0.1:55504
+[7/1/2026, 12:45:41 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:45:41 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:45:41 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:45:42 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 12:45:44 PM] [TX TCP] Send: PING
+[7/1/2026, 12:45:44 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:45:44 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:45:44 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 12:45:52 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 12:45:52 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 12:45:52 PM] Gateway interface closed.
+[7/1/2026, 12:45:52 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 12:45:54 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 12:45:54 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 12:45:56 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 12:45:56 PM] Gateway interface online: TCP -> 192.168.0.1:53082
+[7/1/2026, 12:45:56 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:53082
+[7/1/2026, 12:45:56 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 12:45:56 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 12:45:56 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 12:45:57 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 1:05:24 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 1:05:24 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:05:24 PM] Gateway interface online: TCP -> 192.168.0.1:53833
+[7/1/2026, 1:05:24 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 1:05:24 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:53833
+[7/1/2026, 1:05:24 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 1:05:24 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 1:05:24 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 1:05:25 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 1:05:27 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 1:05:27 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 1:05:27 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 1:05:27 PM] [TX TCP] Send: PING
+[7/1/2026, 1:05:35 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 1:05:35 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 1:05:35 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 1:05:35 PM] Gateway interface closed.
+[7/1/2026, 1:05:36 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 1:05:36 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:05:38 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:58267
+[7/1/2026, 1:05:38 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 1:05:38 PM] Gateway interface online: TCP -> 192.168.0.1:58267
+[7/1/2026, 1:05:38 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 1:05:38 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 1:05:38 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 1:05:39 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 1:05:41 PM] [TX TCP] Send: PING
+[7/1/2026, 1:05:51 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 1:05:51 PM] Gateway interface closed.
+[7/1/2026, 1:05:51 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 1:05:51 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 1:14:37 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 1:14:37 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:14:37 PM] Gateway interface online: TCP -> 192.168.0.1:61167
+[7/1/2026, 1:14:37 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 1:14:37 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:61167
+[7/1/2026, 1:14:37 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 1:14:37 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 1:14:37 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 1:14:38 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 1:14:38 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 1:14:40 PM] [TX TCP] Send: PING
+[7/1/2026, 1:14:53 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 1:14:53 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 1:14:53 PM] Gateway interface closed.
+[7/1/2026, 1:14:53 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 1:17:09 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 1:17:09 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:17:09 PM] Gateway interface online: TCP -> 192.168.0.1:51862
+[7/1/2026, 1:17:09 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 1:17:09 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:51862
+[7/1/2026, 1:17:09 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 1:17:09 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 1:17:09 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 1:17:10 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 1:17:10 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 1:17:12 PM] [TX TCP] Send: PING
+[7/1/2026, 1:17:15 PM] [TX TCP] Send: PING
+[7/1/2026, 1:17:18 PM] [TX TCP] Send: PING
+[7/1/2026, 1:17:20 PM] [SYSTEM] Interface disconnected.
+[7/1/2026, 1:17:20 PM] Gateway interface closed.
+[7/1/2026, 1:17:20 PM] Gateway interface closed.
+[7/1/2026, 1:17:20 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 1:17:22 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:17:26 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:17:26 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:17:26 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:17:26 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:19:35 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:31:04 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:31:05 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:31:05 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:31:06 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:33:23 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:33:23 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:33:24 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:33:24 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:33:24 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:33:24 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:33:46 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:33:46 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:33:47 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:34:06 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:34:07 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:34:11 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:34:12 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:34:18 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:34:18 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:34:18 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:34:18 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:34:19 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:34:19 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:34:32 PM] [WORKER] Failed to load database module: Cannot read properties of undefined (reading 'then')
+[7/1/2026, 1:34:32 PM] [WORKER] Data processing worker thread started.
+[7/1/2026, 1:34:36 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 1:34:36 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:34:36 PM] Gateway interface online: TCP -> 192.168.0.1:55577
+[7/1/2026, 1:34:36 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 1:34:36 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:55577
+[7/1/2026, 1:34:36 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 1:34:36 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 1:34:36 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 1:34:37 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 1:34:37 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 1:34:39 PM] [TX TCP] Send: PING
+[7/1/2026, 1:34:42 PM] [TX TCP] Send: PING
+[7/1/2026, 1:34:44 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 1:34:44 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 1:34:45 PM] [TX TCP] Send: PING
+[7/1/2026, 1:34:45 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 1:34:48 PM] [TX TCP] Send: PING
+[7/1/2026, 1:34:50 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 1:34:50 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 1:34:51 PM] [TX TCP] Send: PING
+[7/1/2026, 1:34:51 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 1:34:54 PM] [TX TCP] Send: PING
+[7/1/2026, 1:34:55 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 1:34:55 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 1:34:55 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 1:34:57 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:00 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:00 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 1:35:00 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 1:35:01 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 1:35:03 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:06 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:09 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:12 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:15 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:18 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:21 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:24 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:27 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:30 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:33 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:36 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:39 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:42 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:45 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:48 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:51 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:54 PM] [TX TCP] Send: PING
+[7/1/2026, 1:35:57 PM] [TX TCP] Send: PING
+[7/1/2026, 1:36:00 PM] [TX TCP] Send: PING
+[7/1/2026, 1:36:03 PM] [TX TCP] Send: PING
+[7/1/2026, 1:36:06 PM] [TX TCP] Send: PING
+[7/1/2026, 1:36:09 PM] [TX TCP] Send: PING
+[7/1/2026, 1:36:12 PM] [TX TCP] Send: PING
+[7/1/2026, 1:36:27 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 1:36:27 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 1:36:27 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 1:36:27 PM] Gateway interface closed.
+[7/1/2026, 1:39:47 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:39:52 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:39:53 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:39:53 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:39:53 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:39:53 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:39:55 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:39:55 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:39:55 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:39:55 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:39:56 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:39:56 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 1:41:33 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 2:22:42 PM] [WORKER] Failed to load database module: Cannot read properties of undefined (reading 'then')
+[7/1/2026, 2:22:42 PM] [WORKER] Data processing worker thread started.
+[7/1/2026, 5:02:42 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 5:02:42 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:02:42 PM] Gateway interface online: TCP -> 192.168.0.1:58136
+[7/1/2026, 5:02:42 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 5:02:42 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:58136
+[7/1/2026, 5:02:42 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 5:02:42 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 5:02:42 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 5:02:43 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 5:02:43 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:02:45 PM] [TX TCP] Send: PING
+[7/1/2026, 5:02:48 PM] [TX TCP] Send: PING
+[7/1/2026, 5:02:51 PM] [TX TCP] Send: PING
+[7/1/2026, 5:02:54 PM] [TX TCP] Send: PING
+[7/1/2026, 5:02:56 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 5:02:56 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 5:02:56 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 5:03:05 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 5:03:05 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 5:03:05 PM] Gateway interface closed.
+[7/1/2026, 5:03:05 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 5:03:06 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 5:03:06 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:03:08 PM] Gateway interface online: TCP -> 192.168.0.1:56037
+[7/1/2026, 5:03:08 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 5:03:08 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:56037
+[7/1/2026, 5:03:08 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 5:03:08 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 5:03:08 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 5:03:09 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 5:03:09 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:03:11 PM] [TX TCP] Send: PING
+[7/1/2026, 5:03:14 PM] [TX TCP] Send: PING
+[7/1/2026, 5:03:15 PM] [SYSTEM] Interface disconnected.
+[7/1/2026, 5:03:15 PM] Gateway interface closed.
+[7/1/2026, 5:03:15 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 5:03:15 PM] Gateway interface closed.
+[7/1/2026, 5:03:15 PM] Gateway interface online: TCP -> 192.168.0.1:56038
+[7/1/2026, 5:03:15 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 5:03:15 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:56038
+[7/1/2026, 5:03:15 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 5:03:15 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 5:03:16 PM] Gateway interface closed.
+[7/1/2026, 5:03:16 PM] [SYSTEM] Interface disconnected.
+[7/1/2026, 5:03:16 PM] Gateway interface closed.
+[7/1/2026, 5:03:16 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 5:03:16 PM] [ERROR] TCP connection is inactive.
+[7/1/2026, 5:03:17 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:03:19 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:03:20 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:03:20 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:03:20 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:03:20 PM] Gateway interface online: TCP -> 192.168.0.1:56039
+[7/1/2026, 5:03:20 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:56039
+[7/1/2026, 5:03:20 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 5:03:20 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 5:03:20 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 5:03:20 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 5:03:21 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 5:03:21 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 5:03:21 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:03:35 PM] Gateway interface online: TCP -> 192.168.0.1:56042
+[7/1/2026, 5:03:35 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:56042
+[7/1/2026, 5:03:35 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 5:03:35 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 5:03:35 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 5:03:35 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 5:03:36 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 5:03:36 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:03:38 PM] [TX TCP] Send: PING
+[7/1/2026, 5:03:40 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 5:03:40 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 5:03:41 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:03:41 PM] [TX TCP] Send: PING
+[7/1/2026, 5:03:44 PM] [TX TCP] Send: PING
+[7/1/2026, 5:03:47 PM] [TX TCP] Send: PING
+[7/1/2026, 5:03:50 PM] [TX TCP] Send: PING
+[7/1/2026, 5:03:53 PM] [TX TCP] Send: PING
+[7/1/2026, 5:03:56 PM] [TX TCP] Send: PING
+[7/1/2026, 5:03:59 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:02 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:05 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:08 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:11 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:14 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:17 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:20 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:22 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 5:04:22 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 5:04:23 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:04:23 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:26 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:29 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:32 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:35 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:38 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:40 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 5:04:40 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 5:04:41 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:04:41 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:44 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:47 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:50 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:53 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:56 PM] [TX TCP] Send: PING
+[7/1/2026, 5:04:59 PM] [TX TCP] Send: PING
+[7/1/2026, 5:05:02 PM] [TX TCP] Send: PING
+[7/1/2026, 5:05:05 PM] [TX TCP] Send: PING
+[7/1/2026, 5:05:14 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 5:05:14 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 5:05:14 PM] Gateway interface closed.
+[7/1/2026, 5:05:14 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 5:07:33 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:07:35 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:07:36 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:07:36 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:07:36 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:07:36 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:15:55 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 5:15:55 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:15:55 PM] Gateway interface online: TCP -> 192.168.0.1:60345
+[7/1/2026, 5:15:55 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:60345
+[7/1/2026, 5:15:55 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 5:15:55 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 5:15:55 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 5:15:55 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 5:15:56 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 5:15:56 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:15:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:16:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:16:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:16:16 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 5:16:16 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 5:16:16 PM] Gateway interface closed.
+[7/1/2026, 5:16:16 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 5:16:47 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 5:16:47 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:16:47 PM] Gateway interface online: TCP -> 192.168.0.1:60015
+[7/1/2026, 5:16:47 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 5:16:47 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:60015
+[7/1/2026, 5:16:47 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 5:16:47 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 5:16:47 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 5:16:48 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 5:16:48 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:16:49 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 5:16:49 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 5:16:49 PM] Gateway interface closed.
+[7/1/2026, 5:16:49 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 5:16:57 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 5:16:57 PM] Gateway interface online: TCP -> 192.168.0.1:60016
+[7/1/2026, 5:16:57 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:60016
+[7/1/2026, 5:16:57 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 5:16:57 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 5:16:57 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 5:16:58 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 5:16:58 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:17:00 PM] [TX TCP] Send: PING
+[7/1/2026, 5:17:03 PM] [TX TCP] Send: PING
+[7/1/2026, 5:17:06 PM] [TX TCP] Send: PING
+[7/1/2026, 5:17:09 PM] [TX TCP] Send: PING
+[7/1/2026, 5:17:12 PM] [TX TCP] Send: PING
+[7/1/2026, 5:17:15 PM] [TX TCP] Send: PING
+[7/1/2026, 5:17:18 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 5:17:18 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 5:17:18 PM] [QCOM RESPONSE VERIFIED] SUCCESS (Simulated mock verification log)
+[7/1/2026, 5:17:30 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 5:17:30 PM] Gateway interface closed.
+[7/1/2026, 5:17:30 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 5:17:30 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 5:24:42 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:24:44 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:24:44 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:24:44 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:24:44 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:24:44 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:24:45 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:25:18 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 5:25:18 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:25:18 PM] Gateway interface online: TCP -> 192.168.0.1:56671
+[7/1/2026, 5:25:18 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 5:25:18 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:56671
+[7/1/2026, 5:25:18 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 5:25:18 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 5:25:18 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 5:25:19 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 5:25:19 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:25:21 PM] [TX TCP] Send: PING
+[7/1/2026, 5:25:24 PM] [TX TCP] Send: PING
+[7/1/2026, 5:25:27 PM] [TX TCP] Send: PING
+[7/1/2026, 5:25:30 PM] [TX TCP] Send: PING
+[7/1/2026, 5:25:33 PM] [TX TCP] Send: PING
+[7/1/2026, 5:25:36 PM] [TX TCP] Send: PING
+[7/1/2026, 5:25:39 PM] [TX TCP] Send: PING
+[7/1/2026, 5:25:40 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 5:25:40 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 5:25:41 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:25:42 PM] [TX TCP] Send: PING
+[7/1/2026, 5:25:45 PM] [TX TCP] Send: PING
+[7/1/2026, 5:25:48 PM] [TX TCP] Send: PING
+[7/1/2026, 5:25:51 PM] [TX TCP] Send: PING
+[7/1/2026, 5:25:54 PM] [TX TCP] Send: PING
+[7/1/2026, 5:25:57 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:00 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:03 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:06 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:09 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:12 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:15 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:18 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:21 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:24 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:26 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 5:26:26 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 5:26:27 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:27 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:26:30 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:33 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:36 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:39 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:42 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:45 PM] [TX TCP] Send: PING
+[7/1/2026, 5:26:57 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 5:26:57 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 5:26:57 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 5:26:57 PM] Gateway interface closed.
+[7/1/2026, 5:27:32 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:27:34 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:27:35 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:27:35 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:27:35 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:28:03 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:28:04 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:28:04 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:28:04 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:28:04 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:28:32 PM] [WORKER] Failed to load database module: Cannot read properties of undefined (reading 'then')
+[7/1/2026, 5:28:32 PM] [WORKER] Data processing worker thread started.
+[7/1/2026, 5:30:00 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 5:30:00 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:30:00 PM] Gateway interface online: TCP -> 192.168.0.1:55141
+[7/1/2026, 5:30:00 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 5:30:00 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:55141
+[7/1/2026, 5:30:00 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 5:30:00 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 5:30:00 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 5:30:01 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 5:30:01 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:30:03 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:06 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:09 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:12 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:15 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:18 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:21 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:24 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:27 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:30 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:33 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:36 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:38 PM] [CMD] Triggering diagnostics check for module: AP
+[7/1/2026, 5:30:38 PM] [TX TCP] Send: TEST_AP
+[7/1/2026, 5:30:39 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:30:39 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:42 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 5:30:42 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 5:30:42 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:43 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:30:45 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:48 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:51 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 5:30:51 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 5:30:51 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:52 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:30:54 PM] [TX TCP] Send: PING
+[7/1/2026, 5:30:57 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:00 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:03 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:06 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:09 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:12 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:15 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:17 PM] [CMD] Triggering diagnostics check for module: AP
+[7/1/2026, 5:31:17 PM] [TX TCP] Send: TEST_AP
+[7/1/2026, 5:31:17 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:31:18 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:20 PM] [CMD] Triggering diagnostics check for module: AP
+[7/1/2026, 5:31:20 PM] [TX TCP] Send: TEST_AP
+[7/1/2026, 5:31:20 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:31:21 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:24 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:25 PM] [CMD] Triggering diagnostics check for module: RS232
+[7/1/2026, 5:31:25 PM] [TX TCP] Send: TEST_RS232
+[7/1/2026, 5:31:26 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:31:27 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:30 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:33 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:36 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:39 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:42 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:45 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:48 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:51 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:54 PM] [TX TCP] Send: PING
+[7/1/2026, 5:31:57 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:00 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:03 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:06 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:09 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:12 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:15 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:18 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:21 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:24 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:27 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:30 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:33 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:36 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:39 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:42 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:45 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:48 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:51 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:54 PM] [TX TCP] Send: PING
+[7/1/2026, 5:32:57 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:00 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:03 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:06 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:09 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:12 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:15 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:18 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:21 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:24 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:27 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:30 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:33 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:36 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:39 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:42 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:45 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:48 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:51 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:54 PM] [TX TCP] Send: PING
+[7/1/2026, 5:33:57 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:00 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:03 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:06 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:09 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:12 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:15 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:18 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:21 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:24 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:27 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:30 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:33 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:36 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:39 PM] [TX TCP] Send: PING
+[7/1/2026, 5:34:51 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 5:34:51 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 5:34:51 PM] Gateway interface closed.
+[7/1/2026, 5:34:51 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 5:40:21 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 5:40:21 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:40:21 PM] Gateway interface online: TCP -> 192.168.0.1:61525
+[7/1/2026, 5:40:21 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 5:40:21 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:61525
+[7/1/2026, 5:40:21 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 5:40:21 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 5:40:22 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 5:40:22 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 5:40:23 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:40:24 PM] [TX TCP] Send: PING
+[7/1/2026, 5:40:27 PM] [TX TCP] Send: PING
+[7/1/2026, 5:40:30 PM] [TX TCP] Send: PING
+[7/1/2026, 5:40:33 PM] [TX TCP] Send: PING
+[7/1/2026, 5:40:36 PM] [TX TCP] Send: PING
+[7/1/2026, 5:40:37 PM] [CMD] Triggering diagnostics check for module: RS232
+[7/1/2026, 5:40:37 PM] [TX TCP] Send: TEST_RS232
+[7/1/2026, 5:40:38 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:40:39 PM] [TX TCP] Send: PING
+[7/1/2026, 5:40:42 PM] [TX TCP] Send: PING
+[7/1/2026, 5:40:45 PM] [TX TCP] Send: PING
+[7/1/2026, 5:40:48 PM] [TX TCP] Send: PING
+[7/1/2026, 5:40:51 PM] [TX TCP] Send: PING
+[7/1/2026, 5:40:54 PM] [TX TCP] Send: PING
+[7/1/2026, 5:40:56 PM] [CMD] Triggering diagnostics check for module: RS232
+[7/1/2026, 5:40:56 PM] [TX TCP] Send: TEST_RS232
+[7/1/2026, 5:40:56 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:40:57 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:00 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:03 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:06 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:08 PM] [CMD] Triggering diagnostics check for module: RS232
+[7/1/2026, 5:41:08 PM] [TX TCP] Send: TEST_RS232
+[7/1/2026, 5:41:09 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:41:09 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:12 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:15 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:18 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:21 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:24 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:27 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:30 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:33 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:36 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:39 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:42 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:45 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:48 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:51 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:54 PM] [TX TCP] Send: PING
+[7/1/2026, 5:41:57 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:00 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:03 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:06 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:09 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:12 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:15 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:18 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:21 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:24 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:27 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:30 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:33 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:36 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:39 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:42 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:45 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:48 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:51 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:54 PM] [TX TCP] Send: PING
+[7/1/2026, 5:42:57 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:00 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:03 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:06 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:09 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:12 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:15 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:18 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:21 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:24 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:27 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:30 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:33 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:36 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:39 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:42 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:45 PM] [CMD] Triggering diagnostics check for module: BUS
+[7/1/2026, 5:43:45 PM] [TX TCP] Send: TEST_BUS
+[7/1/2026, 5:43:45 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:43:45 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:47 PM] [CMD] Triggering diagnostics check for module: DI
+[7/1/2026, 5:43:47 PM] [TX TCP] Send: TEST_DI
+[7/1/2026, 5:43:48 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:43:48 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:50 PM] [CMD] Triggering diagnostics check for module: DRIVER
+[7/1/2026, 5:43:50 PM] [TX TCP] Send: TEST_DRIVER
+[7/1/2026, 5:43:50 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:43:51 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:54 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:55 PM] [CMD] Triggering diagnostics check for module: AP
+[7/1/2026, 5:43:55 PM] [TX TCP] Send: TEST_AP
+[7/1/2026, 5:43:56 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:43:57 PM] [CMD] Triggering diagnostics check for module: FLASH
+[7/1/2026, 5:43:57 PM] [TX TCP] Send: TEST_FLASH
+[7/1/2026, 5:43:57 PM] [TX TCP] Send: PING
+[7/1/2026, 5:43:58 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:44:00 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:03 PM] [CMD] Triggering diagnostics check for module: RTC
+[7/1/2026, 5:44:03 PM] [TX TCP] Send: TEST_RTC
+[7/1/2026, 5:44:03 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:06 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 5:44:06 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 5:44:06 PM] Gateway interface closed.
+[7/1/2026, 5:44:06 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 5:44:10 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 5:44:10 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 5:44:10 PM] Gateway interface online: TCP -> 192.168.0.1:61438
+[7/1/2026, 5:44:10 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 5:44:10 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:61438
+[7/1/2026, 5:44:10 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 5:44:10 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 5:44:10 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 5:44:11 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 5:44:11 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:44:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:16 PM] [CMD] Triggering diagnostics check for module: GPRS
+[7/1/2026, 5:44:16 PM] [TX TCP] Send: TEST_GPRS
+[7/1/2026, 5:44:18 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:44:19 PM] [CMD] Triggering diagnostics check for module: FLASH
+[7/1/2026, 5:44:19 PM] [TX TCP] Send: TEST_FLASH
+[7/1/2026, 5:44:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:19 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:44:21 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 5:44:21 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 5:44:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:22 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 5:44:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:44:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:45:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:46:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:47:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:48:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:49:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:50:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:51:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:52:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:53:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:54:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:55:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:56:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:57:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:58:58 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:01 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:04 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:07 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:10 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:13 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:16 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:19 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:22 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:25 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:28 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:31 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:34 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:37 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:40 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:43 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:46 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:49 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:52 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:55 PM] [TX TCP] Send: PING
+[7/1/2026, 5:59:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:37 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:40 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:43 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:46 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:49 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:52 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:55 PM] [TX TCP] Send: PING
+[7/1/2026, 6:00:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:37 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:40 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:43 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:46 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:49 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:52 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:55 PM] [TX TCP] Send: PING
+[7/1/2026, 6:01:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:37 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:40 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:43 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:46 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:49 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:52 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:55 PM] [TX TCP] Send: PING
+[7/1/2026, 6:02:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:37 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:40 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:43 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:46 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:49 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:52 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:55 PM] [TX TCP] Send: PING
+[7/1/2026, 6:03:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:37 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:40 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:43 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:46 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:49 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:52 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:55 PM] [TX TCP] Send: PING
+[7/1/2026, 6:04:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:37 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:40 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:43 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:46 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:49 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:52 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:55 PM] [TX TCP] Send: PING
+[7/1/2026, 6:05:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:37 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:40 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:43 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:46 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:49 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:52 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:55 PM] [TX TCP] Send: PING
+[7/1/2026, 6:06:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:37 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:40 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:43 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:46 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:49 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:52 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:55 PM] [TX TCP] Send: PING
+[7/1/2026, 6:07:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:37 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:40 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:43 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:46 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:49 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:52 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:55 PM] [TX TCP] Send: PING
+[7/1/2026, 6:08:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:37 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:40 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:43 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:46 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:49 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:52 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:55 PM] [TX TCP] Send: PING
+[7/1/2026, 6:09:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:37 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:40 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:43 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:46 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:49 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:52 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:55 PM] [TX TCP] Send: PING
+[7/1/2026, 6:10:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:33 PM] [CMD] Triggering diagnostics check for module: RTC
+[7/1/2026, 6:11:33 PM] [TX TCP] Send: TEST_RTC
+[7/1/2026, 6:11:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:36 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 6:11:36 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 6:11:36 PM] Gateway interface closed.
+[7/1/2026, 6:11:36 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 6:11:37 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 6:11:37 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:11:39 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 6:11:39 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:53208
+[7/1/2026, 6:11:39 PM] Gateway interface online: TCP -> 192.168.0.1:53208
+[7/1/2026, 6:11:39 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 6:11:39 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 6:11:39 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 6:11:40 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 6:11:40 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:11:42 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:42 PM] [CMD] Triggering diagnostics check for module: DRIVER
+[7/1/2026, 6:11:42 PM] [TX TCP] Send: TEST_DRIVER
+[7/1/2026, 6:11:43 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:11:45 PM] [CMD] Triggering diagnostics check for module: DI
+[7/1/2026, 6:11:45 PM] [TX TCP] Send: TEST_DI
+[7/1/2026, 6:11:45 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:11:45 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:48 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:50 PM] [CMD] Triggering diagnostics check for module: BUS
+[7/1/2026, 6:11:50 PM] [TX TCP] Send: TEST_BUS
+[7/1/2026, 6:11:50 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:11:51 PM] [CMD] Triggering diagnostics check for module: RS232
+[7/1/2026, 6:11:51 PM] [TX TCP] Send: TEST_RS232
+[7/1/2026, 6:11:51 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:52 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:11:54 PM] [TX TCP] Send: PING
+[7/1/2026, 6:11:55 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 6:11:55 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 6:11:56 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:11:57 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:00 PM] [CMD] Triggering diagnostics check for module: RTC
+[7/1/2026, 6:12:00 PM] [TX TCP] Send: TEST_RTC
+[7/1/2026, 6:12:00 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:04 PM] [CMD] Triggering diagnostics check for module: FLASH
+[7/1/2026, 6:12:04 PM] [TX TCP] Send: TEST_FLASH
+[7/1/2026, 6:12:04 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 6:12:04 PM] Gateway interface closed.
+[7/1/2026, 6:12:04 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 6:12:04 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 6:12:05 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 6:12:05 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:12:06 PM] Gateway interface online: TCP -> 192.168.0.1:62424
+[7/1/2026, 6:12:06 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 6:12:06 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:62424
+[7/1/2026, 6:12:06 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 6:12:06 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 6:12:07 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 6:12:07 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 6:12:08 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:12:09 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:10 PM] [CMD] Triggering diagnostics check for module: FLASH
+[7/1/2026, 6:12:10 PM] [TX TCP] Send: TEST_FLASH
+[7/1/2026, 6:12:10 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:12:12 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:15 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:18 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:21 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:24 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:27 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:30 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:33 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:36 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:39 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:42 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:45 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:48 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:51 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:54 PM] [TX TCP] Send: PING
+[7/1/2026, 6:12:57 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:00 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:03 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:06 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:09 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:12 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:15 PM] [CMD] Triggering diagnostics check for module: GPRS
+[7/1/2026, 6:13:15 PM] [TX TCP] Send: TEST_GPRS
+[7/1/2026, 6:13:15 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:17 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:13:18 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:21 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:24 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:27 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:30 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:32 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 6:13:32 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 6:13:33 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:13:33 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:36 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:39 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:42 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:45 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:48 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:51 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:54 PM] [TX TCP] Send: PING
+[7/1/2026, 6:13:57 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:00 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:03 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:06 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:09 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:12 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:15 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:18 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:21 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:24 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:27 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:30 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:33 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:36 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:39 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:42 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:45 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:48 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:51 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:54 PM] [TX TCP] Send: PING
+[7/1/2026, 6:14:57 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:00 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:03 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:06 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:09 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:12 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:15 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:18 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:21 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:24 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:27 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:30 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:33 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:36 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:39 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:42 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:45 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:48 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:51 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:54 PM] [TX TCP] Send: PING
+[7/1/2026, 6:15:57 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:00 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:03 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:06 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:09 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:12 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:15 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:18 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:21 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:24 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:27 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:30 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:33 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:36 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:39 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:42 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:45 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:48 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:51 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:54 PM] [TX TCP] Send: PING
+[7/1/2026, 6:16:57 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:00 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:03 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:06 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:09 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:12 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:15 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:18 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:21 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:24 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:27 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:30 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:33 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:36 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:39 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:42 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:45 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:48 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:51 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:54 PM] [TX TCP] Send: PING
+[7/1/2026, 6:17:57 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:00 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:03 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:06 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:09 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:12 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:15 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:18 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:21 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:24 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:27 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:30 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:33 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:36 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:39 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:42 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:45 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:48 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:51 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:54 PM] [TX TCP] Send: PING
+[7/1/2026, 6:18:57 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:00 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:03 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:06 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:09 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:12 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:15 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:18 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:21 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:24 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:27 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:30 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:33 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:36 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:39 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:42 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:45 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:48 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:51 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:54 PM] [TX TCP] Send: PING
+[7/1/2026, 6:19:57 PM] [TX TCP] Send: PING
+[7/1/2026, 6:20:00 PM] [TX TCP] Send: PING
+[7/1/2026, 6:20:03 PM] [TX TCP] Send: PING
+[7/1/2026, 6:20:06 PM] [TX TCP] Send: PING
+[7/1/2026, 6:20:16 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 6:20:16 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 6:20:16 PM] Gateway interface closed.
+[7/1/2026, 6:20:16 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 6:35:20 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 6:35:20 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:35:20 PM] Gateway interface online: TCP -> 192.168.0.1:54271
+[7/1/2026, 6:35:20 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:54271
+[7/1/2026, 6:35:20 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 6:35:20 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 6:35:20 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 6:35:20 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 6:35:21 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 6:35:21 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:35:23 PM] [TX TCP] Send: PING
+[7/1/2026, 6:35:26 PM] [TX TCP] Send: PING
+[7/1/2026, 6:35:29 PM] [TX TCP] Send: PING
+[7/1/2026, 6:35:30 PM] Gateway interface closed.
+[7/1/2026, 6:35:30 PM] [SYSTEM] Interface disconnected.
+[7/1/2026, 6:35:30 PM] Gateway interface closed.
+[7/1/2026, 6:35:30 PM] Gateway interface online: TCP -> 192.168.0.1:54272
+[7/1/2026, 6:35:30 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 6:35:30 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 6:35:30 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:54272
+[7/1/2026, 6:35:30 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 6:35:30 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 6:35:30 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 6:35:31 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 6:35:31 PM] [SYSTEM] Interface disconnected.
+[7/1/2026, 6:35:31 PM] Gateway interface closed.
+[7/1/2026, 6:35:31 PM] Gateway interface closed.
+[7/1/2026, 6:35:31 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 6:35:33 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:35:35 PM] Gateway interface online: TCP -> 192.168.0.1:54273
+[7/1/2026, 6:35:35 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:54273
+[7/1/2026, 6:35:35 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 6:35:35 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 6:35:35 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 6:35:35 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 6:35:36 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 6:35:36 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:35:38 PM] [TX TCP] Send: PING
+[7/1/2026, 6:35:38 PM] [CMD] Triggering diagnostics check for module: RS232
+[7/1/2026, 6:35:38 PM] [TX TCP] Send: TEST_RS232
+[7/1/2026, 6:35:39 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:35:41 PM] [TX TCP] Send: PING
+[7/1/2026, 6:35:44 PM] [TX TCP] Send: PING
+[7/1/2026, 6:35:47 PM] [TX TCP] Send: PING
+[7/1/2026, 6:35:50 PM] [TX TCP] Send: PING
+[7/1/2026, 6:35:53 PM] [TX TCP] Send: PING
+[7/1/2026, 6:35:56 PM] [TX TCP] Send: PING
+[7/1/2026, 6:35:59 PM] [TX TCP] Send: PING
+[7/1/2026, 6:36:02 PM] [TX TCP] Send: PING
+[7/1/2026, 6:36:05 PM] [TX TCP] Send: PING
+[7/1/2026, 6:36:08 PM] [TX TCP] Send: PING
+[7/1/2026, 6:36:08 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 6:36:08 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 6:36:08 PM] Gateway interface closed.
+[7/1/2026, 6:36:08 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 6:38:15 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:15 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:15 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:15 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:17 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:17 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:17 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:18 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:22 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:22 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:23 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:23 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:23 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:23 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:23 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:27 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:27 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:28 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:28 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:28 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:28 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:30 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:30 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:30 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:30 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:31 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:33 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:34 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:34 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:38:34 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:39:06 PM] [WORKER] Data processing worker thread started.
+[7/1/2026, 6:39:10 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 6:39:10 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:39:10 PM] Gateway interface online: TCP -> 192.168.0.1:56019
+[7/1/2026, 6:39:10 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 6:39:10 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:56019
+[7/1/2026, 6:39:10 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 6:39:10 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 6:39:10 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 6:39:11 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 6:39:11 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:39:12 PM] [CMD] Triggering diagnostics check for module: RS232
+[7/1/2026, 6:39:12 PM] [TX TCP] Send: TEST_RS232
+[7/1/2026, 6:39:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:13 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:39:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:37 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:40 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:43 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:46 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:49 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:52 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:55 PM] [TX TCP] Send: PING
+[7/1/2026, 6:39:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:40:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:40:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:40:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:40:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:40:11 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 6:40:11 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 6:40:11 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 6:40:11 PM] Gateway interface closed.
+[7/1/2026, 6:40:14 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 6:40:14 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:40:15 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 6:40:15 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:61739
+[7/1/2026, 6:40:15 PM] Gateway interface online: TCP -> 192.168.0.1:61739
+[7/1/2026, 6:40:15 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 6:40:15 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 6:40:15 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 6:40:16 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 6:40:16 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:40:18 PM] [TX TCP] Send: PING
+[7/1/2026, 6:40:21 PM] [TX TCP] Send: PING
+[7/1/2026, 6:40:24 PM] [TX TCP] Send: PING
+[7/1/2026, 6:40:27 PM] [TX TCP] Send: PING
+[7/1/2026, 6:40:30 PM] [TX TCP] Send: PING
+[7/1/2026, 6:40:33 PM] [TX TCP] Send: PING
+[7/1/2026, 6:40:34 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 6:40:34 PM] Gateway interface closed.
+[7/1/2026, 6:40:34 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 6:40:34 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 6:46:43 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 6:46:43 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:46:43 PM] Gateway interface online: TCP -> 192.168.0.1:59451
+[7/1/2026, 6:46:43 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 6:46:43 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:59451
+[7/1/2026, 6:46:43 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 6:46:43 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 6:46:43 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 6:46:44 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 6:46:44 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:46:46 PM] [TX TCP] Send: PING
+[7/1/2026, 6:46:49 PM] [TX TCP] Send: PING
+[7/1/2026, 6:46:52 PM] [TX TCP] Send: PING
+[7/1/2026, 6:46:54 PM] [CMD] Triggering diagnostics check for module: RS232
+[7/1/2026, 6:46:54 PM] [TX TCP] Send: TEST_RS232
+[7/1/2026, 6:46:55 PM] [TX TCP] Send: PING
+[7/1/2026, 6:46:55 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:46:58 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:01 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:04 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:07 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:10 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:13 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:16 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:19 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:22 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:22 PM] [CMD] Triggering diagnostics check for module: RS232
+[7/1/2026, 6:47:22 PM] [TX TCP] Send: TEST_RS232
+[7/1/2026, 6:47:23 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:47:25 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:28 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:30 PM] [CMD] Triggering diagnostics check for module: RS485
+[7/1/2026, 6:47:30 PM] [TX TCP] Send: TEST_RS485
+[7/1/2026, 6:47:31 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:31 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:47:32 PM] [CMD] Triggering diagnostics check for module: AP
+[7/1/2026, 6:47:32 PM] [TX TCP] Send: TEST_AP
+[7/1/2026, 6:47:32 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:47:33 PM] [CMD] Triggering diagnostics check for module: BUS
+[7/1/2026, 6:47:33 PM] [TX TCP] Send: TEST_BUS
+[7/1/2026, 6:47:34 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:47:34 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:34 PM] [CMD] Triggering diagnostics check for module: DI
+[7/1/2026, 6:47:34 PM] [TX TCP] Send: TEST_DI
+[7/1/2026, 6:47:35 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:47:37 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:39 PM] [CMD] Triggering diagnostics check for module: DRIVER
+[7/1/2026, 6:47:39 PM] [TX TCP] Send: TEST_DRIVER
+[7/1/2026, 6:47:39 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:47:40 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:40 PM] [CMD] Triggering diagnostics check for module: RTC
+[7/1/2026, 6:47:40 PM] [TX TCP] Send: TEST_RTC
+[7/1/2026, 6:47:43 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:43 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 6:47:43 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 6:47:43 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 6:47:43 PM] Gateway interface closed.
+[7/1/2026, 6:47:47 PM] Gateway interface online: TCP -> 192.168.0.1:54016
+[7/1/2026, 6:47:47 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 6:47:47 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:54016
+[7/1/2026, 6:47:47 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 6:47:47 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 6:47:47 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 6:47:48 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 6:47:48 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:47:50 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:53 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:56 PM] [TX TCP] Send: PING
+[7/1/2026, 6:47:59 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:02 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:05 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:08 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:11 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:14 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:17 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:20 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:23 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:26 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:29 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:32 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:35 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:38 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:41 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:44 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:47 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:50 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:53 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:56 PM] [TX TCP] Send: PING
+[7/1/2026, 6:48:59 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:02 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:05 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:08 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:11 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:14 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:17 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:20 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:23 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:26 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:29 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:32 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:35 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:38 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:41 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:41 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/1/2026, 6:49:41 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/1/2026, 6:49:41 PM] [TCP SERVER] ESP32 client socket closed.
+[7/1/2026, 6:49:41 PM] Gateway interface closed.
+[7/1/2026, 6:49:43 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/1/2026, 6:49:43 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/1/2026, 6:49:44 PM] Gateway interface online: TCP -> 192.168.0.1:56565
+[7/1/2026, 6:49:44 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/1/2026, 6:49:44 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:56565
+[7/1/2026, 6:49:44 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/1/2026, 6:49:44 PM] [SPIFFS] Querying storage details from http://192.168.0.1:8000/api/storage...
+[7/1/2026, 6:49:44 PM] [SPIFFS] Storage information retrieved successfully.
+[7/1/2026, 6:49:45 PM] [TX TCP] Send: GET_INFO
+[7/1/2026, 6:49:45 PM] [SYS] Boot diagnostics report sync complete.
+[7/1/2026, 6:49:47 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:50 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:53 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:56 PM] [TX TCP] Send: PING
+[7/1/2026, 6:49:59 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:02 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:05 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:08 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:11 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:14 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:17 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:20 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:23 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:26 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:29 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:32 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:35 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:38 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:41 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:44 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:47 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:50 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:53 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:56 PM] [TX TCP] Send: PING
+[7/1/2026, 6:50:59 PM] [TX TCP] Send: PING
+[7/1/2026, 6:51:02 PM] [TX TCP] Send: PING
+[7/1/2026, 6:51:05 PM] [TX TCP] Send: PING
+[7/1/2026, 6:51:08 PM] [TX TCP] Send: PING
+[7/1/2026, 6:51:11 PM] [TX TCP] Send: PING
+[7/1/2026, 6:51:14 PM] [TX TCP] Send: PING
+[7/1/2026, 6:51:17 PM] [TX TCP] Send: PING
+[7/1/2026, 6:51:20 PM] [TX TCP] Send: PING
+[7/1/2026, 6:51:23 PM] [TX TCP] Send: PING
+[7/1/2026, 6:51:26 PM] [TX TCP] Send: PING
+[7/1/2026, 6:51:29 PM] [TX TCP] Send: PING
+[7/1/2026, 6:51:32 PM] [TX TCP] Send: PING

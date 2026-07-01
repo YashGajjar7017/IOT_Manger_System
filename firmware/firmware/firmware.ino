@@ -344,8 +344,10 @@ void TaskOtaHTTPServer(void *pvParameters) {
     // blocks the main loop during large binary uploads.
     Server.handleClient();     // Port 500 (cert upload / direct OTA)
     httpServer.handleClient(); // Port 8000 (standard OTA + REST APIs)
-    bool active = Server.client() || httpServer.client();
-    vTaskDelay(pdMS_TO_TICKS(active ? 1 : 5));
+    
+    // We delay at least 2 ticks (20ms) when busy or 20 ticks (200ms) when idle
+    // to guarantee execution time is yielded to other system and idle tasks.
+    vTaskDelay(20);
   }
 }
 
@@ -355,7 +357,8 @@ void setup() {
   // Old delay commented out as per constraint:
   // delay(300); // Give Serial interface time to settle
   delay(300);
-
+  // runPhysicalTestRS485();
+  
   // Cancel the automatic bootloader rollback to ensure this application boots
   // permanently
   esp_ota_mark_app_valid_cancel_rollback();
@@ -403,10 +406,10 @@ void setup() {
   // This initializes the ESP32 TCP/IP stack before we start UDP/TCP listening!
   setupWiFi();
 
-  // Start Serial1 for QCOM co-processor interface on GPIO 16 (RX) and 17 (TX)
-  Serial.println("[QCOM] Starting Serial1 interface on pins RX:16, TX:17 at "
+  // Start Serial1 for QCOM co-processor interface on GPIO 17 (RX) and 18 (TX)
+  Serial.println("[QCOM] Starting Serial1 interface on pins RX:17, TX:18 at "
                  "115200 bps...");
-  Serial1.begin(115200, SERIAL_8N1, 16, 17);
+  Serial1.begin(115200, SERIAL_8N1, 17, 18);
   Serial.println("[QCOM] Serial1 communication channel active.");
 
   // Start UDP Discovery responder
@@ -539,24 +542,16 @@ void handleHaltState() {
   // or from handleRunningState() — WebServer is NOT thread-safe and calling
   // it from two cores simultaneously causes ESP32 watchdog panic/reboot.
 
-  // Auto-start after 5 seconds of inactivity in Halt state (Requirement 4)
+  // Manual-only operation: do not auto-start diagnostics or boot.
   static unsigned long haltStart = 0;
   if (haltStart == 0) {
     haltStart = millis();
-    Serial.println(
-        "[HALT] Inactivity auto-start timer armed (5 seconds to boot).");
-  }
-  if (millis() - haltStart > 5000) {
-    Serial.println("\n[TRIGGER] Inactivity timeout! Auto-starting gateway...");
-    currentState = STATE_DIAGNOSTICS;
-    return;
+    Serial.println("[HALT] Awaiting manual boot trigger. Auto-start disabled.");
   }
 
-  // Output a heartbeat wait status every 3 seconds
-  if (millis() - lastLogTime > 3000) {
-    Serial.printf("[HALT] Waiting for activation trigger... (%d seconds left "
-                  "for auto-start)\n",
-                  5 - (int)((millis() - haltStart) / 1000));
+  // Output a heartbeat wait status every 30 seconds to reduce log spam
+  if (millis() - lastLogTime > 30000) {
+    Serial.println("[HALT] Waiting for activation trigger... Press the boot button or send START_BOOT.");
     lastLogTime = millis();
   }
 
@@ -564,12 +559,18 @@ void handleHaltState() {
   if ((WiFi.status() == WL_CONNECTED || WiFi.softAPIP()[0] != 0) && hasElectronServerIP && !tcpClient.connected()) {
     if (millis() - lastConnectAttempt > connectInterval) {
       lastConnectAttempt = millis();
-      Serial.printf("[TCP] Attempting to connect to Electron Server at %s:9000...\n", electronServerIP.toString().c_str());
-      if (tcpClient.connect(electronServerIP, 9000)) {
-        Serial.println("[TCP] Successfully connected to Electron Server in HALT mode!");
-        sendControlStatus();
-      } else {
-        Serial.println("[TCP] Connection to Electron Server failed.");
+      // Only attempt if at least 5 seconds since last failed attempt to avoid spam
+      static unsigned long lastFailedAttempt = 0;
+      unsigned long now = millis();
+      if (now - lastFailedAttempt > 5000) {
+        Serial.printf("[TCP] Attempting to connect to Electron Server at %s:9000...\n", electronServerIP.toString().c_str());
+        if (tcpClient.connect(electronServerIP, 9000)) {
+          Serial.println("[TCP] Successfully connected to Electron Server in HALT mode!");
+          sendControlStatus();
+          lastFailedAttempt = 0;
+        } else {
+          lastFailedAttempt = now;
+        }
       }
     }
   }
@@ -762,14 +763,14 @@ void dumpCertsToQcom() {
       "[BOOT] [QCOM SYNC] Certificate sync to QCOM completed successfully.");
 }
 
-// Real physical test routines
+// 232 Testing code : Real physical test routines
 bool runPhysicalTestRS232() {
   Serial.println("[DIAGNOSTIC] [RS232] Configuring Transceiver (A0_1=HIGH, "
                  "pins RX:14, TX:15 at 9600 baud)...");
   pinMode(A0_1, OUTPUT);
   pinMode(A1_1, OUTPUT);
   digitalWrite(A0_1, HIGH);
-  digitalWrite(A1_1, HIGH);
+  digitalWrite(A1_1, LOW);
   delay(50);
 
   // Guard: always end before begin to avoid ESP32 UART re-init crash
@@ -797,12 +798,12 @@ bool runPhysicalTestRS232() {
     Serial.println("[DIAGNOSTIC] [RS232] Success. Loopback verified.");
     return true;
   } else {
-    Serial.println("[DIAGNOSTIC] [RS232] WARNING: Loopback failed. Using "
-                   "fallback SUCCESS.");
-    return true;
+    Serial.println("[DIAGNOSTIC] [RS232] ERROR: Loopback failed. Hardware may be disconnected.");
+    return false;
   }
 }
 
+// 485 Testing Code 
 bool runPhysicalTestRS485() {
   Serial.println("[DIAGNOSTIC] [RS485] Configuring Transceiver (A0_1=LOW, pins "
                  "RX:18, TX:17 at 9600 baud)...");
@@ -817,7 +818,7 @@ bool runPhysicalTestRS485() {
   digitalWrite(A1_1, LOW);
   delay(50);
 
-  // Guard: always end before begin to avoid ESP32 UART re-init crash
+  //Guard: always end before begin to avoid ESP32 UART re-init crash
   Serial2.end();
   delay(10);
   Serial2.begin(9600, SERIAL_8N1, 18, 17);
@@ -838,8 +839,8 @@ bool runPhysicalTestRS485() {
   Serial2.end();
   delay(10);
 
-  // Restore Serial1 to co-processor on pins 16 & 17
-  Serial1.begin(115200, SERIAL_8N1, 16, 17);
+  // Restore Serial1 to co-processor on pins 17 & 18
+  Serial1.begin(115200, SERIAL_8N1, 18, 17);
   delay(50);
 
   Serial.printf("[DIAGNOSTIC] [RS485] Received loopback: '%s'\n", rx.c_str());
@@ -847,10 +848,28 @@ bool runPhysicalTestRS485() {
     Serial.println("[DIAGNOSTIC] [RS485] Success. Loopback verified.");
     return true;
   } else {
-    Serial.println("[DIAGNOSTIC] [RS485] WARNING: Loopback failed. Using "
-                   "fallback SUCCESS.");
-    return true;
+    Serial.println("[DIAGNOSTIC] [RS485] ERROR: Loopback failed. Hardware may be disconnected.");
+    return false;
   }
+
+  // Serial.begin(9600);
+  // pinMode(36, OUTPUT);    // A0
+  // pinMode(37, OUTPUT);    // A1
+  // digitalWrite(36, LOW);  // LOW: RS485. HIGH: RS232
+  // digitalWrite(37, LOW);
+  // Serial1.begin(9600, SERIAL_8N1, 18, 17);
+  // delay(5000);
+  // Serial.println("Hi");
+  // Serial1.println("Hi Serial1");
+  
+  // while (true){
+  //   if (Serial1.available()) {
+  //   Serial.print((char)Serial1.read());
+  // }
+  // if (Serial.available()) {
+  //   Serial1.print((char)Serial.read());
+  // }
+  // }
 }
 
 bool runPhysicalTestGSM() {
@@ -893,9 +912,8 @@ bool runPhysicalTestGSM() {
         "[DIAGNOSTIC] [GPRS] Success. Connected to cellular network.");
     return true;
   } else {
-    Serial.println("[DIAGNOSTIC] [GPRS] WARNING: SIM module did not respond. "
-                   "Using fallback SUCCESS.");
-    return true;
+    Serial.println("[DIAGNOSTIC] [GPRS] ERROR: SIM module did not respond or not connected.");
+    return false;
   }
 }
 
@@ -939,9 +957,8 @@ bool runPhysicalTestWinbond() {
                    "FS mounted.");
     return true;
   } else {
-    Serial.println("[DIAGNOSTIC] [WINBOND FLASH] WARNING: Invalid flash ID. "
-                   "Using fallback SUCCESS.");
-    return true;
+    Serial.println("[DIAGNOSTIC] [WINBOND FLASH] ERROR: Invalid flash ID or not connected.");
+    return false;
   }
 }
 
@@ -1351,8 +1368,8 @@ void setupWiFi() {
   }
 
   WiFi.onEvent(onWiFiAPEvent);
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.setAutoReconnect(true);
+  WiFi.mode(WIFI_AP);
+  WiFi.setAutoReconnect(false);
 
   // Retrieve hardware MAC address after WiFi initialization
   deviceMAC = WiFi.macAddress();
@@ -1381,14 +1398,7 @@ void setupWiFi() {
   Serial.print("[WIFI AP] SoftAP Gateway IP Address : ");
   Serial.println(apIP);
 
-  // 2. Connect to local Wireless Router in Background (Non-Blocking,
-  // Requirement 4)
-  Serial.printf(
-      "[WIFI STA] Initiating connection handshake to Router: SSID='%s'...\n",
-      routerSSID.c_str());
-  WiFi.begin(routerSSID.c_str(), routerPassword.c_str());
-  Serial.println("[WIFI STA] WiFi STA connection is running in the background. "
-                 "Setup will continue instantly.");
+  Serial.println("[WIFI STA] Background router search disabled (SoftAP only mode active).");
   Serial.println("---------------------------------------------");
 
   // Print all network metadata and identifiers on boot (Requirement 1)
