@@ -1,6 +1,6 @@
 {
   "name": "iot-monitor-system",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "IoT Monitor Gateway MERN Desktop Dashboard",
   "main": "main.js",
   "scripts": {
@@ -50,7 +50,7 @@
     ],
     "directories": {
       "buildResources": "public",
-      "output": "/iot-monitor-release"
+      "output": "A:/Coding/Electron/IOT_Monitor_System/iot-monitor-release"
     },
     "win": {
       "target": [

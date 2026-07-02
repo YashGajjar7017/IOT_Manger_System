@@ -40,6 +40,9 @@ export default function App() {
     driver: 'WAITING',
     rtc: 'WAITING'
   });
+  const [diPinsSimulated, setDiPinsSimulated] = useState([false, false, false, false]);
+  const [diPinsHardware, setDiPinsHardware] = useState([false, false, false, false]);
+  const [testerSwitch, setTesterSwitch] = useState(false);
 
   // Boot Sequence State
   const [bootProgress, setBootProgress] = useState(0);
@@ -439,6 +442,14 @@ export default function App() {
       if (payload.password && payload.password !== '--') {
         setPassword(payload.password);
         setPasswordInput(payload.password);
+      }
+
+      if (payload.di_pins && Array.isArray(payload.di_pins)) {
+        setDiPinsHardware(payload.di_pins);
+      }
+
+      if (payload.switch_pin !== undefined) {
+        setTesterSwitch(payload.switch_pin);
       }
 
       if (bootManualStopped && (payload.status === 'BOOT_PROGRESS' || payload.status === 'BOOT_SUCCESS' || payload.step === 'QCOM_SHIFT')) {
@@ -1477,6 +1488,14 @@ Overall Status : ${overallStatus}
     sendControlCommand(nextState ? 'RELAY_2_ON' : 'RELAY_2_OFF');
   };
 
+  const handleDiPinSimChange = (index, isChecked) => {
+    setDiPinsSimulated(prev => {
+      const next = [...prev];
+      next[index] = isChecked;
+      return next;
+    });
+  };
+
   const handleIntervalChange = (e) => {
     setTelemetryRate(e.target.value);
   };
@@ -2045,20 +2064,97 @@ Overall Status : ${overallStatus}
                 <div className="diag-checklist">
                   {Object.keys(diagnostics).map(key => (
                     <div key={key} className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : diagnostics[key] === 'TESTING' ? 'warning' : ''}`}>
-                      <div className="diag-indicator"></div>
-                      <div className="diag-label" style={{ flex: 1 }}>{key.toUpperCase()} Module</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div className="diag-value" style={{ fontSize: '11px', fontWeight: 'bold' }}>{diagnostics[key]}</div>
-                        {connection.type && diagnostics[key] !== 'TESTING' && (
-                          <button
-                            className="btn btn-secondary small"
-                            style={{ padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', margin: 0, border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
-                            onClick={() => testModule(key)}
-                          >
-                            Test
-                          </button>
-                        )}
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                        <div className="diag-indicator" style={{ marginRight: '8px' }}></div>
+                        <div className="diag-label" style={{ flex: 1 }}>{key.toUpperCase()} Module</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div className="diag-value" style={{ fontSize: '11px', fontWeight: 'bold' }}>{diagnostics[key]}</div>
+                          {connection.type && diagnostics[key] !== 'TESTING' && (
+                            <button
+                              className="btn btn-secondary small"
+                              style={{ padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', margin: 0, border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
+                              onClick={() => testModule(key)}
+                            >
+                              Test
+                            </button>
+                          )}
+                        </div>
                       </div>
+                      {key === 'di' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                          <div className="di-pins-container" style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(2, 1fr)',
+                            gap: '8px',
+                            marginTop: '8px',
+                            width: '100%',
+                            borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                            paddingTop: '8px'
+                          }}>
+                            {[0, 1, 2, 3].map(index => {
+                              const isPinShorted = diPinsSimulated[index] || diPinsHardware[index];
+                              return (
+                                <div key={index} className={`di-pin-item ${isPinShorted ? 'shorted' : ''}`} style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  background: 'rgba(5, 2, 18, 0.4)',
+                                  border: '1px solid rgba(255, 0, 127, 0.1)',
+                                  padding: '6px 8px',
+                                  borderRadius: '6px',
+                                  transition: 'all 0.2s ease'
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <div className="pin-indicator" style={{
+                                      width: '6px',
+                                      height: '6px',
+                                      borderRadius: '50%',
+                                      background: isPinShorted ? 'var(--accent-emerald)' : 'var(--accent-red)',
+                                      boxShadow: isPinShorted ? '0 0 6px var(--accent-emerald)' : '0 0 6px var(--accent-red)'
+                                    }} />
+                                    <span style={{ fontSize: '11px', fontWeight: '700', color: isPinShorted ? '#fff' : 'var(--text-dim)' }}>DI {index + 1}</span>
+                                  </div>
+                                  <button
+                                    className={`btn ${isPinShorted ? 'btn-accent' : 'btn-secondary'} small`}
+                                    style={{ padding: '2px 8px', fontSize: '9px', height: '20px', minWidth: '54px', margin: 0, cursor: 'pointer', userSelect: 'none' }}
+                                    onMouseDown={() => handleDiPinSimChange(index, true)}
+                                    onMouseUp={() => handleDiPinSimChange(index, false)}
+                                    onMouseLeave={() => handleDiPinSimChange(index, false)}
+                                    onTouchStart={() => handleDiPinSimChange(index, true)}
+                                    onTouchEnd={() => handleDiPinSimChange(index, false)}
+                                  >
+                                    {isPinShorted ? 'Shorted' : 'Push'}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="tester-switch-container" style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: 'rgba(3, 0, 10, 0.5)',
+                            border: `1px solid ${testerSwitch ? 'rgba(0, 255, 102, 0.2)' : 'rgba(255, 255, 255, 0.05)'}`,
+                            padding: '6px 10px',
+                            borderRadius: '8px',
+                            marginTop: '4px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div className="pin-indicator" style={{
+                                width: '8px',
+                                height: '8px',
+                                borderRadius: '50%',
+                                background: testerSwitch ? 'var(--accent-emerald)' : 'var(--text-muted)',
+                                boxShadow: testerSwitch ? '0 0 8px var(--accent-emerald)' : 'none'
+                              }} />
+                              <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff' }}>Tester Switch (Pin 38)</span>
+                            </div>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: testerSwitch ? 'var(--accent-emerald)' : 'var(--text-dim)', textTransform: 'uppercase' }}>
+                              {testerSwitch ? 'ON' : 'OFF'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -3749,9 +3845,86 @@ Overall Status : ${overallStatus}
                 <div className="diag-checklist" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginTop: '20px' }}>
                   {Object.keys(diagnostics).map(key => (
                     <div key={key} className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : diagnostics[key] === 'TESTING' ? 'warning' : ''}`} style={{ margin: 0 }}>
-                      <div className="diag-indicator"></div>
-                      <div className="diag-label" style={{ flex: 1 }}>{key.toUpperCase()}</div>
-                      <div className="diag-value">{diagnostics[key]}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                        <div className="diag-indicator" style={{ marginRight: '8px' }}></div>
+                        <div className="diag-label" style={{ flex: 1 }}>{key.toUpperCase()}</div>
+                        <div className="diag-value">{diagnostics[key]}</div>
+                      </div>
+                      {key === 'di' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                          <div className="di-pins-container" style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(2, 1fr)',
+                            gap: '8px',
+                            marginTop: '8px',
+                            width: '100%',
+                            borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                            paddingTop: '8px'
+                          }}>
+                            {[0, 1, 2, 3].map(index => {
+                              const isPinShorted = diPinsSimulated[index] || diPinsHardware[index];
+                              return (
+                                <div key={index} className={`di-pin-item ${isPinShorted ? 'shorted' : ''}`} style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  background: 'rgba(5, 2, 18, 0.4)',
+                                  border: '1px solid rgba(255, 0, 127, 0.1)',
+                                  padding: '6px 8px',
+                                  borderRadius: '6px',
+                                  transition: 'all 0.2s ease'
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <div className="pin-indicator" style={{
+                                      width: '6px',
+                                      height: '6px',
+                                      borderRadius: '50%',
+                                      background: isPinShorted ? 'var(--accent-emerald)' : 'var(--accent-red)',
+                                      boxShadow: isPinShorted ? '0 0 6px var(--accent-emerald)' : '0 0 6px var(--accent-red)'
+                                    }} />
+                                    <span style={{ fontSize: '11px', fontWeight: '700', color: isPinShorted ? '#fff' : 'var(--text-dim)' }}>DI {index + 1}</span>
+                                  </div>
+                                  <button
+                                    className={`btn ${isPinShorted ? 'btn-accent' : 'btn-secondary'} small`}
+                                    style={{ padding: '2px 8px', fontSize: '9px', height: '20px', minWidth: '54px', margin: 0, cursor: 'pointer', userSelect: 'none' }}
+                                    onMouseDown={() => handleDiPinSimChange(index, true)}
+                                    onMouseUp={() => handleDiPinSimChange(index, false)}
+                                    onMouseLeave={() => handleDiPinSimChange(index, false)}
+                                    onTouchStart={() => handleDiPinSimChange(index, true)}
+                                    onTouchEnd={() => handleDiPinSimChange(index, false)}
+                                  >
+                                    {isPinShorted ? 'Shorted' : 'Push'}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="tester-switch-container" style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: 'rgba(3, 0, 10, 0.5)',
+                            border: `1px solid ${testerSwitch ? 'rgba(0, 255, 102, 0.2)' : 'rgba(255, 255, 255, 0.05)'}`,
+                            padding: '6px 10px',
+                            borderRadius: '8px',
+                            marginTop: '4px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div className="pin-indicator" style={{
+                                width: '8px',
+                                height: '8px',
+                                borderRadius: '50%',
+                                background: testerSwitch ? 'var(--accent-emerald)' : 'var(--text-muted)',
+                                boxShadow: testerSwitch ? '0 0 8px var(--accent-emerald)' : 'none'
+                              }} />
+                              <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff' }}>Tester Switch (Pin 38)</span>
+                            </div>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: testerSwitch ? 'var(--accent-emerald)' : 'var(--text-dim)', textTransform: 'uppercase' }}>
+                              {testerSwitch ? 'ON' : 'OFF'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

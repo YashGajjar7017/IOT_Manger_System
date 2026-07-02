@@ -32,17 +32,32 @@ SemaphoreHandle_t tcpQueueSemaphore = NULL;
 void dumpCertsToQcom();
 
 // Hardware Pin Definitions
-#define A0_1 36
-#define A1_1 37
+#define MUX_A0 36
+#define MUX_A1 37
 
-#define GSM_PWRKEY 5
-#define GSM_EN 21
+#define FR_RX 15
+#define FR_TX 14
 
-#define DI1 38
-#define DI2 39
-#define DI3 40
-#define DI4 41
-#define DI5 42
+#define GPRS_RX 1
+#define GPRS_TX 2
+
+#define GSM_PWRKEY_PIN 5
+#define GSM_EN_PIN 21
+
+#define I2C_SDA_PIN -1
+#define I2C_SCL_PIN -1
+
+#define A0_1 MUX_A0
+#define A1_1 MUX_A1
+
+#define GSM_PWRKEY GSM_PWRKEY_PIN
+#define GSM_EN GSM_EN_PIN
+
+#define DI1 39
+#define DI2 40
+#define DI3 41
+#define DI4 42
+#define SWITCH_PIN 38
 
 #define FLASH_CS 10
 #define FLASH_SCK 12
@@ -56,7 +71,8 @@ const int BOOT_BUTTON_PIN =
 // Server instances on updated ports
 WebServer httpServer(8000); // HTTP OTA on Port 8000
 WebServer Server(500);      // Dedicated OTA on Port 500
-// WiFiServer tcpServer(9000); // TCP Telemetry on Port 9000 (Deactivated, ESP32 is client now)
+// WiFiServer tcpServer(9000); // TCP Telemetry on Port 9000 (Deactivated, ESP32
+// is client now)
 
 // TCP Telemetry Client connection variables
 IPAddress electronServerIP;
@@ -107,6 +123,22 @@ String certNames[MAX_CERTS] = {"rootCA.pem", "device_cert.crt",
 size_t certSizes[MAX_CERTS] = {1188, 2048, 1675};
 int certCount = 3;
 
+// Test configuration
+#define MODBUS_BAUD 9600
+#define MODBUS_SERIAL_CONFIG SERIAL_8N1
+#define MODBUS_TIMEOUT_MS 1200
+#define MODBUS_INTERFRAME_GAP_MS 40
+#define MODBUS_FUNCTION_READ_HOLDING 0x03
+
+#define FR_SLAVE_ID 1
+#define FR_START_REGISTER 0
+#define FR_REGISTER_COUNT 2
+
+#define GPRS_BAUD 9600
+#define GPRS_AT_TIMEOUT_MS 1500
+
+#define TEST_STEP_DELAY_MS 2000UL
+
 // 9-Point Diagnostic Results
 struct DiagnosticReport {
   bool rs232 = false;
@@ -131,7 +163,6 @@ struct DiagnosticTested {
   bool driver = false;
   bool rtc = false;
 } diagnosticsTested;
-
 
 String getCertificatesJson() {
   String json = "[";
@@ -344,7 +375,7 @@ void TaskOtaHTTPServer(void *pvParameters) {
     // blocks the main loop during large binary uploads.
     Server.handleClient();     // Port 500 (cert upload / direct OTA)
     httpServer.handleClient(); // Port 8000 (standard OTA + REST APIs)
-    
+
     // We delay at least 2 ticks (20ms) when busy or 20 ticks (200ms) when idle
     // to guarantee execution time is yielded to other system and idle tasks.
     vTaskDelay(20);
@@ -358,7 +389,7 @@ void setup() {
   // delay(300); // Give Serial interface time to settle
   delay(300);
   // runPhysicalTestRS485();
-  
+
   // Cancel the automatic bootloader rollback to ensure this application boots
   // permanently
   esp_ota_mark_app_valid_cancel_rollback();
@@ -384,22 +415,35 @@ void setup() {
   digitalWrite(RELAY_2_PIN, LOW);
   Serial.println("[GPIO] Relays initialized. State: LOW (Inactive)");
 
+  // Configure DI Pins
+  Serial.println("[GPIO] Configuring physical digital input pins...");
+  pinMode(DI1, INPUT_PULLDOWN);
+  pinMode(DI2, INPUT_PULLDOWN);
+  pinMode(DI3, INPUT_PULLDOWN);
+  pinMode(DI4, INPUT_PULLDOWN);
+  pinMode(SWITCH_PIN, INPUT_PULLUP);
+  Serial.println(
+      "[GPIO] DI pins initialized as INPUT_PULLDOWN, Switch as INPUT_PULLUP.");
+
   // Initialize SPIFFS — formatOnFail=false so we NEVER silently hang for
   // 45 seconds formatting.  If the partition is absent/corrupt the firmware
   // continues running and logs a clear error.  Send "FORMAT_SPIFFS" over
   // serial or TCP to explicitly format if needed.
-  Serial.println("[SPIFFS] Mounting SPIFFS partition (formatOnFail=DISABLED)...");
+  Serial.println(
+      "[SPIFFS] Mounting SPIFFS partition (formatOnFail=DISABLED)...");
   if (!SPIFFS.begin(false)) {
-    Serial.println("[SPIFFS] WARNING: Mount failed. Filesystem may be unformatted.");
-    Serial.println("[SPIFFS] Send command FORMAT_SPIFFS to format (takes ~5s).");
+    Serial.println(
+        "[SPIFFS] WARNING: Mount failed. Filesystem may be unformatted.");
+    Serial.println(
+        "[SPIFFS] Send command FORMAT_SPIFFS to format (takes ~5s).");
     Serial.println("[SPIFFS] Continuing boot without persistent storage.");
   } else {
     size_t totalBytes = SPIFFS.totalBytes();
     size_t usedBytes = SPIFFS.usedBytes();
-    Serial.printf("[SPIFFS] Mount OK. Total: %d KB | Used: %d KB | Free: %d KB\n",
-                  (int)(totalBytes / 1024),
-                  (int)(usedBytes  / 1024),
-                  (int)((totalBytes - usedBytes) / 1024));
+    Serial.printf(
+        "[SPIFFS] Mount OK. Total: %d KB | Used: %d KB | Free: %d KB\n",
+        (int)(totalBytes / 1024), (int)(usedBytes / 1024),
+        (int)((totalBytes - usedBytes) / 1024));
   }
 
   // Auto-connect WiFi (SoftAP + STA) on boot (Non-blocking)
@@ -460,15 +504,8 @@ void setup() {
   Serial.println("[HTTP] OTA Servers initialized.");
 
   // Spawn background task for HTTP/OTA servers handling on Core 1
-  xTaskCreatePinnedToCore(
-      TaskOtaHTTPServer,
-      "TaskOtaHTTPServer",
-      8192,
-      NULL,
-      1,
-      NULL,
-      1
-  );
+  xTaskCreatePinnedToCore(TaskOtaHTTPServer, "TaskOtaHTTPServer", 8192, NULL, 1,
+                          NULL, 1);
   Serial.println("[SYSTEM] TaskOtaHTTPServer spawned on Core 1.");
 
   Serial.println(
@@ -551,21 +588,27 @@ void handleHaltState() {
 
   // Output a heartbeat wait status every 30 seconds to reduce log spam
   if (millis() - lastLogTime > 30000) {
-    Serial.println("[HALT] Waiting for activation trigger... Press the boot button or send START_BOOT.");
+    Serial.println("[HALT] Waiting for activation trigger... Press the boot "
+                   "button or send START_BOOT.");
     lastLogTime = millis();
   }
 
   // Connect to the Electron server if not already connected
-  if ((WiFi.status() == WL_CONNECTED || WiFi.softAPIP()[0] != 0) && hasElectronServerIP && !tcpClient.connected()) {
+  if ((WiFi.status() == WL_CONNECTED || WiFi.softAPIP()[0] != 0) &&
+      hasElectronServerIP && !tcpClient.connected()) {
     if (millis() - lastConnectAttempt > connectInterval) {
       lastConnectAttempt = millis();
-      // Only attempt if at least 5 seconds since last failed attempt to avoid spam
+      // Only attempt if at least 5 seconds since last failed attempt to avoid
+      // spam
       static unsigned long lastFailedAttempt = 0;
       unsigned long now = millis();
       if (now - lastFailedAttempt > 5000) {
-        Serial.printf("[TCP] Attempting to connect to Electron Server at %s:9000...\n", electronServerIP.toString().c_str());
+        Serial.printf(
+            "[TCP] Attempting to connect to Electron Server at %s:9000...\n",
+            electronServerIP.toString().c_str());
         if (tcpClient.connect(electronServerIP, 9000)) {
-          Serial.println("[TCP] Successfully connected to Electron Server in HALT mode!");
+          Serial.println(
+              "[TCP] Successfully connected to Electron Server in HALT mode!");
           sendControlStatus();
           lastFailedAttempt = 0;
         } else {
@@ -765,50 +808,123 @@ void dumpCertsToQcom() {
 
 // 232 Testing code : Real physical test routines
 bool runPhysicalTestRS232() {
-  Serial.println("[DIAGNOSTIC] [RS232] Configuring Transceiver (A0_1=HIGH, "
-                 "pins RX:14, TX:15 at 9600 baud)...");
-  pinMode(A0_1, OUTPUT);
-  pinMode(A1_1, OUTPUT);
-  digitalWrite(A0_1, HIGH);
-  digitalWrite(A1_1, LOW);
+  Serial.println("[DIAGNOSTIC] [RS232] Configuring Transceiver (MUX_A0=HIGH, "
+                 "pins RX:15, TX:14 at 9600 baud for 10s loop check)...");
+  pinMode(MUX_A0, OUTPUT);
+  pinMode(MUX_A1, OUTPUT);
+  digitalWrite(MUX_A0, HIGH);
+  digitalWrite(MUX_A1, LOW);
   delay(50);
 
   // Guard: always end before begin to avoid ESP32 UART re-init crash
   Serial2.end();
   delay(10);
-  Serial2.begin(9600, SERIAL_8N1, 14, 15);
+  Serial2.begin(MODBUS_BAUD, MODBUS_SERIAL_CONFIG, FR_RX, FR_TX);
   delay(50);
 
-  while (Serial2.available())
-    Serial2.read();
-  Serial2.print("RS232_TEST");
+  unsigned long startTest = millis();
+  int successCount = 0;
+  int totalCount = 0;
 
-  unsigned long start = millis();
-  String rx = "";
-  while (millis() - start < 300) {
-    while (Serial2.available()) {
-      rx += (char)Serial2.read();
+  while (millis() - startTest < 10000) {
+    while (Serial2.available())
+      Serial2.read();
+
+    Serial2.print("RS232_TEST\r\n");
+    Serial2.flush();
+
+    unsigned long startChunk = millis();
+    String rx = "";
+    while (millis() - startChunk < 100) {
+      while (Serial2.available()) {
+        rx += (char)Serial2.read();
+      }
+      delay(5);
     }
-    delay(10);
+
+    totalCount++;
+    if (rx.indexOf("RS232_TEST") != -1) {
+      successCount++;
+    }
+    delay(100); // 100ms gap to make TX/RX LEDs blink visibly
   }
+
   Serial2.end();
 
-  Serial.printf("[DIAGNOSTIC] [RS232] Received loopback: '%s'\n", rx.c_str());
-  if (rx.indexOf("RS232_TEST") != -1) {
+  Serial.printf(
+      "[DIAGNOSTIC] [RS232] Success rate: %d/%d loopbacks received.\n",
+      successCount, totalCount);
+  if (successCount > 0 && successCount >= (totalCount * 8 / 10)) {
     Serial.println("[DIAGNOSTIC] [RS232] Success. Loopback verified.");
     return true;
   } else {
-    Serial.println("[DIAGNOSTIC] [RS232] ERROR: Loopback failed. Hardware may be disconnected.");
+    Serial.println("[DIAGNOSTIC] [RS232] ERROR: Loopback failed or too many "
+                   "dropped packets.");
     return false;
   }
 }
 
-// 485 Testing Code 
+// 485 Testing Code
 bool runPhysicalTestRS485() {
+  // Serial.println("[DIAGNOSTIC] [RS485] Configuring Transceiver (MUX_A0=LOW,
+  // pins "
+  //                "RX:15, TX:14 at 9600 baud for 10s loop check)...");
+
+  // pinMode(MUX_A0, OUTPUT);
+  // pinMode(MUX_A1, OUTPUT);
+  // digitalWrite(MUX_A0, LOW);
+  // digitalWrite(MUX_A1, LOW);
+  // delay(50);
+
+  // // Guard: always end before begin to avoid ESP32 UART re-init crash
+  // Serial2.end();
+  // delay(10);
+  // Serial2.begin(9600, SERIAL_8N1, FR_RX, FR_TX);
+  // delay(50);
+
+  // unsigned long startTest = millis();
+  // int successCount = 0;
+  // int totalCount = 0;
+
+  // while (millis() - startTest < 10000) {
+  //   while (Serial2.available())
+  //     Serial2.read();
+
+  //   Serial2.print("RS485_TEST\n");
+  //   Serial2.flush();
+
+  //   unsigned long startChunk = millis();
+  //   String rx = "";
+  //   while (millis() - startChunk < 100) {
+  //     while (Serial2.available()) {
+  //       rx += (char)Serial2.read();
+  //     }
+  //     delay(5);
+  //   }
+
+  //   totalCount++;
+  //   if (rx.indexOf("RS485_TEST") != -1) {
+  //     successCount++;
+  //   }
+  //   delay(100); // 100ms gap to make TX/RX LEDs blink visibly
+  // }
+
+  // Serial2.end();
+
+  // Serial.printf("[DIAGNOSTIC] [RS485] Success rate: %d/%d loopbacks
+  // received.\n", successCount, totalCount); if (successCount > 0 &&
+  // successCount >= (totalCount * 8 / 10)) {
+  //   Serial.println("[DIAGNOSTIC] [RS485] Success. Loopback verified.");
+  //   return true;
+  // } else {
+  //   Serial.println("[DIAGNOSTIC] [RS485] ERROR: Loopback failed or too many
+  //   dropped packets."); return false;
+  // }
   Serial.println("[DIAGNOSTIC] [RS485] Configuring Transceiver (A0_1=LOW, pins "
                  "RX:18, TX:17 at 9600 baud)...");
 
-  // Guard: temporarily end Serial1 (co-processor) which shares TX pin 17 to prevent pin contention
+  // Guard: temporarily end Serial1 (co-processor) which shares TX pin 17 to
+  // prevent pin contention
   Serial1.end();
   delay(10);
 
@@ -818,7 +934,7 @@ bool runPhysicalTestRS485() {
   digitalWrite(A1_1, LOW);
   delay(50);
 
-  //Guard: always end before begin to avoid ESP32 UART re-init crash
+  // Guard: always end before begin to avoid ESP32 UART re-init crash
   Serial2.end();
   delay(10);
   Serial2.begin(9600, SERIAL_8N1, 18, 17);
@@ -848,28 +964,10 @@ bool runPhysicalTestRS485() {
     Serial.println("[DIAGNOSTIC] [RS485] Success. Loopback verified.");
     return true;
   } else {
-    Serial.println("[DIAGNOSTIC] [RS485] ERROR: Loopback failed. Hardware may be disconnected.");
+    Serial.println("[DIAGNOSTIC] [RS485] ERROR: Loopback failed. Hardware may "
+                   "be disconnected.");
     return false;
   }
-
-  // Serial.begin(9600);
-  // pinMode(36, OUTPUT);    // A0
-  // pinMode(37, OUTPUT);    // A1
-  // digitalWrite(36, LOW);  // LOW: RS485. HIGH: RS232
-  // digitalWrite(37, LOW);
-  // Serial1.begin(9600, SERIAL_8N1, 18, 17);
-  // delay(5000);
-  // Serial.println("Hi");
-  // Serial1.println("Hi Serial1");
-  
-  // while (true){
-  //   if (Serial1.available()) {
-  //   Serial.print((char)Serial1.read());
-  // }
-  // if (Serial.available()) {
-  //   Serial1.print((char)Serial.read());
-  // }
-  // }
 }
 
 bool runPhysicalTestGSM() {
@@ -884,10 +982,10 @@ bool runPhysicalTestGSM() {
   digitalWrite(GSM_PWRKEY, HIGH);
   delay(200);
 
-  Serial.println("[DIAGNOSTIC] [GPRS] Sending AT attention commands on Serial1 "
-                 "(pins RX:16, TX:17 at 115200)...");
-  // Keep using the co-processor UART connection on GPIO 16/17 to avoid programming pin conflicts on pin 1/2
-  Serial1.begin(115200, SERIAL_8N1, 16, 17);
+  Serial.printf("[DIAGNOSTIC] [GPRS] Sending AT attention commands on Serial1 "
+                "(pins RX:%d, TX:%d at %d)...\n",
+                GPRS_RX, GPRS_TX, GPRS_BAUD);
+  Serial1.begin(GPRS_BAUD, MODBUS_SERIAL_CONFIG, GPRS_RX, GPRS_TX);
   delay(50);
 
   while (Serial1.available())
@@ -907,14 +1005,19 @@ bool runPhysicalTestGSM() {
   }
 
   Serial.printf("[DIAGNOSTIC] [GPRS] Received: '%s'\n", rx.c_str());
-  if (rx.indexOf("OK") != -1) {
+  bool result = (rx.indexOf("OK") != -1);
+  if (result) {
     Serial.println(
         "[DIAGNOSTIC] [GPRS] Success. Connected to cellular network.");
-    return true;
   } else {
-    Serial.println("[DIAGNOSTIC] [GPRS] ERROR: SIM module did not respond or not connected.");
-    return false;
+    Serial.println("[DIAGNOSTIC] [GPRS] ERROR: SIM module did not respond or "
+                   "not connected.");
   }
+
+  // Restore QCOM serial pins after GSM check
+  Serial1.begin(115200, SERIAL_8N1, 17, 18);
+  delay(50);
+  return result;
 }
 
 bool runPhysicalTestAP() {
@@ -957,52 +1060,61 @@ bool runPhysicalTestWinbond() {
                    "FS mounted.");
     return true;
   } else {
-    Serial.println("[DIAGNOSTIC] [WINBOND FLASH] ERROR: Invalid flash ID or not connected.");
+    Serial.println("[DIAGNOSTIC] [WINBOND FLASH] ERROR: Invalid flash ID or "
+                   "not connected.");
     return false;
   }
 }
 
 bool runPhysicalTestDI() {
-  Serial.println("[DIAGNOSTIC] [DI CHECK] Reading optocoupler inputs...");
-  int pins[] = {DI1, DI2, DI3, DI4, DI5};
-  for (int i = 0; i < 5; i++) {
-    pinMode(pins[i], INPUT_PULLUP);
+  Serial.println("[DIAGNOSTIC] [DI CHECK] Reading active-high inputs (DI1-DI4) "
+                 "& Switch (Pin 38)...");
+  int pins[] = {DI1, DI2, DI3, DI4};
+  for (int i = 0; i < 4; i++) {
+    pinMode(pins[i], INPUT_PULLDOWN);
     delay(5);
     int val = digitalRead(pins[i]);
     Serial.printf("  - DI%d (Pin %d): %s\n", i + 1, pins[i],
-                  (val == HIGH) ? "HIGH" : "LOW");
+                  (val == HIGH) ? "HIGH (Shorted)" : "LOW (Open)");
   }
-  Serial.println("[DIAGNOSTIC] [DI CHECK] Success. DI pins sampled.");
+
+  pinMode(SWITCH_PIN, INPUT_PULLUP);
+  delay(5);
+  int swVal = digitalRead(SWITCH_PIN);
+  Serial.printf("  - Tester Switch (Pin %d): %s\n", SWITCH_PIN,
+                (swVal == LOW) ? "ON (Closed)" : "OFF (Open)");
+
+  Serial.println(
+      "[DIAGNOSTIC] [DI CHECK] Success. DI pins and Switch sampled.");
   return true;
 }
 
 bool runPhysicalTestRTC() {
   Serial.println("[DIAGNOSTIC] [RTC] Querying DS3231 I2C interface...");
+  if (I2C_SDA_PIN < 0 || I2C_SCL_PIN < 0) {
+    Serial.println("[DIAGNOSTIC] [RTC] ERROR: I2C pins are not configured. "
+                   "\"I2C_SDA_PIN\" and \"I2C_SCL_PIN\" must be set.");
+    return false;
+  }
 
-  Serial.println("[DIAGNOSTIC] [RTC] Scanning pins SDA: 33, SCL: 32...");
-  Wire.begin(33, 32);
+  Serial.printf("[DIAGNOSTIC] [RTC] Scanning pins SDA: %d, SCL: %d...\n",
+                I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  delay(10);
   Wire.beginTransmission(0x68);
   byte err = Wire.endTransmission();
+  Wire.end();
+
   if (err == 0) {
-    Serial.println("[DIAGNOSTIC] [RTC] Success. DS3231 found at address 0x68 "
-                   "on pins 33/32.");
+    Serial.printf("[DIAGNOSTIC] [RTC] Success. DS3231 found at address 0x68 on "
+                  "pins %d/%d.\n",
+                  I2C_SDA_PIN, I2C_SCL_PIN);
     return true;
   }
 
-  Serial.println("[DIAGNOSTIC] [RTC] Pins 33/32 failed. Scanning fallback SDA: "
-                 "22, SCL: 23...");
-  Wire.begin(22, 23);
-  Wire.beginTransmission(0x68);
-  err = Wire.endTransmission();
-  if (err == 0) {
-    Serial.println("[DIAGNOSTIC] [RTC] Success. DS3231 found at address 0x68 "
-                   "on pins 22/23.");
-    return true;
-  }
-
-  Serial.println("[DIAGNOSTIC] [RTC] WARNING: RTC DS3231 not found at 0x68. "
-                 "Using fallback SUCCESS.");
-  return true;
+  Serial.println("[DIAGNOSTIC] [RTC] ERROR: RTC DS3231 not found at 0x68 on "
+                 "configured I2C pins.");
+  return false;
 }
 
 // 2. Hardware Self-Check, Certificate Provisioning & Diagnostics
@@ -1166,15 +1278,53 @@ void sendBootSuccessPayload() {
   json += "\"password\":\"" + devicePassword + "\",";
   json += "\"certificates\":" + getCertificatesJson() + ",";
   json += "\"diagnostics\":{";
-  json += "\"rs232\":" + String(diagnosticsTested.rs232 ? (diagnostics.rs232 ? "true" : "false") : "\"WAITING\"") + ",";
-  json += "\"rs485\":" + String(diagnosticsTested.rs485 ? (diagnostics.rs485 ? "true" : "false") : "\"WAITING\"") + ",";
-  json += "\"gprs\":" + String(diagnosticsTested.gprs ? (diagnostics.gprs ? "true" : "false") : "\"WAITING\"") + ",";
-  json += "\"bus\":" + String(diagnosticsTested.bus ? (diagnostics.bus ? "true" : "false") : "\"WAITING\"") + ",";
-  json += "\"ap\":" + String(diagnosticsTested.ap ? (diagnostics.ap ? "true" : "false") : "\"WAITING\"") + ",";
-  json += "\"flash\":" + String(diagnosticsTested.flash ? (diagnostics.flash ? "true" : "false") : "\"WAITING\"") + ",";
-  json += "\"di\":" + String(diagnosticsTested.di ? (diagnostics.di ? "true" : "false") : "\"WAITING\"") + ",";
-  json += "\"driver\":" + String(diagnosticsTested.driver ? (diagnostics.driver ? "true" : "false") : "\"WAITING\"") + ",";
-  json += "\"rtc\":" + String(diagnosticsTested.rtc ? (diagnostics.rtc ? "true" : "false") : "\"WAITING\"");
+  json +=
+      "\"rs232\":" +
+      String(diagnosticsTested.rs232 ? (diagnostics.rs232 ? "true" : "false")
+                                     : "\"WAITING\"") +
+      ",";
+  json +=
+      "\"rs485\":" +
+      String(diagnosticsTested.rs485 ? (diagnostics.rs485 ? "true" : "false")
+                                     : "\"WAITING\"") +
+      ",";
+  json += "\"gprs\":" +
+          String(diagnosticsTested.gprs ? (diagnostics.gprs ? "true" : "false")
+                                        : "\"WAITING\"") +
+          ",";
+  json += "\"bus\":" +
+          String(diagnosticsTested.bus ? (diagnostics.bus ? "true" : "false")
+                                       : "\"WAITING\"") +
+          ",";
+  json += "\"ap\":" +
+          String(diagnosticsTested.ap ? (diagnostics.ap ? "true" : "false")
+                                      : "\"WAITING\"") +
+          ",";
+  json +=
+      "\"flash\":" +
+      String(diagnosticsTested.flash ? (diagnostics.flash ? "true" : "false")
+                                     : "\"WAITING\"") +
+      ",";
+  json += "\"di\":" +
+          String(diagnosticsTested.di ? (diagnostics.di ? "true" : "false")
+                                      : "\"WAITING\"") +
+          ",";
+  json += "\"di_pins\":[";
+  json += String(digitalRead(DI1) == HIGH ? "true" : "false") + ",";
+  json += String(digitalRead(DI2) == HIGH ? "true" : "false") + ",";
+  json += String(digitalRead(DI3) == HIGH ? "true" : "false") + ",";
+  json += String(digitalRead(DI4) == HIGH ? "true" : "false") + "";
+  json += "],";
+  json += "\"switch_pin\":" +
+          String(digitalRead(SWITCH_PIN) == LOW ? "true" : "false") + ",";
+  json +=
+      "\"driver\":" +
+      String(diagnosticsTested.driver ? (diagnostics.driver ? "true" : "false")
+                                      : "\"WAITING\"") +
+      ",";
+  json += "\"rtc\":" + String(diagnosticsTested.rtc
+                                  ? (diagnostics.rtc ? "true" : "false")
+                                  : "\"WAITING\"");
   json += "},";
   json += "\"wifi\":{";
   json +=
@@ -1206,11 +1356,13 @@ void sendBootSuccessPayload() {
 }
 
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 2
-// In ESP32 Core 2.x/3.x, ensure macros map to their enum constants of the same name (which are of type arduino_event_id_t)
+// In ESP32 Core 2.x/3.x, ensure macros map to their enum constants of the same
+// name (which are of type arduino_event_id_t)
 #undef ARDUINO_EVENT_WIFI_AP_STACONNECTED
 #define ARDUINO_EVENT_WIFI_AP_STACONNECTED ARDUINO_EVENT_WIFI_AP_STACONNECTED
 #undef ARDUINO_EVENT_WIFI_AP_STADISCONNECTED
-#define ARDUINO_EVENT_WIFI_AP_STADISCONNECTED ARDUINO_EVENT_WIFI_AP_STADISCONNECTED
+#define ARDUINO_EVENT_WIFI_AP_STADISCONNECTED                                  \
+  ARDUINO_EVENT_WIFI_AP_STADISCONNECTED
 #undef ARDUINO_EVENT_WIFI_STA_CONNECTED
 #define ARDUINO_EVENT_WIFI_STA_CONNECTED ARDUINO_EVENT_WIFI_STA_CONNECTED
 #undef ARDUINO_EVENT_WIFI_STA_DISCONNECTED
@@ -1398,7 +1550,8 @@ void setupWiFi() {
   Serial.print("[WIFI AP] SoftAP Gateway IP Address : ");
   Serial.println(apIP);
 
-  Serial.println("[WIFI STA] Background router search disabled (SoftAP only mode active).");
+  Serial.println("[WIFI STA] Background router search disabled (SoftAP only "
+                 "mode active).");
   Serial.println("---------------------------------------------");
 
   // Print all network metadata and identifiers on boot (Requirement 1)
@@ -1668,20 +1821,29 @@ void setupHTTPServer() {
         f.close();
         routerSSID = ssid;
         routerPassword = pass;
-        Serial.printf("[WIFI] New credentials saved to SPIFFS via HTTP API: SSID='%s'\n", ssid.c_str());
-        httpServer.send(200, "application/json", "{\"status\":\"WIFI_UPDATED\",\"ssid\":\"" + ssid + "\"}");
+        Serial.printf(
+            "[WIFI] New credentials saved to SPIFFS via HTTP API: SSID='%s'\n",
+            ssid.c_str());
+        httpServer.send(200, "application/json",
+                        "{\"status\":\"WIFI_UPDATED\",\"ssid\":\"" + ssid +
+                            "\"}");
       } else {
-        httpServer.send(500, "application/json", "{\"status\":\"ERROR\",\"message\":\"Failed to save wifi.txt\"}");
+        httpServer.send(
+            500, "application/json",
+            "{\"status\":\"ERROR\",\"message\":\"Failed to save wifi.txt\"}");
       }
     } else {
-      httpServer.send(400, "application/json", "{\"status\":\"ERROR\",\"message\":\"SSID or Pass missing in request parameters\"}");
+      httpServer.send(400, "application/json",
+                      "{\"status\":\"ERROR\",\"message\":\"SSID or Pass "
+                      "missing in request parameters\"}");
     }
   });
 
   // API to reboot the device over HTTP AP connection
   httpServer.on("/api/reboot", HTTP_POST, []() {
     httpServer.send(200, "application/json", "{\"status\":\"REBOOTING\"}");
-    Serial.println("[HTTP] Reboot request received. Restarting ESP32 Gateway...");
+    Serial.println(
+        "[HTTP] Reboot request received. Restarting ESP32 Gateway...");
     delay(1000);
     ESP.restart();
   });
@@ -2036,15 +2198,24 @@ void processCommand(String cmd) {
       testOk = diagnostics.rtc;
     }
 
-    if (module == "RS232") diagnosticsTested.rs232 = true;
-    else if (module == "RS485") diagnosticsTested.rs485 = true;
-    else if (module == "GPRS" || module == "GSM") diagnosticsTested.gprs = true;
-    else if (module == "BUS") diagnosticsTested.bus = true;
-    else if (module == "AP") diagnosticsTested.ap = true;
-    else if (module == "FLASH") diagnosticsTested.flash = true;
-    else if (module == "DI") diagnosticsTested.di = true;
-    else if (module == "DRIVER") diagnosticsTested.driver = true;
-    else if (module == "RTC") diagnosticsTested.rtc = true;
+    if (module == "RS232")
+      diagnosticsTested.rs232 = true;
+    else if (module == "RS485")
+      diagnosticsTested.rs485 = true;
+    else if (module == "GPRS" || module == "GSM")
+      diagnosticsTested.gprs = true;
+    else if (module == "BUS")
+      diagnosticsTested.bus = true;
+    else if (module == "AP")
+      diagnosticsTested.ap = true;
+    else if (module == "FLASH")
+      diagnosticsTested.flash = true;
+    else if (module == "DI")
+      diagnosticsTested.di = true;
+    else if (module == "DRIVER")
+      diagnosticsTested.driver = true;
+    else if (module == "RTC")
+      diagnosticsTested.rtc = true;
 
     Serial.printf("[CMD] Test completed for %s: %s\n", module.c_str(),
                   testOk ? "OK" : "ERROR");
@@ -2110,7 +2281,8 @@ void processCommand(String cmd) {
     long val = valStr.toInt();
     if (val >= 100 && val <= 10000) {
       telemetryInterval = val;
-      Serial.printf("[CMD] Telemetry rate set to: %d ms\n", (int)telemetryInterval);
+      Serial.printf("[CMD] Telemetry rate set to: %d ms\n",
+                    (int)telemetryInterval);
       sendControlStatus();
     }
   } else if (cmd == "GET_INFO") {
@@ -2194,13 +2366,16 @@ void processCommand(String cmd) {
       }
     }
   } else if (cmd == "FORMAT_SPIFFS") {
-    Serial.println("[SPIFFS] Explicit FORMAT_SPIFFS command received. Formatting...");
+    Serial.println(
+        "[SPIFFS] Explicit FORMAT_SPIFFS command received. Formatting...");
     SPIFFS.format();
     if (SPIFFS.begin(false)) {
       Serial.println("[SPIFFS] Format & remount successful.");
       String reply = "{\"status\":\"SPIFFS_FORMATTED\",\"ok\":true}";
-      Serial.print("JSON_PAYLOAD:"); Serial.println(reply);
-      if (tcpClient && tcpClient.connected()) tcpClient.println(reply);
+      Serial.print("JSON_PAYLOAD:");
+      Serial.println(reply);
+      if (tcpClient && tcpClient.connected())
+        tcpClient.println(reply);
     } else {
       Serial.println("[SPIFFS] ERROR: Remount after format failed!");
     }
@@ -2230,12 +2405,16 @@ void handleRunningState() {
   // a concurrent WebServer access crash (ESP32 watchdog panic).
 
   // Connect to the Electron server if not already connected
-  if ((WiFi.status() == WL_CONNECTED || WiFi.softAPIP()[0] != 0) && hasElectronServerIP && !tcpClient.connected()) {
+  if ((WiFi.status() == WL_CONNECTED || WiFi.softAPIP()[0] != 0) &&
+      hasElectronServerIP && !tcpClient.connected()) {
     if (millis() - lastConnectAttempt > connectInterval) {
       lastConnectAttempt = millis();
-      Serial.printf("[TCP] Attempting to connect to Electron Server at %s:9000...\n", electronServerIP.toString().c_str());
+      Serial.printf(
+          "[TCP] Attempting to connect to Electron Server at %s:9000...\n",
+          electronServerIP.toString().c_str());
       if (tcpClient.connect(electronServerIP, 9000)) {
-        Serial.println("[TCP] Successfully connected to Electron Server in RUNNING mode!");
+        Serial.println(
+            "[TCP] Successfully connected to Electron Server in RUNNING mode!");
         sendControlStatus();
       } else {
         Serial.println("[TCP] Connection to Electron Server failed.");
