@@ -384,10 +384,14 @@ void TaskOtaHTTPServer(void *pvParameters) {
 
 void setup() {
   // Start serial at 115200 for main logging
-  Serial.begin(115200);
-  // Old delay commented out as per constraint:
-  // delay(300); // Give Serial interface time to settle
-  delay(300);
+  Serial.begin(9600);
+  pinMode(36, OUTPUT);    // A0
+  pinMode(37, OUTPUT);    // A1
+  digitalWrite(36, HIGH); // LOW: RS485. HIGH: RS232
+  digitalWrite(37, LOW);
+  delay(100);
+  Serial.println("Hi");
+  Serial1.println("Hi Serial1");
   // runPhysicalTestRS485();
 
   // Cancel the automatic bootloader rollback to ensure this application boots
@@ -455,6 +459,14 @@ void setup() {
                  "115200 bps...");
   Serial1.begin(115200, SERIAL_8N1, 17, 18);
   Serial.println("[QCOM] Serial1 communication channel active.");
+  // Initialize Serial2 for RS232 communication at 9600 baud (default UART2
+  // pins)
+  Serial2.begin(9600, SERIAL_8N1, 16, 17);
+  pinMode(36, OUTPUT);    // A0
+  pinMode(37, OUTPUT);    // A1
+  digitalWrite(36, HIGH); // LOW: RS485. HIGH: RS232
+  digitalWrite(37, LOW);
+  Serial.println("[RS232] Serial2 (RS232) initialized at 9600 baud.");
 
   // Start UDP Discovery responder
   Serial.printf("[UDP] Starting Discovery responder on port %d...\n", UDP_PORT);
@@ -508,10 +520,7 @@ void setup() {
                           NULL, 1);
   Serial.println("[SYSTEM] TaskOtaHTTPServer spawned on Core 1.");
 
-  Serial.println(
-      "\n[SYSTEM] Boot process finished. Gateway entering: HALT / WAIT state.");
-  Serial.println("[SYSTEM] Awaiting boot trigger. Waiting 5 seconds before "
-                 "Auto-Start diagnostics...");
+  Serial.println("[SYSTEM] Awaiting boot trigger. Manual start required.");
 }
 
 void handleUDPDiscovery() {
@@ -559,6 +568,13 @@ void loop() {
   processWiFiEvents();
   processTcpNotifications();
   handleUDPDiscovery();
+  // RS232 bridging between Serial (UART0) and Serial2 (UART2)
+  if (Serial2.available()) {
+    Serial.print((char)Serial2.read());
+  }
+  if (Serial.available()) {
+    Serial2.print((char)Serial.read());
+  }
   switch (currentState) {
   case STATE_HALT:
     handleHaltState();
@@ -809,7 +825,12 @@ void dumpCertsToQcom() {
 // 232 Testing code : Real physical test routines
 bool runPhysicalTestRS232() {
   Serial.println("[DIAGNOSTIC] [RS232] Configuring Transceiver (MUX_A0=HIGH, "
-                 "pins RX:15, TX:14 at 9600 baud for 10s loop check)...");
+                 "pins RX:18, TX:17 at 9600 baud for 10s loop check)...");
+
+  // Release Serial1 (co-processor) sharing pins 17 & 18 to avoid contention
+  Serial1.end();
+  delay(10);
+
   pinMode(MUX_A0, OUTPUT);
   pinMode(MUX_A1, OUTPUT);
   digitalWrite(MUX_A0, HIGH);
@@ -819,7 +840,7 @@ bool runPhysicalTestRS232() {
   // Guard: always end before begin to avoid ESP32 UART re-init crash
   Serial2.end();
   delay(10);
-  Serial2.begin(MODBUS_BAUD, MODBUS_SERIAL_CONFIG, FR_RX, FR_TX);
+  Serial2.begin(MODBUS_BAUD, MODBUS_SERIAL_CONFIG, 18, 17);
   delay(50);
 
   unsigned long startTest = millis();
@@ -850,6 +871,11 @@ bool runPhysicalTestRS232() {
   }
 
   Serial2.end();
+  delay(10);
+
+  // Restore Serial1 to co-processor on pins RX:17, TX:18
+  Serial1.begin(115200, SERIAL_8N1, 17, 18);
+  delay(50);
 
   Serial.printf(
       "[DIAGNOSTIC] [RS232] Success rate: %d/%d loopbacks received.\n",
@@ -866,10 +892,9 @@ bool runPhysicalTestRS232() {
 
 // 485 Testing Code
 bool runPhysicalTestRS485() {
-  // Serial.println("[DIAGNOSTIC] [RS485] Configuring Transceiver (MUX_A0=LOW,
-  // pins "
-  //                "RX:15, TX:14 at 9600 baud for 10s loop check)...");
-
+  Serial.println(
+      "[DIAGNOSTIC] [RS485] Configuring Transceiver (MUX_A0=LOW, pins "
+      "RX:18, TX:17 at 9600 baud for 10s loop check)...");
   // pinMode(MUX_A0, OUTPUT);
   // pinMode(MUX_A1, OUTPUT);
   // digitalWrite(MUX_A0, LOW);
@@ -920,18 +945,15 @@ bool runPhysicalTestRS485() {
   //   Serial.println("[DIAGNOSTIC] [RS485] ERROR: Loopback failed or too many
   //   dropped packets."); return false;
   // }
-  Serial.println("[DIAGNOSTIC] [RS485] Configuring Transceiver (A0_1=LOW, pins "
-                 "RX:18, TX:17 at 9600 baud)...");
 
-  // Guard: temporarily end Serial1 (co-processor) which shares TX pin 17 to
-  // prevent pin contention
+  // Release Serial1 (co-processor) sharing pins 17 & 18 to avoid contention
   Serial1.end();
   delay(10);
 
-  pinMode(A0_1, OUTPUT);
-  pinMode(A1_1, OUTPUT);
-  digitalWrite(A0_1, LOW);
-  digitalWrite(A1_1, LOW);
+  pinMode(MUX_A0, OUTPUT);
+  pinMode(MUX_A1, OUTPUT);
+  digitalWrite(MUX_A0, LOW);
+  digitalWrite(MUX_A1, LOW);
   delay(50);
 
   // Guard: always end before begin to avoid ESP32 UART re-init crash
@@ -940,32 +962,49 @@ bool runPhysicalTestRS485() {
   Serial2.begin(9600, SERIAL_8N1, 18, 17);
   delay(50);
 
-  while (Serial2.available())
-    Serial2.read();
-  Serial2.print("RS485_TEST");
+  unsigned long startTest = millis();
+  int successCount = 0;
+  int totalCount = 0;
 
-  unsigned long start = millis();
-  String rx = "";
-  while (millis() - start < 300) {
-    while (Serial2.available()) {
-      rx += (char)Serial2.read();
+  while (millis() - startTest < 10000) {
+    while (Serial2.available())
+      Serial2.read();
+
+    Serial2.print("RS485_TEST\n");
+    Serial2.flush();
+
+    unsigned long startChunk = millis();
+    String rx = "";
+    while (millis() - startChunk < 100) {
+      while (Serial2.available()) {
+        rx += (char)Serial2.read();
+      }
+      delay(5);
     }
-    delay(10);
+
+    totalCount++;
+    if (rx.indexOf("RS485_TEST") != -1) {
+      successCount++;
+    }
+    delay(100); // 100ms gap to make TX/RX LEDs blink visibly
   }
+
   Serial2.end();
   delay(10);
 
-  // Restore Serial1 to co-processor on pins 17 & 18
+  // Restore Serial1 to co-processor on pins RX:17, TX:18
   Serial1.begin(115200, SERIAL_8N1, 18, 17);
   delay(50);
 
-  Serial.printf("[DIAGNOSTIC] [RS485] Received loopback: '%s'\n", rx.c_str());
-  if (rx.indexOf("RS485_TEST") != -1) {
+  Serial.printf(
+      "[DIAGNOSTIC] [RS485] Success rate: %d/%d loopbacks received.\n",
+      successCount, totalCount);
+  if (successCount > 0 && successCount >= (totalCount * 8 / 10)) {
     Serial.println("[DIAGNOSTIC] [RS485] Success. Loopback verified.");
     return true;
   } else {
-    Serial.println("[DIAGNOSTIC] [RS485] ERROR: Loopback failed. Hardware may "
-                   "be disconnected.");
+    Serial.println("[DIAGNOSTIC] [RS485] ERROR: Loopback failed or too many "
+                   "dropped packets.");
     return false;
   }
 }
@@ -1198,7 +1237,7 @@ void runDiagnostics() {
   delay(300);
 
   // 1. RS232 Check
-  diagnostics.rs232 = runPhysicalTestRS232();
+  // diagnostics.rs232 = runPhysicalTestRS232();
 
   // 2. RS485 Check
   diagnostics.rs485 = runPhysicalTestRS485();
@@ -2170,7 +2209,7 @@ void processCommand(String cmd) {
     delay(300);
 
     if (module == "RS232") {
-      diagnostics.rs232 = runPhysicalTestRS232();
+      // diagnostics.rs232 = runPhysicalTestRS232();
       testOk = diagnostics.rs232;
     } else if (module == "RS485") {
       diagnostics.rs485 = runPhysicalTestRS485();

@@ -5,47 +5,47 @@
    DYNAMIC THEME & COLOR PRESETS OVERRIDES
    ========================================================================== */
 :root, [data-theme="quantum-indigo"] {
-  --bg-space: #070a17;
-  --bg-terminal: #020408;
-  --accent-primary: #7000ff;   /* Quantum Violet */
-  --accent-secondary: #00c6ff; /* Electric Sapphire */
-  --accent-glow: rgba(112, 0, 255, 0.4);
-  --grad-primary: linear-gradient(135deg, #7000ff 0%, #00c6ff 100%);
-  --grad-primary-rgb: 112, 0, 255;
-  --glow-theme: 0 0 22px rgba(112, 0, 255, 0.35), inset 0 0 10px rgba(112, 0, 255, 0.15);
+  --bg-space: #090b11;
+  --bg-terminal: #05060a;
+  --accent-primary: #007aff;   /* Apple iOS Blue */
+  --accent-secondary: #8e8e93; /* Apple Silver */
+  --accent-glow: rgba(0, 122, 255, 0.15);
+  --grad-primary: linear-gradient(135deg, #0a84ff 0%, #5e5ce6 100%);
+  --grad-primary-rgb: 10, 132, 255;
+  --glow-theme: 0 8px 32px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="cyber-orchid"] {
-  --bg-space: #0c0516;
-  --bg-terminal: #05010a;
-  --accent-primary: #f953c6;   /* Lustrous Rose */
-  --accent-secondary: #7000ff; /* Quantum Violet */
-  --accent-glow: rgba(249, 83, 198, 0.45);
-  --grad-primary: linear-gradient(135deg, #f953c6 0%, #7000ff 100%);
-  --grad-primary-rgb: 249, 83, 198;
-  --glow-theme: 0 0 22px rgba(249, 83, 198, 0.35), inset 0 0 10px rgba(249, 83, 198, 0.15);
+  --bg-space: #0f1016; /* Dark Metallic */
+  --bg-terminal: #090a0f;
+  --accent-primary: #8e8e93;   /* Platinum Muted */
+  --accent-secondary: #e5e5ea; /* Off White */
+  --accent-glow: rgba(255, 255, 255, 0.05);
+  --grad-primary: linear-gradient(135deg, #8e8e93 0%, #d1d1d6 100%);
+  --grad-primary-rgb: 142, 142, 147;
+  --glow-theme: 0 8px 32px 0 rgba(0, 0, 0, 0.45), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
 }
 
 [data-theme="mint-aurora"] {
-  --bg-space: #020a0e;
-  --bg-terminal: #010406;
-  --accent-primary: #00e676;   /* Mint Emerald */
-  --accent-secondary: #00c6ff; /* Electric Sapphire */
-  --accent-glow: rgba(0, 230, 118, 0.4);
-  --grad-primary: linear-gradient(135deg, #00e676 0%, #00c6ff 100%);
-  --grad-primary-rgb: 0, 230, 118;
-  --glow-theme: 0 0 22px rgba(0, 230, 118, 0.35), inset 0 0 10px rgba(0, 230, 118, 0.15);
+  --bg-space: #080d0a; /* Dark Forest */
+  --bg-terminal: #040705;
+  --accent-primary: #30d158;   /* Muted Emerald */
+  --accent-secondary: #64d2ff; /* Muted Cyan */
+  --accent-glow: rgba(48, 209, 88, 0.15);
+  --grad-primary: linear-gradient(135deg, #30d158 0%, #0a84ff 100%);
+  --grad-primary-rgb: 48, 209, 88;
+  --glow-theme: 0 8px 32px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="solar-flare"] {
-  --bg-space: #0d0602;
-  --bg-terminal: #050201;
-  --accent-primary: #ff7300;   /* Sunset Orange */
-  --accent-secondary: #f953c6; /* Lustrous Rose */
-  --accent-glow: rgba(255, 115, 0, 0.45);
-  --grad-primary: linear-gradient(135deg, #ff7300 0%, #f953c6 100%);
-  --grad-primary-rgb: 255, 115, 0;
-  --glow-theme: 0 0 22px rgba(255, 115, 0, 0.35), inset 0 0 10px rgba(255, 115, 0, 0.15);
+  --bg-space: #070c14; /* Deep Ocean */
+  --bg-terminal: #03060a;
+  --accent-primary: #0a84ff;   /* iOS Blue */
+  --accent-secondary: #bf5af2; /* Muted Violet */
+  --accent-glow: rgba(10, 132, 255, 0.15);
+  --grad-primary: linear-gradient(135deg, #0a84ff 0%, #bf5af2 100%);
+  --grad-primary-rgb: 10, 132, 255;
+  --glow-theme: 0 8px 32px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
 }
 
 /* Dynamic Fonts Selector */
@@ -61,34 +61,34 @@
 
 :root {
   /* Text and base variables mapped dynamically to the chosen presets */
-  --accent-blue: var(--accent-secondary);
-  --accent-pink: var(--accent-primary);
+  --accent-blue: var(--accent-primary);
+  --accent-pink: var(--accent-secondary);
   --accent-purple: var(--accent-primary);
-  --accent-emerald: #00e676;   /* Mint Emerald */
-  --accent-orange: #ff7300;    /* Sunset Orange */
-  --accent-red: #ff4e50;       /* Coral Warning Red */
+  --accent-emerald: #30d158;   /* Apple Green */
+  --accent-orange: #ff9f0a;    /* Apple Orange */
+  --accent-red: #ff453a;       /* Apple Red */
   
   --text-white: #ffffff;
-  --text-cyan: #e3f2fd;
-  --text-dim: #94a3b8;
-  --text-muted: #475569;
+  --text-cyan: #f2f2f7;
+  --text-dim: #aeaeb2;
+  --text-muted: #636366;
   
-  --glass-bg: rgba(13, 20, 38, 0.45);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-border-hover: var(--accent-secondary);
-  --input-bg: rgba(6, 10, 20, 0.6);
+  --glass-bg: rgba(22, 28, 45, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.09);
+  --glass-border-hover: rgba(255, 255, 255, 0.22);
+  --input-bg: rgba(10, 12, 18, 0.6);
   
   --grad-pink-blue: var(--grad-primary);
-  --grad-cyan-purple: linear-gradient(135deg, var(--accent-secondary) 0%, var(--accent-primary) 100%);
-  --grad-emerald-cyan: linear-gradient(135deg, var(--accent-emerald) 0%, var(--accent-secondary) 100%);
-  --grad-orange-pink: linear-gradient(135deg, var(--accent-orange) 0%, var(--accent-pink) 100%);
-  --grad-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+  --grad-cyan-purple: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  --grad-emerald-cyan: linear-gradient(135deg, var(--accent-emerald) 0%, var(--accent-primary) 100%);
+  --grad-orange-pink: linear-gradient(135deg, var(--accent-orange) 0%, var(--accent-primary) 100%);
+  --grad-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
   
-  --glow-blue: 0 0 20px rgba(0, 198, 255, 0.25), inset 0 0 10px rgba(0, 198, 255, 0.1);
+  --glow-blue: 0 4px 12px rgba(0, 0, 0, 0.3);
   --glow-pink: var(--glow-theme);
-  --glow-emerald: 0 0 20px rgba(0, 230, 118, 0.25), inset 0 0 10px rgba(0, 230, 118, 0.1);
-  --glow-purple: 0 0 25px var(--accent-glow);
-  --shadow-card: 0 8px 32px 0 rgba(4, 6, 11, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 0 rgba(0, 0, 0, 0.2);
+  --glow-emerald: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --glow-purple: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 10px 40px 0 rgba(0, 0, 0, 0.35), inset 0 1px 0 0 rgba(255, 255, 255, 0.09), inset 0 -1px 0 0 rgba(0, 0, 0, 0.1);
   
   --font-mono: 'JetBrains Mono', monospace;
 }
@@ -106,10 +106,9 @@ body {
   font-family: var(--font-sans);
   background-color: var(--bg-space);
   background-image: 
-    radial-gradient(circle at 15% 15%, rgba(0, 198, 255, 0.12) 0%, transparent 50%),
-    radial-gradient(circle at 85% 85%, rgba(112, 0, 255, 0.15) 0%, transparent 50%),
-    radial-gradient(circle at 50% 50%, rgba(249, 83, 198, 0.05) 0%, transparent 60%),
-    radial-gradient(circle at 80% 20%, rgba(112, 0, 255, 0.1) 0%, transparent 40%);
+    radial-gradient(circle at 10% 20%, rgba(10, 132, 255, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 90% 80%, rgba(94, 92, 230, 0.06) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.01) 0%, transparent 70%);
   background-attachment: fixed;
   color: var(--text-cyan);
   height: 100vh;
@@ -412,6 +411,18 @@ select {
 
 .page-view.active {
   display: flex;
+  animation: apple-slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes apple-slide-up {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .view-header {
@@ -463,30 +474,30 @@ select {
    GLASS PANELS (CYBERPUNK CARDS)
    ========================================================================== */
 .glass-card {
-  background: var(--grad-glass);
+  background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: 16px;
   padding: 24px;
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(25px) saturate(180%);
+  -webkit-backdrop-filter: blur(25px) saturate(180%);
   box-shadow: var(--shadow-card);
   position: relative;
   overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .glass-card::before {
   content: '';
   position: absolute;
-  top: 0; left: 0; width: 100%; height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(249, 83, 198, 0.5), rgba(0, 198, 255, 0.5), transparent);
-  opacity: 0.5;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, transparent 40%);
+  pointer-events: none;
 }
 
 .glass-card:hover {
   border-color: var(--glass-border-hover);
-  box-shadow: 0 12px 40px 0 rgba(3, 0, 10, 0.65), var(--glow-blue), inset 0 1px 0 0 rgba(255, 255, 255, 0.25);
-  transform: translateY(-3px);
+  box-shadow: 0 20px 40px 0 rgba(0, 0, 0, 0.45), inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
+  transform: translateY(-2px);
 }
 
 .glass-card h3 {

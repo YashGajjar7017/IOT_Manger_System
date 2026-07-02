@@ -460,12 +460,8 @@ export default function App() {
         setBootProgress(payload.progress);
         setBootStep(payload.step);
         setBootMessage(payload.message);
-        setIsBooting(true);
-        setControlsDisabled(true);
-
-        if (payload.step === 'QCOM_SHIFT' && payload.progress === 100) {
-          setTimeout(() => setIsBooting(false), 2000);
-        }
+        setIsBooting(false);
+        setControlsDisabled(false);
       } else if (payload.status === 'BOOT_SUCCESS') {
         const successSignature = `${payload.imei || ''}|${payload.mac || ''}|${JSON.stringify(payload.diagnostics || {})}`;
         if (lastBootSuccessSignature.current === successSignature && bootStep === 'COMPLETE') {
@@ -2377,7 +2373,7 @@ Overall Status : ${overallStatus}
             </div>
 
             {/* System Boot & Update Orchestrator */}
-            {connection.type && (
+            {false && (
               <div className="glass-card boot-orchestrator-card">
                 <div className="boot-orchestrator-header">
                   <div className="boot-title-wrapper">
