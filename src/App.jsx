@@ -155,9 +155,49 @@ export default function App() {
     return saved ? JSON.parse(saved) : null;
   });
 
+  // Ocean theme cinematic state variables
+  const [showOceanAnim, setShowOceanAnim] = useState(false);
+  const [oceanAnimStage, setOceanAnimStage] = useState('idle');
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', currentTheme);
     localStorage.setItem('theme', currentTheme);
+  }, [currentTheme]);
+
+  // Hook to run ocean temple entrance cinematic timeline
+  useEffect(() => {
+    if (currentTheme === 'deep-sea-ocean') {
+      setShowOceanAnim(true);
+      setOceanAnimStage('sky-to-sea');
+
+      // Timeline sequence
+      const t1 = setTimeout(() => {
+        setOceanAnimStage('temple-reach');
+      }, 3000); // 3 seconds diving through sky into sea
+
+      const t2 = setTimeout(() => {
+        setOceanAnimStage('shaking');
+      }, 6000); // 3 seconds reaching/descending onto the temple
+
+      const t3 = setTimeout(() => {
+        setOceanAnimStage('door-opening');
+      }, 8000); // 2 seconds earthquake/temple shaking
+
+      const t4 = setTimeout(() => {
+        setOceanAnimStage('done');
+        setShowOceanAnim(false);
+      }, 10500); // 2.5 seconds opening door with bright golden flash
+
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+        clearTimeout(t4);
+      };
+    } else {
+      setShowOceanAnim(false);
+      setOceanAnimStage('idle');
+    }
   }, [currentTheme]);
 
   useEffect(() => {
@@ -4362,7 +4402,6 @@ Overall Status : ${overallStatus}
                     <div
                       className={`theme-preset-card ${currentTheme === 'minecraft' ? 'active' : ''}`}
                       onClick={() => setCurrentTheme('minecraft')}
-                      // style={{ '--theme-card-border': '#5b8731', '--theme-card-bg-rgb': '91, 135, 49', '--theme-preview-grad': 'linear-gradient(135deg, #5b8731 0%, #866043 100%)' }}
                       style={{ '--theme-card-border': '#5b8731', '--theme-card-bg-rgb': '91, 135, 49', '--theme-preview-grad': 'linear-gradient(135deg, #5b8731 0%, #866043 100%)' }}
                     >
                       <div className="theme-preview-bar"></div>
@@ -4376,6 +4415,18 @@ Overall Status : ${overallStatus}
                     >
                       <div className="theme-preview-bar"></div>
                       <span className="theme-preset-name">Cherry Grove Edition</span>
+                    </div>
+
+                    <div
+                      className={`theme-preset-card ${currentTheme === 'deep-sea-ocean' ? 'active' : ''}`}
+                      onClick={() => {
+                        setCurrentTheme('deep-sea-ocean');
+                        setShowOceanAnim(true);
+                      }}
+                      style={{ '--theme-card-border': '#0d9488', '--theme-card-bg-rgb': '13, 148, 136', '--theme-preview-grad': 'linear-gradient(135deg, #060e17 0%, #0d9488 100%)' }}
+                    >
+                      <div className="theme-preview-bar"></div>
+                      <span className="theme-preset-name">Deep Sea Ocean</span>
                     </div>
                   </div>
                 </div>
@@ -4500,6 +4551,45 @@ Overall Status : ${overallStatus}
         </main>
 
       </div>
+
+      {/* Cinematic Ocean Temple Transition Animation Overlay */}
+      {showOceanAnim && (
+        <div className={`ocean-anim-overlay stage-${oceanAnimStage}`}>
+          <div className="sky-bg">
+            <div className="cloud-pixel c1"></div>
+            <div className="cloud-pixel c2"></div>
+            <div className="cloud-pixel c3"></div>
+          </div>
+          
+          <div className="water-depths">
+            <div className="sun-rays"></div>
+            <div className="bubble b1"></div>
+            <div className="bubble b2"></div>
+            <div className="bubble b3"></div>
+            <div className="bubble b4"></div>
+            <div className="bubble b5"></div>
+          </div>
+
+          <div className="temple-container">
+            <div className="temple-silhouette">
+              <div className="temple-roof"></div>
+              <div className="temple-body">
+                <div className="temple-pillars">
+                  <div className="pillar p1"></div>
+                  <div className="pillar p2"></div>
+                </div>
+                <div className="temple-entrance">
+                  <div className="door-left"></div>
+                  <div className="door-right"></div>
+                  <div className="gold-glow"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flash-screen"></div>
+        </div>
+      )}
     </>
   );
 }

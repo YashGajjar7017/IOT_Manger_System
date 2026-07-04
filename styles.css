@@ -2923,3 +2923,581 @@ body {
   0% { transform: translateY(110vh) rotate(0deg); }
   100% { transform: translateY(-15vh) rotate(360deg); }
 }
+
+
+/* ==========================================================================
+   DEEP SEA OCEAN / OCEAN TEMPLE THEME
+   ========================================================================== */
+[data-theme="deep-sea-ocean"] {
+  --font-sans: 'VT323', monospace !important;
+  --font-mono: 'VT323', monospace !important;
+
+  /* Deep Sea Water & Dark Prismarine Colors */
+  --bg-space: #060e17 !important; /* Midnight dark blue */
+  --bg-terminal: #040910 !important;
+  --mc-panel: #0a1928 !important; /* Prismarine dark panel bg */
+  --mc-panel-inner: #050d15 !important;
+  --mc-border-light: #20536d !important; /* Prismarine aqua border */
+  --mc-border-dark: #02070e !important;
+
+  --text-white: #e0f2fe !important;
+  --text-cyan: #22d3ee !important; /* Glowing cyan */
+  --text-dim: #8ec5fc !important;
+  --text-muted: #38bdf8 !important;
+
+  --accent-primary: #10b981 !important; /* Prismarine green */
+  --accent-secondary: #eab308 !important; /* Gold (Sea lantern) */
+
+  --grad-primary: #0f766e !important; /* Teal gradient */
+  --grad-pink-blue: #0284c7 !important;
+  --grad-cyan-purple: #1e1b4b !important;
+  --grad-emerald-cyan: #0d9488 !important;
+  --grad-orange-pink: #eab308 !important;
+
+  /* Custom navigation highlight colors */
+  --nav-active-bg: #0f766e !important;
+  --nav-active-border-l: #14b8a6 !important;
+  --nav-active-border-d: #042f2e !important;
+  --nav-active-text-shadow: #022c22 !important;
+
+  /* Custom button highlight colors */
+  --btn-bg: #11293c !important;
+  --btn-border-l: #20536d !important;
+  --btn-border-d: #02070e !important;
+  --btn-hover-bg: #1e3e5c !important;
+  --btn-hover-border-l: #2e6d8c !important;
+  --btn-hover-border-d: #05101a !important;
+}
+
+/* Inherit blocky layout for Deep Sea Ocean */
+[data-theme="deep-sea-ocean"] .window-titlebar,
+[data-theme="deep-sea-ocean"] .sidebar,
+[data-theme="deep-sea-ocean"] .card,
+[data-theme="deep-sea-ocean"] .panel,
+[data-theme="deep-sea-ocean"] .control-box,
+[data-theme="deep-sea-ocean"] .stat-chip,
+[data-theme="deep-sea-ocean"] .device-card,
+[data-theme="deep-sea-ocean"] .data-card,
+[data-theme="deep-sea-ocean"] .log-box,
+[data-theme="deep-sea-ocean"] .glass-card,
+[data-theme="deep-sea-ocean"] .ota-drop,
+[data-theme="deep-sea-ocean"] .btn-group-card,
+[data-theme="deep-sea-ocean"] .tab-content,
+[data-theme="deep-sea-ocean"] .status-box,
+[data-theme="deep-sea-ocean"] .terminal-container,
+[data-theme="deep-sea-ocean"] .device-details,
+[data-theme="deep-sea-ocean"] .cert-card,
+[data-theme="deep-sea-ocean"] .telemetry-grid,
+[data-theme="deep-sea-ocean"] .modal-content,
+[data-theme="deep-sea-ocean"] .telemetry-card,
+[data-theme="deep-sea-ocean"] .metric-box {
+  border-radius: 0px !important;
+  border: 4px solid !important;
+  border-color: var(--mc-border-light) var(--mc-border-dark) var(--mc-border-dark) var(--mc-border-light) !important;
+  background-color: var(--mc-panel) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+[data-theme="deep-sea-ocean"] .brand-icon svg,
+[data-theme="deep-sea-ocean"] .titlebar-logo .logo-dot {
+  display: none !important;
+}
+
+[data-theme="deep-sea-ocean"] .brand-text h2,
+[data-theme="deep-sea-ocean"] .titlebar-logo {
+  font-family: 'Press Start 2P', monospace !important;
+  font-size: 11px !important;
+  color: var(--text-cyan) !important;
+  text-shadow: 2px 2px 0px var(--grad-primary) !important;
+  letter-spacing: -0.5px !important;
+}
+
+[data-theme="deep-sea-ocean"] .brand-text span,
+[data-theme="deep-sea-ocean"] .titlebar-logo span {
+  font-family: 'VT323', monospace !important;
+  font-size: 15px !important;
+  color: var(--text-dim) !important;
+}
+
+[data-theme="deep-sea-ocean"] .nav-item {
+  font-family: 'Press Start 2P', monospace !important;
+  font-size: 10px !important;
+  border-radius: 0px !important;
+  color: var(--text-dim) !important;
+  text-shadow: 1px 1px 0px var(--bg-terminal) !important;
+}
+
+[data-theme="deep-sea-ocean"] .nav-item.active {
+  background-color: var(--nav-active-bg) !important;
+  border-color: var(--nav-active-border-l) var(--nav-active-border-d) var(--nav-active-border-d) var(--nav-active-border-l) !important;
+  border-width: 4px !important;
+  border-style: solid !important;
+  color: var(--text-white) !important;
+  text-shadow: 2px 2px 0px var(--nav-active-text-shadow) !important;
+}
+
+[data-theme="deep-sea-ocean"] .btn {
+  font-family: 'Press Start 2P', monospace !important;
+  font-size: 10px !important;
+  border-radius: 0px !important;
+  background-color: var(--btn-bg) !important;
+  border: 4px solid !important;
+  border-color: var(--btn-border-l) var(--btn-border-d) var(--btn-border-d) var(--btn-border-l) !important;
+  color: var(--text-white) !important;
+  text-shadow: 1px 1px 0px rgba(0, 0, 0, 0.5) !important;
+}
+
+[data-theme="deep-sea-ocean"] .btn:hover:not(:disabled) {
+  background-color: var(--btn-hover-bg) !important;
+  border-color: var(--btn-hover-border-l) var(--btn-hover-border-d) var(--btn-hover-border-d) var(--btn-hover-border-l) !important;
+}
+
+/* Enable ocean backdrop */
+[data-theme="deep-sea-ocean"] .ocean-background {
+  display: block !important;
+}
+
+/* Background elements styling */
+.ocean-background {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background: radial-gradient(circle at 50% 0%, #0c2b45 0%, #051321 60%, #02070d 100%);
+  overflow: hidden;
+}
+
+.ocean-sunrays {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(65deg, rgba(34, 211, 238, 0.04) 0px, rgba(34, 211, 238, 0.04) 40px, transparent 40px, transparent 80px);
+  mask-image: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.8) 0%, transparent 60%);
+  -webkit-mask-image: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.8) 0%, transparent 60%);
+  animation: lightSway 15s ease-in-out infinite alternate;
+}
+
+@keyframes lightSway {
+  0% { transform: scale(1) rotate(-3deg); }
+  100% { transform: scale(1.1) rotate(3deg); }
+}
+
+.ocean-bubbles-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.ocean-bubble {
+  position: absolute;
+  bottom: -20px;
+  background-color: rgba(34, 211, 238, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  box-shadow: inset 1px 1px 2px rgba(255, 255, 255, 0.4);
+}
+
+@keyframes bubbleRise {
+  0% {
+    transform: translateY(0) translateX(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.8;
+  }
+  90% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-110vh) translateX(50px);
+    opacity: 0;
+  }
+}
+
+/* Background Temple Outline */
+.background-temple {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 500px;
+  height: 260px;
+  opacity: 0.07;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.temple-roof-bg {
+  width: 300px;
+  height: 25px;
+  background-color: #0b2236;
+  margin: 0 auto;
+  border-top: 4px solid #14b8a6;
+}
+
+.temple-arch-bg {
+  width: 400px;
+  height: 235px;
+  background-color: #081d2e;
+  margin: 0 auto;
+  border: 4px solid #0f766e;
+  border-bottom: none;
+  position: relative;
+}
+
+.temple-lantern-bg {
+  position: absolute;
+  top: 35px;
+  width: 20px;
+  height: 20px;
+  background-color: #eab308;
+  box-shadow: 0 0 15px #eab308;
+}
+
+.temple-lantern-bg.l1 { left: 40px; }
+.temple-lantern-bg.l2 { right: 40px; }
+
+/* Moving waves float animation for dashboard cards */
+[data-theme="deep-sea-ocean"] .glass-card,
+[data-theme="deep-sea-ocean"] .card,
+[data-theme="deep-sea-ocean"] .sidebar,
+[data-theme="deep-sea-ocean"] .panel {
+  animation: floatOceanWave 10s ease-in-out infinite alternate;
+}
+
+[data-theme="deep-sea-ocean"] .glass-card:nth-child(2n),
+[data-theme="deep-sea-ocean"] .card:nth-child(2n) {
+  animation: floatOceanWave 12s ease-in-out infinite alternate;
+  animation-delay: -3s;
+}
+
+[data-theme="deep-sea-ocean"] .glass-card:nth-child(3n),
+[data-theme="deep-sea-ocean"] .card:nth-child(3n) {
+  animation: floatOceanWave 14s ease-in-out infinite alternate;
+  animation-delay: -6s;
+}
+
+[data-theme="deep-sea-ocean"] .sidebar {
+  animation: floatOceanWave 16s ease-in-out infinite alternate;
+  animation-delay: -1.5s;
+}
+
+[data-theme="deep-sea-ocean"] .terminal-container {
+  animation: floatOceanWave 11s ease-in-out infinite alternate;
+  animation-delay: -4.5s;
+}
+
+@keyframes floatOceanWave {
+  0% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(0.4deg);
+  }
+  100% {
+    transform: translateY(4px) rotate(-0.4deg);
+  }
+}
+
+/* ==========================================================================
+   CINEMATIC INTRO ANIMATION OVERLAY
+   ========================================================================== */
+.ocean-anim-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  background-color: #87ceeb;
+  transition: background-color 3s ease-in-out;
+  pointer-events: all;
+}
+
+/* Stage-based adjustments for background color of overlay */
+.ocean-anim-overlay.stage-sky-to-sea {
+  animation: skyToSeaBg 3s forwards;
+}
+
+.ocean-anim-overlay.stage-temple-reach,
+.ocean-anim-overlay.stage-shaking,
+.ocean-anim-overlay.stage-door-opening {
+  background-color: #040d18;
+}
+
+@keyframes skyToSeaBg {
+  0% { background-color: #87ceeb; } /* Sky Blue */
+  35% { background-color: #008b8b; } /* Cyan/Teal */
+  70% { background-color: #002b49; } /* Ocean Blue */
+  100% { background-color: #040d18; } /* Midnight Deep Blue */
+}
+
+/* Sky & Clouds layer */
+.ocean-anim-overlay .sky-bg {
+  position: absolute;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.ocean-anim-overlay .cloud-pixel {
+  position: absolute;
+  background-color: rgba(255, 255, 255, 0.85);
+  box-shadow: 4px 4px 0 #000;
+}
+
+.ocean-anim-overlay .cloud-pixel.c1 {
+  width: 120px;
+  height: 40px;
+  top: 15%;
+  left: 10%;
+  animation: cloudFlyUp 3s cubic-bezier(0.55, 0.055, 0.675, 0.19) forwards;
+}
+
+.ocean-anim-overlay .cloud-pixel.c2 {
+  width: 180px;
+  height: 50px;
+  top: 25%;
+  right: 15%;
+  animation: cloudFlyUp 3s cubic-bezier(0.55, 0.055, 0.675, 0.19) forwards;
+  animation-delay: 0.2s;
+}
+
+.ocean-anim-overlay .cloud-pixel.c3 {
+  width: 100px;
+  height: 35px;
+  top: 40%;
+  left: 45%;
+  animation: cloudFlyUp 3s cubic-bezier(0.55, 0.055, 0.675, 0.19) forwards;
+  animation-delay: 0.1s;
+}
+
+@keyframes cloudFlyUp {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-120vh); }
+}
+
+/* Water rays and depth layer */
+.ocean-anim-overlay .water-depths {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 2s ease-in-out;
+}
+
+.ocean-anim-overlay.stage-sky-to-sea .water-depths {
+  opacity: 1;
+}
+
+.ocean-anim-overlay .water-depths .sun-rays {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(80deg, rgba(34, 211, 238, 0.1) 0px, rgba(34, 211, 238, 0.1) 60px, transparent 60px, transparent 120px);
+  mask-image: radial-gradient(circle at 50% 0%, rgba(255,255,255,1) 0%, transparent 80%);
+  -webkit-mask-image: radial-gradient(circle at 50% 0%, rgba(255,255,255,1) 0%, transparent 80%);
+  animation: rayScroll 3s linear infinite;
+}
+
+@keyframes rayScroll {
+  0% { transform: translateY(-100px) rotate(0deg); }
+  100% { transform: translateY(0) rotate(2deg); }
+}
+
+/* Dive-in Bubbles */
+.ocean-anim-overlay .water-depths .bubble {
+  position: absolute;
+  background-color: rgba(255, 255, 255, 0.3);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  animation: diveBubble 3s linear forwards;
+}
+
+.ocean-anim-overlay .water-depths .bubble.b1 { width: 30px; height: 30px; left: 20%; animation-delay: 0.5s; }
+.ocean-anim-overlay .water-depths .bubble.b2 { width: 15px; height: 15px; left: 40%; animation-delay: 1.2s; }
+.ocean-anim-overlay .water-depths .bubble.b3 { width: 25px; height: 25px; left: 60%; animation-delay: 0.8s; }
+.ocean-anim-overlay .water-depths .bubble.b4 { width: 20px; height: 20px; left: 80%; animation-delay: 1.5s; }
+.ocean-anim-overlay .water-depths .bubble.b5 { width: 35px; height: 35px; left: 50%; animation-delay: 1.0s; }
+
+@keyframes diveBubble {
+  0% { transform: translateY(105vh) scale(0.5); opacity: 0; }
+  20% { opacity: 0.9; }
+  100% { transform: translateY(-15vh) scale(1.5); opacity: 0; }
+}
+
+/* Temple rising */
+.ocean-anim-overlay .temple-container {
+  position: absolute;
+  bottom: 0;
+  width: 600px;
+  height: 400px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  transform: translateY(110%);
+  transition: transform 3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ocean-anim-overlay.stage-temple-reach .temple-container,
+.ocean-anim-overlay.stage-shaking .temple-container,
+.ocean-anim-overlay.stage-door-opening .temple-container {
+  transform: translateY(0);
+}
+
+/* Shaking overlay activation */
+.ocean-anim-overlay.stage-shaking {
+  animation: screen-shake 2s infinite;
+}
+
+@keyframes screen-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  10% { transform: translate(-8px, -8px) rotate(-0.8deg); }
+  20% { transform: translate(8px, 8px) rotate(0.8deg); }
+  30% { transform: translate(-8px, 8px) rotate(-0.8deg); }
+  40% { transform: translate(8px, -8px) rotate(0.8deg); }
+  50% { transform: translate(-5px, 5px) rotate(-0.5deg); }
+  60% { transform: translate(5px, -5px) rotate(0.5deg); }
+  70% { transform: translate(-8px, 4px) rotate(-0.8deg); }
+  80% { transform: translate(8px, -4px) rotate(0.8deg); }
+  90% { transform: translate(-3px, -3px) rotate(-0.3deg); }
+}
+
+/* Temple structure visual */
+.temple-silhouette {
+  width: 100%;
+  height: 100%;
+  background-color: #0b1a29;
+  border: 8px solid #0f766e;
+  border-bottom: none;
+  position: relative;
+  box-shadow: 0 0 50px rgba(13, 148, 136, 0.3);
+}
+
+.temple-silhouette::before {
+  content: '';
+  position: absolute;
+  top: -60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 400px;
+  height: 60px;
+  background-color: #0a1724;
+  border: 8px solid #0f766e;
+  border-bottom: none;
+}
+
+.temple-silhouette .temple-roof {
+  position: absolute;
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 250px;
+  height: 40px;
+  background-color: #0f766e;
+  border: 8px solid #14b8a6;
+  border-bottom: none;
+}
+
+.temple-silhouette .temple-body {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.temple-silhouette .pillar {
+  position: absolute;
+  bottom: 0;
+  width: 50px;
+  height: 100%;
+  background-color: #071320;
+  border-right: 4px solid #0f766e;
+  border-left: 4px solid #0f766e;
+}
+
+.temple-silhouette .pillar.p1 { left: 80px; }
+.temple-silhouette .pillar.p2 { right: 80px; }
+
+/* Temple Entrance & Door sliding */
+.temple-entrance {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 160px;
+  height: 180px;
+  background-color: #02070e;
+  border: 8px solid #14b8a6;
+  border-bottom: none;
+  display: flex;
+  overflow: hidden;
+  box-shadow: inset 0 0 30px #000;
+}
+
+.temple-entrance .door-left,
+.temple-entrance .door-right {
+  width: 50%;
+  height: 100%;
+  background-color: #0d9488;
+  border: 4px solid #0f766e;
+  z-index: 2;
+  transition: transform 2s cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+.temple-entrance .door-left {
+  border-right: 2px solid #14b8a6;
+}
+
+.temple-entrance .door-right {
+  border-left: 2px solid #14b8a6;
+}
+
+.stage-door-opening .temple-entrance .door-left {
+  transform: translateX(-100%);
+}
+
+.stage-door-opening .temple-entrance .door-right {
+  transform: translateX(100%);
+}
+
+/* Inner gold glow expansion */
+.temple-entrance .gold-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.1);
+  width: 40px;
+  height: 40px;
+  background-color: #fbbf24;
+  border-radius: 50%;
+  filter: blur(10px);
+  opacity: 0;
+  z-index: 1;
+  box-shadow: 0 0 50px #fbbf24, 0 0 100px #fbbf24;
+  transition: transform 2s cubic-bezier(0.7, 0, 0.3, 1), opacity 1.5s ease-in-out;
+}
+
+.stage-door-opening .temple-entrance .gold-glow {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(15);
+}
+
+/* Blinding flash overlay screen */
+.ocean-anim-overlay .flash-screen {
+  position: absolute;
+  inset: 0;
+  background-color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10;
+  transition: opacity 1.5s ease-in-out;
+}
+
+.stage-door-opening .flash-screen {
+  opacity: 1;
+  background-color: #fcd34d; /* Golden-yellow flash */
+}

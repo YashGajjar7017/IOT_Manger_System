@@ -9519,3 +9519,10 @@
 [7/4/2026, 4:02:00 PM] [TCP SERVER ERROR] read ECONNRESET
 [7/4/2026, 4:02:00 PM] Gateway interface closed.
 [7/4/2026, 4:02:00 PM] [TCP SERVER] ESP32 client socket closed.
+[7/4/2026, 4:16:34 PM] [CACHE] ⚡ Loaded 2 device(s) from disk cache — dashboard ready instantly.
+[7/4/2026, 4:17:59 PM] [WORKER] Failed to load database module: Cannot read properties of undefined (reading 'then')
+[7/4/2026, 4:17:59 PM] [CACHE] ⚡ Loaded 2 device(s) from disk cache — dashboard ready instantly.
+[7/4/2026, 4:17:59 PM] [WORKER] Data processing worker thread started.
+[7/4/2026, 4:19:42 PM] [WORKER] Failed to load database module: Cannot read properties of undefined (reading 'then')
+[7/4/2026, 4:19:42 PM] [CACHE] ⚡ Loaded 2 device(s) from disk cache — dashboard ready instantly.
+[7/4/2026, 4:19:42 PM] [WORKER] Data processing worker thread started.

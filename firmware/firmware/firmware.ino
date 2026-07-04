@@ -58,8 +58,8 @@
 #define MUX_A1 37 // MUX select bit 1
 
 // RS232 port  (MUX_A0=HIGH, MUX_A1=LOW → Serial2)
-#define RS232_RX 15
-#define RS232_TX 14
+#define RS232_RX 18
+#define RS232_TX 17
 
 // RS485 port  (MUX_A0=LOW,  MUX_A1=LOW → Serial2)
 #define RS485_RX 18
@@ -408,14 +408,12 @@ void testRS232() {
   muxRS232();
   Serial2.end();
   delay(20);
-  // Serial2.begin(MODBUS_BAUD, MODBUS_CFG, RS232_RX, RS232_TX); delay(50);
-  Serial2.begin(MODBUS_BAUD, MODBUS_CFG, 18, 17);
+  Serial2.begin(MODBUS_BAUD, MODBUS_CFG, RS232_RX, RS232_TX);
   delay(50);
 
   Serial1.end();
   delay(20);
-  // Serial1.begin(MODBUS_BAUD, MODBUS_CFG, RS232_SLAVE_RX, RS232_SLAVE_TX);
-  Serial1.begin(MODBUS_BAUD, MODBUS_CFG, 18, 17);
+  Serial1.begin(MODBUS_BAUD, MODBUS_CFG, RS232_SLAVE_RX, RS232_SLAVE_TX);
   delay(50);
 
   logFmt("Master : TX=GPIO%d  RX=GPIO%d\n", RS232_TX, RS232_RX);

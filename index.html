@@ -58,6 +58,18 @@
   <!-- Background block items layer -->
   <div class="item-layer" id="block-items"></div>
 
+  <!-- Deep Sea Ocean theme background elements -->
+  <div class="ocean-background">
+    <div class="ocean-sunrays"></div>
+    <div class="ocean-bubbles-container" id="ocean-bubbles"></div>
+    <div class="background-temple">
+      <div class="temple-roof-bg"></div>
+      <div class="temple-arch-bg"></div>
+      <div class="temple-lantern-bg l1"></div>
+      <div class="temple-lantern-bg l2"></div>
+    </div>
+  </div>
+
   <!-- React App Root Container -->
   <div id="root"></div>
   
@@ -176,11 +188,69 @@
         activeIntervals.push(petalInterval);
       }
 
+      function startDeepSeaOcean() {
+        stopThemeAnimations();
+
+        const OCEAN_ITEMS = ['🫧', '🐠', '🐟', '🐙', '🦈', '🐚', '🪸', '🔱'];
+        const floatInterval = setInterval(() => {
+          if (itemsContainer && itemsContainer.children.length < 15) {
+            const item = document.createElement('div');
+            item.className = 'float-block';
+            item.textContent = OCEAN_ITEMS[Math.floor(Math.random() * OCEAN_ITEMS.length)];
+            item.style.left = Math.random() * 90 + 5 + '%';
+            item.style.fontSize = (20 + Math.random() * 16) + 'px';
+            item.style.animationDuration = (25 + Math.random() * 15) + 's';
+            itemsContainer.appendChild(item);
+            
+            setTimeout(() => {
+              item.remove();
+            }, 40000);
+          }
+        }, 2500);
+        activeIntervals.push(floatInterval);
+
+        // Pre-populate some items
+        for (let i = 0; i < 8; i++) {
+          if (itemsContainer) {
+            const item = document.createElement('div');
+            item.className = 'float-block';
+            item.textContent = OCEAN_ITEMS[Math.floor(Math.random() * OCEAN_ITEMS.length)];
+            item.style.left = Math.random() * 90 + 5 + '%';
+            item.style.bottom = Math.random() * 80 + 'vh';
+            item.style.fontSize = (20 + Math.random() * 16) + 'px';
+            item.style.animationDuration = (25 + Math.random() * 15) + 's';
+            itemsContainer.appendChild(item);
+          }
+        }
+
+        // Spawn rising bubbles in bubbles-container
+        const bubblesContainer = document.getElementById('ocean-bubbles');
+        if (bubblesContainer) {
+          const bubbleInterval = setInterval(() => {
+            if (bubblesContainer.children.length < 35) {
+              const b = document.createElement('div');
+              b.className = 'ocean-bubble';
+              const size = 4 + Math.random() * 8;
+              b.style.width = size + 'px';
+              b.style.height = size + 'px';
+              b.style.left = Math.random() * 100 + 'vw';
+              const duration = 6 + Math.random() * 6;
+              b.style.animation = `bubbleRise ${duration}s linear forwards`;
+              bubblesContainer.appendChild(b);
+              setTimeout(() => { b.remove(); }, duration * 1000);
+            }
+          }, 350);
+          activeIntervals.push(bubbleInterval);
+        }
+      }
+
       function stopThemeAnimations() {
         activeIntervals.forEach(clearInterval);
         activeIntervals = [];
         if (itemsContainer) itemsContainer.innerHTML = '';
         if (petalContainer) petalContainer.innerHTML = '';
+        const bubblesContainer = document.getElementById('ocean-bubbles');
+        if (bubblesContainer) bubblesContainer.innerHTML = '';
       }
 
       // Detect theme dynamically
@@ -192,6 +262,8 @@
               startMinecraftClassic();
             } else if (theme === 'cherry-grove') {
               startCherryGrove();
+            } else if (theme === 'deep-sea-ocean') {
+              startDeepSeaOcean();
             } else {
               stopThemeAnimations();
             }
@@ -201,12 +273,14 @@
 
       observer.observe(document.documentElement, { attributes: true });
 
-      // Run immediately if initialized to minecraft or cherry-grove theme
+      // Run immediately if initialized
       const initialTheme = document.documentElement.getAttribute('data-theme');
       if (initialTheme === 'minecraft') {
         startMinecraftClassic();
       } else if (initialTheme === 'cherry-grove') {
         startCherryGrove();
+      } else if (initialTheme === 'deep-sea-ocean') {
+        startDeepSeaOcean();
       }
     });
   </script>
