@@ -161,6 +161,11 @@ export default function App() {
   const [oceanAnimStage, setOceanAnimStage] = useState('idle');
   const oceanTimersRef = useRef([]);
 
+  // Hacking theme cinematic state variables
+  const [showHackingAnim, setShowHackingAnim] = useState(false);
+  const [hackingAnimStage, setHackingAnimStage] = useState('idle');
+  const hackerTimersRef = useRef([]);
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', currentTheme);
     localStorage.setItem('theme', currentTheme);
@@ -197,6 +202,37 @@ export default function App() {
     oceanTimersRef.current = [t1, t2, t3, t4];
   };
 
+  // Dedicated trigger for hacking theme entrance cinematic sequence
+  const triggerHackerAnimation = () => {
+    // Clear any existing timers
+    if (hackerTimersRef.current) {
+      hackerTimersRef.current.forEach(clearTimeout);
+    }
+
+    setShowHackingAnim(true);
+    setHackingAnimStage('snake-slither');
+
+    // Timeline sequence
+    const t1 = setTimeout(() => {
+      setHackingAnimStage('logo-appear');
+    }, 3000); // 3 seconds of snake slithering
+
+    const t2 = setTimeout(() => {
+      setHackingAnimStage('glitch');
+    }, 6200); // 3.2 seconds to draw the Kali Linux dragon/snake
+
+    const t3 = setTimeout(() => {
+      setHackingAnimStage('dissolving');
+    }, 8200); // 2 seconds of neon glitching and shuddering
+
+    const t4 = setTimeout(() => {
+      setHackingAnimStage('done');
+      setShowHackingAnim(false);
+    }, 10400); // 2.2 seconds of code dissolving into black
+
+    hackerTimersRef.current = [t1, t2, t3, t4];
+  };
+
   // Clean up timers on theme switch away
   useEffect(() => {
     if (currentTheme !== 'deep-sea-ocean') {
@@ -205,6 +241,14 @@ export default function App() {
       if (oceanTimersRef.current) {
         oceanTimersRef.current.forEach(clearTimeout);
         oceanTimersRef.current = [];
+      }
+    }
+    if (currentTheme !== 'hacking') {
+      setShowHackingAnim(false);
+      setHackingAnimStage('idle');
+      if (hackerTimersRef.current) {
+        hackerTimersRef.current.forEach(clearTimeout);
+        hackerTimersRef.current = [];
       }
     }
   }, [currentTheme]);
@@ -2125,6 +2169,18 @@ Overall Status : ${overallStatus}
                           )}
                         </div>
                       </div>
+                      {key === 'gprs' && (
+                        <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '8px', width: '100%' }}>
+                          <button
+                            className="btn btn-accent small"
+                            style={{ padding: '4px 10px', fontSize: '10px', height: '26px', width: '100%', cursor: 'pointer' }}
+                            onClick={() => sendControlCommand('GPRS_SPEED')}
+                            title="Sends AT+IPR=1000000;&W to set modem baud rate to 1 Mbps"
+                          >
+                            ⚡ Set 1 Mbps Speed (AT+IPR=1000000;&w)
+                          </button>
+                        </div>
+                      )}
                       {key === 'di' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                           <div className="di-pins-container" style={{
@@ -3887,91 +3943,112 @@ Overall Status : ${overallStatus}
               {/* 9-Point diagnostics card */}
               <div className="glass-card hardware-card" style={{ gridColumn: 'span 2' }}>
                 <h3><span className="icon">🛡️</span> Peripheral Self-Check Diagnostician</h3>
-                <div className="diag-checklist" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginTop: '20px' }}>
-                  {Object.keys(diagnostics).map(key => (
-                    <div key={key} className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : diagnostics[key] === 'TESTING' ? 'warning' : ''}`} style={{ margin: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                        <div className="diag-indicator" style={{ marginRight: '8px' }}></div>
-                        <div className="diag-label" style={{ flex: 1 }}>{key.toUpperCase()}</div>
-                        <div className="diag-value">{diagnostics[key]}</div>
-                      </div>
-                      {key === 'di' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-                          <div className="di-pins-container" style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(2, 1fr)',
-                            gap: '8px',
-                            marginTop: '8px',
-                            width: '100%',
-                            borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-                            paddingTop: '8px'
-                          }}>
-                            {[0, 1, 2, 3].map(index => {
-                              const isPinShorted = diPinsSimulated[index] || diPinsHardware[index];
-                              return (
-                                <div key={index} className={`di-pin-item ${isPinShorted ? 'shorted' : ''}`} style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  background: 'rgba(5, 2, 18, 0.4)',
-                                  border: '1px solid rgba(255, 0, 127, 0.1)',
-                                  padding: '6px 8px',
-                                  borderRadius: '6px',
-                                  transition: 'all 0.2s ease'
-                                }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <div className="pin-indicator" style={{
-                                      width: '6px',
-                                      height: '6px',
-                                      borderRadius: '50%',
-                                      background: isPinShorted ? 'var(--accent-emerald)' : 'var(--accent-red)',
-                                      boxShadow: isPinShorted ? '0 0 6px var(--accent-emerald)' : '0 0 6px var(--accent-red)'
-                                    }} />
-                                    <span style={{ fontSize: '11px', fontWeight: '700', color: isPinShorted ? '#fff' : 'var(--text-dim)' }}>DI {index + 1}</span>
-                                  </div>
-                                  <button
-                                    className={`btn ${isPinShorted ? 'btn-accent' : 'btn-secondary'} small`}
-                                    style={{ padding: '2px 8px', fontSize: '9px', height: '20px', minWidth: '54px', margin: 0, cursor: 'pointer', userSelect: 'none' }}
-                                    onMouseDown={() => handleDiPinSimChange(index, true)}
-                                    onMouseUp={() => handleDiPinSimChange(index, false)}
-                                    onMouseLeave={() => handleDiPinSimChange(index, false)}
-                                    onTouchStart={() => handleDiPinSimChange(index, true)}
-                                    onTouchEnd={() => handleDiPinSimChange(index, false)}
-                                  >
-                                    {isPinShorted ? 'Shorted' : 'Push'}
-                                  </button>
-                                </div>
-                              );
-                            })}
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr', gap: '20px', marginTop: '20px' }}>
+                  {/* Left Column: 8 standard checklist items */}
+                  <div className="diag-checklist" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+                    {Object.keys(diagnostics).filter(key => key !== 'di').map(key => (
+                      <div key={key} className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : diagnostics[key] === 'TESTING' ? 'warning' : ''}`} style={{ margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                          <div className="diag-indicator" style={{ marginRight: '8px' }}></div>
+                          <div className="diag-label" style={{ flex: 1 }}>{key.toUpperCase()}</div>
+                          <div className="diag-value">{diagnostics[key]}</div>
+                        </div>
+                        {key === 'gprs' && (
+                          <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '8px', width: '100%' }}>
+                            <button
+                              className="btn btn-accent small"
+                              style={{ padding: '4px 10px', fontSize: '9px', height: '24px', width: '100%', cursor: 'pointer' }}
+                              onClick={() => sendControlCommand('GPRS_SPEED')}
+                              title="Sends AT+IPR=1000000;&W to set modem speed to 1 Mbps"
+                            >
+                              ⚡ Set 1 Mbps Speed (AT+IPR=1000000;&w)
+                            </button>
                           </div>
-                          <div className="tester-switch-container" style={{
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Right Column (Last Column): DI Section with 4 simulator buttons */}
+                  <div className="diag-item di-section-card" style={{ margin: 0, display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'flex-start', background: 'rgba(255, 255, 255, 0.01)', border: '1px solid var(--glass-border)', padding: '12px', borderRadius: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', width: '100%', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '8px', marginBottom: '10px' }}>
+                      <div className="diag-indicator" style={{ marginRight: '8px' }}></div>
+                      <div className="diag-label" style={{ flex: 1, fontWeight: 'bold', fontSize: '12px' }}>DI (DIGITAL INPUT)</div>
+                      <div className="diag-value" style={{ fontWeight: 'bold', fontSize: '12px' }}>{diagnostics.di}</div>
+                    </div>
+                    
+                    <div className="di-pins-container" style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr',
+                      gap: '8px',
+                      width: '100%'
+                    }}>
+                      {[0, 1, 2, 3].map(index => {
+                        const isPinShorted = diPinsSimulated[index] || diPinsHardware[index];
+                        return (
+                          <div key={index} className={`di-pin-item ${isPinShorted ? 'shorted' : ''}`} style={{
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
-                            background: 'rgba(3, 0, 10, 0.5)',
-                            border: `1px solid ${testerSwitch ? 'rgba(0, 255, 102, 0.2)' : 'rgba(255, 255, 255, 0.05)'}`,
-                            padding: '6px 10px',
-                            borderRadius: '8px',
-                            marginTop: '4px'
+                            background: 'rgba(5, 2, 18, 0.4)',
+                            border: '1px solid rgba(255, 0, 127, 0.1)',
+                            padding: '6px 8px',
+                            borderRadius: '6px',
+                            transition: 'all 0.2s ease'
                           }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <div className="pin-indicator" style={{
-                                width: '8px',
-                                height: '8px',
+                                width: '6px',
+                                height: '6px',
                                 borderRadius: '50%',
-                                background: testerSwitch ? 'var(--accent-emerald)' : 'var(--text-muted)',
-                                boxShadow: testerSwitch ? '0 0 8px var(--accent-emerald)' : 'none'
+                                background: isPinShorted ? 'var(--accent-emerald)' : 'var(--accent-red)',
+                                boxShadow: isPinShorted ? '0 0 6px var(--accent-emerald)' : '0 0 6px var(--accent-red)'
                               }} />
-                              <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff' }}>Tester Switch (Pin 38)</span>
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: isPinShorted ? '#fff' : 'var(--text-dim)' }}>DI {index + 1}</span>
                             </div>
-                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: testerSwitch ? 'var(--accent-emerald)' : 'var(--text-dim)', textTransform: 'uppercase' }}>
-                              {testerSwitch ? 'ON' : 'OFF'}
-                            </span>
+                            <button
+                              className={`btn ${isPinShorted ? 'btn-accent' : 'btn-secondary'} small`}
+                              style={{ padding: '2px 8px', fontSize: '9px', height: '20px', minWidth: '54px', margin: 0, cursor: 'pointer', userSelect: 'none' }}
+                              onMouseDown={() => handleDiPinSimChange(index, true)}
+                              onMouseUp={() => handleDiPinSimChange(index, false)}
+                              onMouseLeave={() => handleDiPinSimChange(index, false)}
+                              onTouchStart={() => handleDiPinSimChange(index, true)}
+                              onTouchEnd={() => handleDiPinSimChange(index, false)}
+                            >
+                              {isPinShorted ? 'Shorted' : 'Push'}
+                            </button>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })}
                     </div>
-                  ))}
+
+                    <div className="tester-switch-container" style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: 'rgba(3, 0, 10, 0.5)',
+                      border: `1px solid ${testerSwitch ? 'rgba(0, 255, 102, 0.2)' : 'rgba(255, 255, 255, 0.05)'}`,
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      marginTop: '10px',
+                      width: '100%'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div className="pin-indicator" style={{
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          background: testerSwitch ? 'var(--accent-emerald)' : 'var(--text-muted)',
+                          boxShadow: testerSwitch ? '0 0 8px var(--accent-emerald)' : 'none'
+                        }} />
+                        <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff' }}>Tester Switch (Pin 38)</span>
+                      </div>
+                      <span style={{ fontSize: '11px', fontWeight: 'bold', color: testerSwitch ? 'var(--accent-emerald)' : 'var(--text-dim)', textTransform: 'uppercase' }}>
+                        {testerSwitch ? 'ON' : 'OFF'}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -4437,6 +4514,18 @@ Overall Status : ${overallStatus}
                       <div className="theme-preview-bar"></div>
                       <span className="theme-preset-name">Deep Sea Ocean</span>
                     </div>
+
+                    <div
+                      className={`theme-preset-card ${currentTheme === 'hacking' ? 'active' : ''}`}
+                      onClick={() => {
+                        setCurrentTheme('hacking');
+                        triggerHackerAnimation();
+                      }}
+                      style={{ '--theme-card-border': '#00ff00', '--theme-card-bg-rgb': '0, 255, 0', '--theme-preview-grad': 'linear-gradient(135deg, #020202 0%, #00ff00 100%)' }}
+                    >
+                      <div className="theme-preview-bar"></div>
+                      <span className="theme-preset-name">Hacking Edition</span>
+                    </div>
                   </div>
                 </div>
 
@@ -4565,10 +4654,38 @@ Overall Status : ${overallStatus}
       {showOceanAnim && (
         <div className={`ocean-anim-overlay stage-${oceanAnimStage}`}>
           <div className="sky-bg">
-            <div className="sky-sun"></div>
-            <div className="cloud-vector c1"></div>
-            <div className="cloud-vector c2"></div>
-            <div className="cloud-vector c3"></div>
+            {/* Extremely realistic glowing sun */}
+            <svg viewBox="0 0 100 100" className="sky-sun">
+              <defs>
+                <radialGradient id="sunGradient" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor="#FFFFFF" />
+                  <stop offset="20%" stopColor="#FFF9C4" />
+                  <stop offset="50%" stopColor="#FBC02D" />
+                  <stop offset="75%" stopColor="#E65100" />
+                  <stop offset="100%" stopColor="transparent" stopOpacity="0" />
+                </radialGradient>
+              </defs>
+              <circle cx="50" cy="50" r="48" fill="url(#sunGradient)" />
+              <circle cx="50" cy="50" r="28" fill="#FFFDE7" opacity="0.8" />
+            </svg>
+
+            {/* Cloud 1 */}
+            <svg viewBox="0 0 100 60" className="cloud-vector c1">
+              <path d="M10 45 C10 38, 18 32, 28 35 C33 26, 52 23, 62 31 C72 27, 85 32, 85 42 C92 42, 95 48, 90 53 C85 55, 15 55, 10 45 Z" fill="#FFFFFF" />
+              <path d="M25 36 C30 28, 48 25, 58 33 C63 32, 70 34, 72 38 C60 30, 40 32, 25 36 Z" fill="#E0F2FE" opacity="0.75" />
+            </svg>
+
+            {/* Cloud 2 */}
+            <svg viewBox="0 0 120 70" className="cloud-vector c2">
+              <path d="M15 50 C15 42, 25 35, 38 38 C45 28, 68 25, 80 34 C92 30, 105 35, 105 47 C112 47, 115 54, 110 60 C105 62, 20 62, 15 50 Z" fill="#FFFFFF" />
+              <path d="M35 39 C42 29, 64 26, 76 35 C82 34, 90 36, 92 40 C78 30, 52 32, 35 39 Z" fill="#E0F2FE" opacity="0.75" />
+            </svg>
+
+            {/* Cloud 3 */}
+            <svg viewBox="0 0 90 50" className="cloud-vector c3">
+              <path d="M8 38 C8 32, 15 27, 24 30 C28 22, 45 20, 54 26 C62 23, 72 27, 72 35 C78 35, 80 40, 76 45 C72 47, 12 47, 8 38 Z" fill="#FFFFFF" />
+              <path d="M22 30 C26 23, 40 21, 48 27 C53 26, 60 28, 62 31 C50 24, 34 26, 22 30 Z" fill="#E0F2FE" opacity="0.75" />
+            </svg>
           </div>
 
           <div className="sea-entrance-line"></div>
@@ -4583,6 +4700,21 @@ Overall Status : ${overallStatus}
           </div>
 
           <div className="temple-container">
+            {/* Side Flora - Left side of the temple */}
+            <div className="flora-left">
+              <div className="kelp-plant kp-large">
+                <div className="leaf lf1"></div>
+                <div className="leaf lf2"></div>
+                <div className="leaf lf3"></div>
+              </div>
+              <div className="kelp-plant kp-medium">
+                <div className="leaf lf1"></div>
+                <div className="leaf lf2"></div>
+                <div className="leaf lf3"></div>
+              </div>
+              <div className="sea-flower sf-large sf1"></div>
+            </div>
+
             <div className="temple-silhouette">
               <div className="temple-roof-decorations">
                 <div className="roof-tip rt-1"></div>
@@ -4639,9 +4771,121 @@ Overall Status : ${overallStatus}
                 <div className="sea-flower sf4"></div>
               </div>
             </div>
+
+            {/* Side Flora - Right side of the temple */}
+            <div className="flora-right">
+              <div className="kelp-plant kp-large">
+                <div className="leaf lf1"></div>
+                <div className="leaf lf2"></div>
+                <div className="leaf lf3"></div>
+              </div>
+              <div className="kelp-plant kp-medium">
+                <div className="leaf lf1"></div>
+                <div className="leaf lf2"></div>
+                <div className="leaf lf3"></div>
+              </div>
+              <div className="sea-flower sf-large sf2"></div>
+            </div>
           </div>
 
           <div className="flash-screen"></div>
+        </div>
+      )}
+
+      {/* Cinematic Hacking Transition Animation Overlay */}
+      {showHackingAnim && (
+        <div className={`hacking-anim-overlay stage-${hackingAnimStage}`}>
+          {/* Falling matrix code rain background */}
+          <div className="overlay-matrix-rain">
+            {Array.from({ length: 18 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="matrix-col"
+                style={{
+                  left: `${idx * 6}%`,
+                  animationDuration: `${2.2 + Math.random() * 3}s`,
+                  animationDelay: `${Math.random() * 1.5}s`
+                }}
+              >
+                {Array.from({ length: 25 }).map(() => (Math.random() > 0.5 ? '1' : '0')).join('')}
+              </div>
+            ))}
+          </div>
+
+          {/* Glowing laser slithering snake path */}
+          {hackingAnimStage === 'snake-slither' && (
+            <svg viewBox="0 0 500 200" className="slithering-snake">
+              <path
+                d="M -80,100 C -30,40 20,160 70,100 C 120,40 170,160 220,100 C 270,40 320,160 370,100 C 420,40 470,160 520,100 C 570,40 620,160 680,100"
+                fill="none"
+                stroke="#00ff00"
+                strokeWidth="4.5"
+                strokeLinecap="round"
+                className="slithering-snake-path"
+                style={{
+                  filter: 'drop-shadow(0 0 10px #00ff00) drop-shadow(0 0 20px #00ff00)'
+                }}
+              />
+            </svg>
+          )}
+
+          {/* Authentic Kali Linux screen elements */}
+          {hackingAnimStage !== 'snake-slither' && (
+            <div className="kali-logo-container">
+              {/* Detailed Kali Linux Dragon Tribal Logo */}
+              <svg viewBox="0 0 300 200" className="kali-dragon">
+                <defs>
+                  <filter id="greenGlow">
+                    <feGaussianBlur stdDeviation="4" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                </defs>
+                
+                {/* Tribal Dragon Body & Head */}
+                <path
+                  d="M 150 40 C 145 25, 130 20, 115 30 C 95 40, 90 60, 105 80 C 120 100, 130 110, 120 130 C 110 150, 80 150, 70 170 C 60 190, 85 200, 100 190 C 115 180, 130 160, 135 140 C 140 120, 135 105, 150 90 C 165 105, 160 120, 165 140 C 170 160, 185 180, 200 190 C 215 200, 240 190, 230 170 C 220 150, 190 150, 180 130 C 170 110, 180 100, 195 80 C 210 60, 205 40, 185 30 C 170 20, 155 25, 150 40 Z"
+                  fill="none"
+                  stroke="#00ff00"
+                  strokeWidth="2.5"
+                  filter="url(#greenGlow)"
+                  className="dragon-wings-path"
+                />
+                
+                {/* Left Tribal Wing */}
+                <path
+                  d="M 105 80 C 80 70, 40 80, 20 100 C 35 110, 60 110, 75 105 C 80 115, 60 130, 45 140 C 65 135, 85 125, 95 115 Z"
+                  fill="none"
+                  stroke="#00ff00"
+                  strokeWidth="2.5"
+                  filter="url(#greenGlow)"
+                  className="dragon-tail-path"
+                />
+
+                {/* Right Tribal Wing */}
+                <path
+                  d="M 195 80 C 220 70, 260 80, 280 100 C 265 110, 240 110, 225 105 C 220 115, 240 130, 255 140 C 235 135, 215 125, 205 115 Z"
+                  fill="none"
+                  stroke="#00ff00"
+                  strokeWidth="2.5"
+                  filter="url(#greenGlow)"
+                  className="dragon-head-path"
+                />
+              </svg>
+            </div>
+          )}
+
+          {/* Quick loading logs in terminal font */}
+          {hackingAnimStage === 'glitch' && (
+            <div className="kali-boot-logs" style={{ position: 'absolute', bottom: '30px', left: '30px', fontFamily: 'VT323, monospace', color: '#00ff00', fontSize: '18px', textAlign: 'left', lineHeight: '1.4', opacity: 0.8 }}>
+              <div>[*] INITIALIZING NETHUNTER KERNELS...</div>
+              <div>[*] ROUTING KALI NETWORK SOCKETS...</div>
+              <div>[*] INTRUSION DETECTION SYSTEM ACTIVE</div>
+              <div>[+] PORT STATUS: SECURE (9000/TCP)</div>
+            </div>
+          )}
         </div>
       )}
     </>

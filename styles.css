@@ -3695,18 +3695,354 @@ body {
   100% { transform: scale(1.1); opacity: 1; }
 }
 
-/* Blinding flash overlay screen */
-.ocean-anim-overlay .flash-screen {
-  position: absolute;
-  inset: 0;
-  background-color: #fff;
-  opacity: 0;
-  pointer-events: none;
-  z-index: 10;
-  transition: opacity 1.5s ease-in-out;
-}
-
 .stage-door-opening .flash-screen {
   opacity: 1;
   background-color: #fcd34d; /* Golden-yellow flash */
+}
+
+
+/* ==========================================================================
+   HACKING THEME
+   ========================================================================== */
+[data-theme="hacking"] {
+  --font-sans: 'VT323', monospace !important;
+  --font-mono: 'VT323', monospace !important;
+
+  /* Hacking / Matrix Colors */
+  --bg-space: #020202 !important;
+  --bg-terminal: #050505 !important;
+  --mc-panel: #0a0a0a !important;
+  --mc-panel-inner: #020202 !important;
+  --mc-border-light: #00ff00 !important; /* Neon Green */
+  --mc-border-dark: #003300 !important;
+
+  --text-white: #ffffff !important;
+  --text-cyan: #00ff00 !important; /* Matrix Green */
+  --text-dim: #00cc00 !important;
+  --text-muted: #006600 !important;
+
+  --accent-primary: #00ff00 !important;
+  --accent-secondary: #005500 !important;
+
+  --grad-primary: #003300 !important;
+  --grad-pink-blue: #004400 !important;
+  --grad-cyan-purple: #000000 !important;
+  --grad-emerald-cyan: #00ff00 !important;
+  --grad-orange-pink: #00ff00 !important;
+
+  /* Custom navigation highlight colors */
+  --nav-active-bg: #003300 !important;
+  --nav-active-border-l: #00ff00 !important;
+  --nav-active-border-d: #001100 !important;
+  --nav-active-text-shadow: #000000 !important;
+
+  /* Custom button highlight colors */
+  --btn-bg: #0a0a0a !important;
+  --btn-border-l: #00aa00 !important;
+  --btn-border-d: #002200 !important;
+  --btn-hover-bg: #111111 !important;
+  --btn-hover-border-l: #00ff00 !important;
+  --btn-hover-border-d: #004400 !important;
+}
+
+/* Inherit blocky layout for Hacking Theme */
+[data-theme="hacking"] .window-titlebar,
+[data-theme="hacking"] .sidebar,
+[data-theme="hacking"] .card,
+[data-theme="hacking"] .panel,
+[data-theme="hacking"] .control-box,
+[data-theme="hacking"] .stat-chip,
+[data-theme="hacking"] .device-card,
+[data-theme="hacking"] .data-card,
+[data-theme="hacking"] .log-box,
+[data-theme="hacking"] .glass-card,
+[data-theme="hacking"] .ota-drop,
+[data-theme="hacking"] .btn-group-card,
+[data-theme="hacking"] .tab-content,
+[data-theme="hacking"] .status-box,
+[data-theme="hacking"] .terminal-container,
+[data-theme="hacking"] .device-details,
+[data-theme="hacking"] .cert-card,
+[data-theme="hacking"] .telemetry-grid,
+[data-theme="hacking"] .modal-content,
+[data-theme="hacking"] .telemetry-card,
+[data-theme="hacking"] .metric-box {
+  border-radius: 0px !important;
+  border: 4px solid !important;
+  border-color: var(--mc-border-light) var(--mc-border-dark) var(--mc-border-dark) var(--mc-border-light) !important;
+  background-color: var(--mc-panel) !important;
+  background-image: none !important;
+  box-shadow: 0 0 15px rgba(0, 255, 0, 0.2) !important;
+}
+
+[data-theme="hacking"] .brand-icon svg,
+[data-theme="hacking"] .titlebar-logo .logo-dot {
+  display: none !important;
+}
+
+[data-theme="hacking"] .brand-text h2,
+[data-theme="hacking"] .titlebar-logo {
+  font-family: 'Press Start 2P', monospace !important;
+  font-size: 11px !important;
+  color: var(--text-cyan) !important;
+  text-shadow: 2px 2px 0px var(--grad-primary) !important;
+  letter-spacing: -0.5px !important;
+}
+
+[data-theme="hacking"] .brand-text span,
+[data-theme="hacking"] .titlebar-logo span {
+  font-family: 'VT323', monospace !important;
+  font-size: 15px !important;
+  color: var(--text-dim) !important;
+}
+
+[data-theme="hacking"] .nav-item {
+  font-family: 'Press Start 2P', monospace !important;
+  font-size: 10px !important;
+  border-radius: 0px !important;
+  color: var(--text-dim) !important;
+  text-shadow: 1px 1px 0px var(--bg-terminal) !important;
+}
+
+[data-theme="hacking"] .nav-item.active {
+  background-color: var(--nav-active-bg) !important;
+  border-color: var(--nav-active-border-l) var(--nav-active-border-d) var(--nav-active-border-d) var(--nav-active-border-l) !important;
+  border-width: 4px !important;
+  border-style: solid !important;
+  color: var(--text-white) !important;
+  text-shadow: 2px 2px 0px var(--nav-active-text-shadow) !important;
+}
+
+[data-theme="hacking"] .btn {
+  font-family: 'Press Start 2P', monospace !important;
+  font-size: 10px !important;
+  border-radius: 0px !important;
+  background-color: var(--btn-bg) !important;
+  border: 4px solid !important;
+  border-color: var(--btn-border-l) var(--btn-border-d) var(--btn-border-d) var(--btn-border-l) !important;
+  color: var(--text-white) !important;
+  text-shadow: 1px 1px 0px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.15) !important;
+}
+
+[data-theme="hacking"] .btn:hover:not(:disabled) {
+  background-color: var(--btn-hover-bg) !important;
+  border-color: var(--btn-hover-border-l) var(--btn-hover-border-d) var(--btn-hover-border-d) var(--btn-hover-border-l) !important;
+  box-shadow: 0 0 15px rgba(0, 255, 0, 0.3) !important;
+}
+
+
+/* ==========================================================================
+   MATRIX CODE RAIN BACKDROP
+   ========================================================================== */
+.hacking-background {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background-color: #020202;
+  overflow: hidden;
+}
+
+/* Enable hacking background */
+[data-theme="hacking"] .hacking-background {
+  display: block !important;
+}
+
+.matrix-rain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.matrix-col {
+  position: absolute;
+  top: -400px;
+  width: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #00ff00;
+  text-shadow: 0 0 6px #00ff00;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  white-space: nowrap;
+  animation: matrixFall 4s linear infinite;
+  opacity: 0;
+}
+
+@keyframes matrixFall {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  5% {
+    opacity: 0.9;
+  }
+  90% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(115vh);
+    opacity: 0;
+  }
+}
+
+
+/* ==========================================================================
+   HACKING INTRO KALI LINUX SNAKE ANIMATION OVERLAY
+   ========================================================================== */
+.hacking-anim-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background-color: #010101;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  pointer-events: all;
+}
+
+.hacking-anim-overlay .kali-logo-container {
+  position: relative;
+  width: 320px;
+  height: 320px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* SVG draw sequence */
+.hacking-anim-overlay .kali-dragon {
+  width: 100%;
+  height: 100%;
+}
+
+.hacking-anim-overlay .dragon-wings-path {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: drawLine 3.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.hacking-anim-overlay .dragon-tail-path {
+  stroke-dasharray: 600;
+  stroke-dashoffset: 600;
+  animation: drawLine 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation-delay: 0.6s;
+}
+
+.hacking-anim-overlay .dragon-head-path {
+  stroke-dasharray: 200;
+  stroke-dashoffset: 200;
+  animation: drawLine 1.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation-delay: 1.5s;
+}
+
+@keyframes drawLine {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Glitch stage */
+.hacking-anim-overlay.stage-glitch .kali-logo-container {
+  animation: dragonGlitch 0.25s infinite;
+  filter: drop-shadow(0 0 20px #00ff00);
+}
+
+@keyframes dragonGlitch {
+  0% { transform: translate(0, 0) skew(0deg); }
+  20% { transform: translate(-3px, 2px) skew(-2deg); }
+  40% { transform: translate(3px, -2px) skew(2deg); }
+  60% { transform: translate(-2px, -2px) skew(1deg); }
+  80% { transform: translate(2px, 3px) skew(-1deg); }
+  100% { transform: translate(0, 0) skew(0deg); }
+}
+
+/* Dissolving stage */
+.hacking-anim-overlay.stage-dissolving .kali-logo-container {
+  animation: dragonDissolve 2.2s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+}
+
+@keyframes dragonDissolve {
+  0% { transform: scale(1); opacity: 1; filter: drop-shadow(0 0 20px #00ff00) blur(0); }
+  40% { transform: scale(1.08); filter: drop-shadow(0 0 35px #00ff00) blur(2px); opacity: 0.8; }
+  100% { transform: scale(0.7); filter: drop-shadow(0 0 0px transparent) blur(20px); opacity: 0; }
+}
+
+/* Falling matrix elements inside overlay */
+.hacking-anim-overlay .overlay-matrix-rain {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.2;
+  overflow: hidden;
+}
+
+
+/* ==========================================================================
+   DEEP SEA OCEAN SIDE FLORA LAYOUTS
+   ========================================================================== */
+.ocean-anim-overlay .flora-left {
+  position: absolute;
+  bottom: 0;
+  left: -80px;
+  width: 90px;
+  height: 240px;
+  z-index: 1;
+}
+
+.ocean-anim-overlay .flora-right {
+  position: absolute;
+  bottom: 0;
+  right: -80px;
+  width: 90px;
+  height: 240px;
+  z-index: 1;
+}
+
+.ocean-anim-overlay .flora-left .kelp-plant,
+.ocean-anim-overlay .flora-right .kelp-plant {
+  width: 14px;
+  background: linear-gradient(to top, #115e59, #0d9488, #2dd4bf);
+}
+
+.ocean-anim-overlay .flora-left .kp-large { height: 210px; left: 10px; animation-delay: -0.6s; }
+.ocean-anim-overlay .flora-left .kp-medium { height: 160px; left: 45px; animation-delay: -1.9s; }
+.ocean-anim-overlay .flora-right .kp-large { height: 230px; right: 10px; animation-delay: -1.3s; }
+.ocean-anim-overlay .flora-right .kp-medium { height: 175px; right: 45px; animation-delay: -2.7s; }
+
+.ocean-anim-overlay .flora-left .sea-flower.sf-large { left: 25px; bottom: 0; width: 32px; height: 32px; }
+.ocean-anim-overlay .flora-right .sea-flower.sf-large { right: 25px; bottom: 0; width: 32px; height: 32px; }
+
+/* ==========================================================================
+   SLITHERING LASER SNAKE OVERLAY
+   ========================================================================== */
+.hacking-anim-overlay .slithering-snake {
+  position: absolute;
+  width: 100vw;
+  height: 100vh;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.hacking-anim-overlay .slithering-snake-path {
+  stroke: #00ff00;
+  stroke-width: 5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-dasharray: 160 800;
+  stroke-dashoffset: 960;
+  animation: laserSnakeSlither 3s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes laserSnakeSlither {
+  0% {
+    stroke-dashoffset: 960;
+  }
+  100% {
+    stroke-dashoffset: -800;
+  }
 }

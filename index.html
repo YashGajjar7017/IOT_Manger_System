@@ -96,6 +96,11 @@
     </div>
   </div>
 
+  <!-- Hacking Theme background elements -->
+  <div class="hacking-background">
+    <div class="matrix-rain" id="matrix-rain"></div>
+  </div>
+
   <!-- React App Root Container -->
   <div id="root"></div>
   
@@ -270,6 +275,33 @@
         }
       }
 
+      function startHackingTheme() {
+        stopThemeAnimations();
+
+        const rainContainer = document.getElementById('matrix-rain');
+        if (rainContainer) {
+          rainContainer.innerHTML = '';
+          const colWidth = 20;
+          const cols = Math.floor(window.innerWidth / colWidth);
+          for (let i = 0; i < cols; i++) {
+            const col = document.createElement('div');
+            col.className = 'matrix-col';
+            col.style.left = i * colWidth + 'px';
+            col.style.animationDuration = 2 + Math.random() * 3 + 's';
+            col.style.animationDelay = Math.random() * 4 + 's';
+            
+            // Generate some random binary characters
+            let chars = '';
+            const length = 20 + Math.floor(Math.random() * 15);
+            for (let j = 0; j < length; j++) {
+              chars += Math.random() > 0.5 ? '1' : '0';
+            }
+            col.textContent = chars;
+            rainContainer.appendChild(col);
+          }
+        }
+      }
+
       function stopThemeAnimations() {
         activeIntervals.forEach(clearInterval);
         activeIntervals = [];
@@ -277,6 +309,8 @@
         if (petalContainer) petalContainer.innerHTML = '';
         const bubblesContainer = document.getElementById('ocean-bubbles');
         if (bubblesContainer) bubblesContainer.innerHTML = '';
+        const rainContainer = document.getElementById('matrix-rain');
+        if (rainContainer) rainContainer.innerHTML = '';
       }
 
       // Detect theme dynamically
@@ -290,6 +324,8 @@
               startCherryGrove();
             } else if (theme === 'deep-sea-ocean') {
               startDeepSeaOcean();
+            } else if (theme === 'hacking') {
+              startHackingTheme();
             } else {
               stopThemeAnimations();
             }
@@ -307,6 +343,8 @@
         startCherryGrove();
       } else if (initialTheme === 'deep-sea-ocean') {
         startDeepSeaOcean();
+      } else if (initialTheme === 'hacking') {
+        startHackingTheme();
       }
     });
   </script>

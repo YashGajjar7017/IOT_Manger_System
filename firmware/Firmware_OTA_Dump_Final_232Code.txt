@@ -379,7 +379,6 @@ void gsmPowerOn() {
 // ============================================================
 //  MODBUS CRC-16
 // ============================================================
-
 uint16_t crc16(const uint8_t *d, size_t n) {
   uint16_t c = 0xFFFF;
   for (size_t i = 0; i < n; i++) {
@@ -400,146 +399,25 @@ bool crcOK(const uint8_t *f, size_t n) {
 // ============================================================
 //  TEST — RS232
 // ============================================================
-
-// void testRS232() {
-//   testRunning = true;
-//   setResult(T_RS232, S_PENDING, "Running…");
-//   logLine();
-//   logLn("RS232 · MASTER↔SLAVE CROSS-PORT TEST (5 s)");
-
-//   muxRS232();
-//   Serial2.end();
-//   delay(20);
-//   Serial2.begin(MODBUS_BAUD, MODBUS_CFG, RS232_RX, RS232_TX);
-//   delay(50);
-
-//   Serial1.end();
-//   delay(20);
-//   Serial1.begin(MODBUS_BAUD, MODBUS_CFG, RS232_SLAVE_RX, RS232_SLAVE_TX);
-//   delay(50);
-
-//   logFmt("Master : TX=GPIO%d  RX=GPIO%d\n", RS232_TX, RS232_RX);
-//   logFmt("Slave  : RX=GPIO%d  TX=GPIO%d\n", RS232_SLAVE_RX, RS232_SLAVE_TX);
-
-//   uint8_t req[8] = {(uint8_t)FR_SLAVE_ID,
-//                     MODBUS_FC03,
-//                     highByte(FR_START_REG),
-//                     lowByte(FR_START_REG),
-//                     highByte(FR_REG_COUNT),
-//                     lowByte(FR_REG_COUNT),
-//                     0,
-//                     0};
-//   uint16_t reqCRC = crc16(req, 6);
-//   req[6] = lowByte(reqCRC);
-//   req[7] = highByte(reqCRC);
-
-//   uint8_t slaveResp[9] = {(uint8_t)FR_SLAVE_ID,
-//                           MODBUS_FC03,
-//                           (uint8_t)(FR_REG_COUNT * 2),
-//                           0x00,
-//                           0x01,
-//                           0x00,
-//                           0x02,
-//                           0,
-//                           0};
-//   uint16_t respCRC = crc16(slaveResp, 7);
-//   slaveResp[7] = lowByte(respCRC);
-//   slaveResp[8] = highByte(respCRC);
-
-//   int attempts = 0, passes = 0;
-//   uint32_t deadline = millis() + CONT_TEST_MS;
-
-//   while (millis() < deadline) {
-//     attempts++;
-//     logFmt("─── Round %d ───────────────────────\n", attempts);
-//     logFmt("Master TX: %s\n", hexStr(req, 8).c_str());
-
-//     drain(Serial2);
-//     drain(Serial1);
-//     Serial2.write(req, 8);
-//     Serial2.flush();
-//     delay(25);
-
-//     uint8_t rxBuf[16];
-//     size_t rxn = 0;
-//     uint32_t rxt = millis();
-//     while (millis() - rxt < 30 && rxn < 16) {
-//       while (Serial1.available() && rxn < 16)
-//         rxBuf[rxn++] = Serial1.read();
-//     }
-//     logFmt("Slave  RX: %u byte(s)%s\n", (unsigned)rxn,
-//            rxn >= 8 ? " — request OK" : " — incomplete!");
-
-//     if (rxn >= 8 && rxBuf[0] == (uint8_t)FR_SLAVE_ID &&
-//         rxBuf[1] == MODBUS_FC03) {
-//       drain(Serial1);
-//       Serial1.write(slaveResp, 9);
-//       Serial1.flush();
-//       logFmt("Slave  TX: %s\n", hexStr(slaveResp, 9).c_str());
-
-//       uint8_t resp[128];
-//       size_t rn = readFrame(Serial2, resp, sizeof(resp), MODBUS_TIMEOUT_MS,
-//                             MODBUS_GAP_MS);
-//       if (rn > 0) {
-//         logFmt("Master RX: %s (%u B)\n",
-//                hexStr(resp, min(rn, (size_t)16)).c_str(), (unsigned)rn);
-//         for (size_t o = 0; o + 5 <= rn; o++) {
-//           if (resp[o] != (uint8_t)FR_SLAVE_ID)
-//             continue;
-//           if (resp[o + 1] != MODBUS_FC03)
-//             continue;
-//           uint8_t bc = resp[o + 2];
-//           if (o + 5 + bc > rn || !crcOK(resp + o, 5 + bc))
-//             continue;
-//           passes++;
-//           logLn("Master RX: CRC OK → PASS");
-//           break;
-//         }
-//       } else {
-//         logLn("Master RX: timeout — no response received");
-//       }
-//     } else {
-//       logFmt("Slave  RX: %u byte(s) received — skipping reply\n",
-//              (unsigned)rxn);
-//     }
-
-//     uint32_t nextSend = millis() + CONT_INTERVAL;
-//     while (millis() < nextSend && millis() < deadline) {
-//       server.handleClient();
-//       delay(1);
-//     }
-//   }
-
-//   if (passes > 0) {
-//     setResult(T_RS232, S_PASS,
-//               "Cross-port OK — " + String(passes) + "/" + String(attempts) +
-//                   " rounds passed");
-//   } else {
-//     setResult(T_RS232, S_WARN,
-//               "MUX OK · slave port got no valid reply (" + String(attempts) +
-//                   " rounds)");
-//   }
-
-//   // Restore Serial1 to GPRS baud
-//   Serial1.end();
-//   delay(20);
-//   Serial1.begin(GPRS_BAUD_RATE, SERIAL_8N1, GPRS_RX, GPRS_TX);
-//   testRunning = false;
-// }
-
 void testRS232() {
   testRunning = true;
   setResult(T_RS232, S_PENDING, "Running…");
   logLine();
-  logLn("RS232 · MASTER SLAVE PORT TEST (5 s continuous)");
+  logLn("RS232 · MASTER↔SLAVE CROSS-PORT TEST (5 s)");
 
   muxRS232();
   Serial2.end();
   delay(20);
   Serial2.begin(MODBUS_BAUD, MODBUS_CFG, RS232_RX, RS232_TX);
-  delay(100);
+  delay(50);
+
+  Serial1.end();
+  delay(20);
+  Serial1.begin(MODBUS_BAUD, MODBUS_CFG, RS232_SLAVE_RX, RS232_SLAVE_TX);
+  delay(50);
 
   logFmt("Master : TX=GPIO%d  RX=GPIO%d\n", RS232_TX, RS232_RX);
+  logFmt("Slave  : RX=GPIO%d  TX=GPIO%d\n", RS232_SLAVE_RX, RS232_SLAVE_TX);
 
   uint8_t req[8] = {(uint8_t)FR_SLAVE_ID,
                     MODBUS_FC03,
@@ -553,25 +431,74 @@ void testRS232() {
   req[6] = lowByte(reqCRC);
   req[7] = highByte(reqCRC);
 
+  uint8_t slaveResp[9] = {(uint8_t)FR_SLAVE_ID,
+                          MODBUS_FC03,
+                          (uint8_t)(FR_REG_COUNT * 2),
+                          0x00,
+                          0x01,
+                          0x00,
+                          0x02,
+                          0,
+                          0};
+  uint16_t respCRC = crc16(slaveResp, 7);
+  slaveResp[7] = lowByte(respCRC);
+  slaveResp[8] = highByte(respCRC);
+
   int attempts = 0, passes = 0;
   uint32_t deadline = millis() + CONT_TEST_MS;
 
   while (millis() < deadline) {
     attempts++;
-    logFmt("Attempt %d  Req: %s\n", attempts, hexStr(req, 8).c_str());
+    logFmt("─── Round %d ───────────────────────\n", attempts);
+    logFmt("Master TX: %s\n", hexStr(req, 8).c_str());
+
     drain(Serial2);
+    drain(Serial1);
     Serial2.write(req, 8);
     Serial2.flush();
-    passes++; // Request successfully transmitted counts as a pass!
+    delay(25);
 
-    uint8_t resp[128];
-    size_t rn = readFrame(Serial2, resp, sizeof(resp), MODBUS_TIMEOUT_MS,
-                          MODBUS_GAP_MS);
-    if (rn > 0) {
-      logFmt("       Resp: %s (%u B)\n",
-             hexStr(resp, min(rn, (size_t)16)).c_str(), (unsigned)rn);
+    uint8_t rxBuf[16];
+    size_t rxn = 0;
+    uint32_t rxt = millis();
+    while (millis() - rxt < 30 && rxn < 16) {
+      while (Serial1.available() && rxn < 16)
+        rxBuf[rxn++] = Serial1.read();
+    }
+    logFmt("Slave  RX: %u byte(s)%s\n", (unsigned)rxn,
+           rxn >= 8 ? " — request OK" : " — incomplete!");
+
+    if (rxn >= 8 && rxBuf[0] == (uint8_t)FR_SLAVE_ID &&
+        rxBuf[1] == MODBUS_FC03) {
+      drain(Serial1);
+      Serial1.write(slaveResp, 9);
+      Serial1.flush();
+      logFmt("Slave  TX: %s\n", hexStr(slaveResp, 9).c_str());
+
+      uint8_t resp[128];
+      size_t rn = readFrame(Serial2, resp, sizeof(resp), MODBUS_TIMEOUT_MS,
+                            MODBUS_GAP_MS);
+      if (rn > 0) {
+        logFmt("Master RX: %s (%u B)\n",
+               hexStr(resp, min(rn, (size_t)16)).c_str(), (unsigned)rn);
+        for (size_t o = 0; o + 5 <= rn; o++) {
+          if (resp[o] != (uint8_t)FR_SLAVE_ID)
+            continue;
+          if (resp[o + 1] != MODBUS_FC03)
+            continue;
+          uint8_t bc = resp[o + 2];
+          if (o + 5 + bc > rn || !crcOK(resp + o, 5 + bc))
+            continue;
+          passes++;
+          logLn("Master RX: CRC OK → PASS");
+          break;
+        }
+      } else {
+        logLn("Master RX: timeout — no response received");
+      }
     } else {
-      logLn("       Sent OK (No response frame check needed)");
+      logFmt("Slave  RX: %u byte(s) received — skipping reply\n",
+             (unsigned)rxn);
     }
 
     uint32_t nextSend = millis() + CONT_INTERVAL;
@@ -583,14 +510,18 @@ void testRS232() {
 
   if (passes > 0) {
     setResult(T_RS232, S_PASS,
-              "MUX OK | Device responded " + String(passes) + "/" +
-                  String(attempts) + " times");
+              "Cross-port OK — " + String(passes) + "/" + String(attempts) +
+                  " rounds passed");
   } else {
     setResult(T_RS232, S_WARN,
-              "MUX OK · slave port got no reply (" + String(attempts) +
+              "MUX OK · slave port got no valid reply (" + String(attempts) +
                   " rounds)");
   }
 
+  // Restore Serial1 to GPRS baud
+  Serial1.end();
+  delay(20);
+  Serial1.begin(GPRS_BAUD_RATE, SERIAL_8N1, GPRS_RX, GPRS_TX);
   testRunning = false;
 }
 
@@ -703,34 +634,27 @@ void testGPRS() {
   logLine();
   logLn("GPRS / LTE · AT COMMAND TEST");
 
-  uint32_t bauds[] = {115200, 1000000};
+  Serial1.end();
+  delay(20);
+  Serial1.begin(GPRS_BAUD_RATE, SERIAL_8N1, GPRS_RX, GPRS_TX);
+  delay(300);
+
   bool alive = false;
   String atResp;
-  uint32_t activeBaud = 115200;
-
-  for (int bIdx = 0; bIdx < 2 && !alive; bIdx++) {
-    activeBaud = bauds[bIdx];
-    logFmt("Checking GPRS link at %u baud...\n", activeBaud);
-    Serial1.end();
-    delay(20);
-    Serial1.begin(activeBaud, SERIAL_8N1, GPRS_RX, GPRS_TX);
-    delay(300);
-
-    for (int i = 0; i < 3 && !alive; i++) {
-      atResp = AT("AT", 1000);
-      logFmt("AT[%d] -> %s\n", i + 1, atResp.c_str());
-      if (atResp.indexOf("OK") >= 0) {
-        alive = true;
-        break;
-      }
-      delay(300);
+  for (int i = 0; i < 3 && !alive; i++) {
+    atResp = AT("AT", 1000);
+    logFmt("AT[%d] -> %s\n", i + 1, atResp.c_str());
+    if (atResp.indexOf("OK") >= 0) {
+      alive = true;
+      break;
     }
+    delay(400);
   }
 
   if (!alive) {
-    setResult(
-        T_GPRS, S_FAIL,
-        "No AT response — check modem power/wiring | Tried 115200 and 1M");
+    setResult(T_GPRS, S_FAIL,
+              "No AT response — check modem power/wiring | Baud=" +
+                  String(GPRS_BAUD_RATE));
     testRunning = false;
     return;
   }
@@ -767,7 +691,6 @@ void testGPRS() {
   else
     detail += " | CSQ:N/A";
   detail += regOK ? " | NET:REG" : " | NET:UNREG";
-  detail += " | Baud:" + String(activeBaud);
 
   setResult(T_GPRS, S_PASS, detail);
   testRunning = false;
@@ -1139,49 +1062,6 @@ void onSwitchState() {
   server.send(200, "application/json", j);
 }
 
-String executeGPRSSpeed() {
-  logFmt("Executing GPRS auto-baud configuration (115200 or 1000000)...\n");
-  uint32_t bauds[] = {115200, 1000000};
-  bool ok = false;
-  String r2 = "";
-  for (int i = 0; i < 2; i++) {
-    uint32_t b = bauds[i];
-    logFmt("Trying GPRS contact at %u baud...\n", b);
-    Serial1.end();
-    delay(20);
-    Serial1.begin(b, SERIAL_8N1, GPRS_RX, GPRS_TX);
-    delay(300);
-    drain(Serial1);
-    Serial1.print("AT\r\n");
-    String r1 = atRead(1000);
-    if (r1.indexOf("OK") >= 0) {
-      logFmt("Modem responsive at %u. Sending AT+IPR=1000000;&W...\n", b);
-      drain(Serial1);
-      Serial1.print("AT+IPR=1000000;&W\r\n");
-      r2 = atRead(1500);
-      logFmt("Response: %s\n", r2.c_str());
-      ok = r2.indexOf("OK") >= 0 || r2.length() > 0;
-      break;
-    }
-  }
-
-  // Restore Serial1 to GPRS 1 Mbps locally
-  Serial1.end();
-  delay(20);
-  Serial1.begin(1000000, SERIAL_8N1, GPRS_RX, GPRS_TX);
-  delay(100);
-
-  if (ok) {
-    return "{\"status\":\"ok\",\"msg\":\"Modem baud rate configured to 1 "
-           "Mbps\",\"modem_resp\":\"" +
-           r2 + "\"}";
-  } else {
-    return "{\"status\":\"warn\",\"msg\":\"No OK response received from modem "
-           "at either baud\",\"modem_resp\":\"" +
-           r2 + "\"}";
-  }
-}
-
 void onGPRSSpeed() {
   if (testRunning) {
     server.send(429, "application/json", "{\"error\":\"busy\"}");
@@ -1189,7 +1069,28 @@ void onGPRSSpeed() {
   }
   logLine();
   logLn("GPRS SPEED → Setting baud rate to 1 Mbps (AT+IPR=1000000;&W)");
-  String resp = executeGPRSSpeed();
+  Serial1.end();
+  delay(20);
+  Serial1.begin(GPRS_BAUD_RATE, SERIAL_8N1, GPRS_RX, GPRS_TX);
+  delay(300);
+  drain(Serial1);
+  Serial1.print("AT\r\n");
+  String r1 = atRead(1000);
+  logFmt("AT  -> %s\n", r1.c_str());
+  drain(Serial1);
+  Serial1.print("AT+IPR=1000000;&W\r\n");
+  String r2 = atRead(1500);
+  logFmt("AT+IPR=1000000;&W -> %s\n", r2.c_str());
+  bool ok = r2.indexOf("OK") >= 0 || r1.indexOf("OK") >= 0;
+  String resp;
+  if (ok)
+    resp = "{\"status\":\"ok\",\"msg\":\"Baud rate set to 1 "
+           "Mbps\",\"modem_resp\":\"" +
+           r2 + "\"}";
+  else
+    resp = "{\"status\":\"warn\",\"msg\":\"Command sent but no OK "
+           "received\",\"modem_resp\":\"" +
+           r2 + "\"}";
   server.send(200, "application/json", resp);
 }
 
@@ -2285,13 +2186,6 @@ void processCommand(String cmd) {
       if (tcpClient && tcpClient.connected())
         tcpClient.println(reply);
     }
-  } else if (cmd == "GPRS_SPEED") {
-    logLn("[CMD] Setting GPRS speed to 1 Mbps...");
-    String reply = executeGPRSSpeed();
-    Serial.print("JSON_PAYLOAD:");
-    Serial.println(reply);
-    if (tcpClient && tcpClient.connected())
-      tcpClient.println(reply);
   }
 }
 
