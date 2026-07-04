@@ -3,17 +3,212 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IoT Monitor Gateway Console</title>
+  <title>IoT Monitor Gateway Console · Minecraft Edition</title>
   <link rel="stylesheet" href="styles.css">
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 </head>
 <body>
   
+  <!-- Minecraft Classic theme kelp (wale plants) left and right -->
+  <div class="kelp-forest-left">
+    <div class="kelp kelp-1"></div>
+    <div class="kelp kelp-2"></div>
+  </div>
+  <div class="kelp-forest-right">
+    <div class="kelp kelp-3"></div>
+    <div class="kelp kelp-4"></div>
+  </div>
+
+  <!-- Minecraft Cherry Grove theme trees left and right -->
+  <div class="cherry-forest-left">
+    <div class="cherry-tree tree-1">
+      <div class="tree-trunk"></div>
+      <div class="tree-canopy canopy-1"></div>
+      <div class="tree-canopy canopy-2"></div>
+      <div class="tree-canopy canopy-3"></div>
+    </div>
+    <div class="cherry-tree tree-2">
+      <div class="tree-trunk"></div>
+      <div class="cherry-glow"></div>
+      <div class="tree-canopy canopy-1"></div>
+      <div class="tree-canopy canopy-2"></div>
+      <div class="tree-canopy canopy-3"></div>
+    </div>
+  </div>
+  
+  <div class="cherry-forest-right">
+    <div class="cherry-tree tree-3">
+      <div class="tree-trunk"></div>
+      <div class="tree-canopy canopy-1"></div>
+      <div class="tree-canopy canopy-2"></div>
+      <div class="tree-canopy canopy-3"></div>
+    </div>
+    <div class="cherry-tree tree-4">
+      <div class="tree-trunk"></div>
+      <div class="cherry-glow"></div>
+      <div class="tree-canopy canopy-1"></div>
+      <div class="tree-canopy canopy-2"></div>
+      <div class="tree-canopy canopy-3"></div>
+    </div>
+  </div>
+
+  <!-- Falling cherry blossom petals container -->
+  <div class="petal-layer" id="cherry-petals"></div>
+
+  <!-- Background block items layer -->
+  <div class="item-layer" id="block-items"></div>
+
   <!-- React App Root Container -->
   <div id="root"></div>
   
   <!-- React App Entry Script -->
   <script type="module" src="/src/main.jsx"></script>
 
+  <!-- Background animations and observers -->
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const itemsContainer = document.getElementById('block-items');
+      const petalContainer = document.getElementById('cherry-petals');
+      
+      let activeIntervals = [];
+
+      function startMinecraftClassic() {
+        stopThemeAnimations();
+
+        // Spawning classic green/brown block items
+        const MC_ITEMS = ['🪵', '🪨', '🟩', '💎', '🗡️', '⛏️', '🧪', '📦', '🍎', '🍞', '🧱', '🥩', '🍖', '🍗'];
+        const floatInterval = setInterval(() => {
+          if (itemsContainer && itemsContainer.children.length < 15) {
+            const item = document.createElement('div');
+            item.className = 'float-block';
+            item.textContent = MC_ITEMS[Math.floor(Math.random() * MC_ITEMS.length)];
+            item.style.left = Math.random() * 90 + 5 + '%';
+            item.style.fontSize = (20 + Math.random() * 16) + 'px';
+            item.style.animationDuration = (20 + Math.random() * 15) + 's';
+            itemsContainer.appendChild(item);
+            
+            setTimeout(() => {
+              item.remove();
+            }, 35000);
+          }
+        }, 3000);
+        activeIntervals.push(floatInterval);
+
+        // Pre-populate some items
+        for (let i = 0; i < 8; i++) {
+          if (itemsContainer) {
+            const item = document.createElement('div');
+            item.className = 'float-block';
+            item.textContent = MC_ITEMS[Math.floor(Math.random() * MC_ITEMS.length)];
+            item.style.left = Math.random() * 90 + 5 + '%';
+            item.style.bottom = Math.random() * 80 + 'vh';
+            item.style.fontSize = (20 + Math.random() * 16) + 'px';
+            item.style.animationDuration = (20 + Math.random() * 15) + 's';
+            itemsContainer.appendChild(item);
+          }
+        }
+      }
+
+      function startCherryGrove() {
+        stopThemeAnimations();
+
+        // Spawning cherry grove themed block items
+        const CHERRY_ITEMS = ['🌸', '🪵', '🐝', '🍯', '🍒', '💗', '🥖', '🧱', '🍪', '🍨', '🌷'];
+        const floatInterval = setInterval(() => {
+          if (itemsContainer && itemsContainer.children.length < 15) {
+            const item = document.createElement('div');
+            item.className = 'float-block';
+            item.textContent = CHERRY_ITEMS[Math.floor(Math.random() * CHERRY_ITEMS.length)];
+            item.style.left = Math.random() * 90 + 5 + '%';
+            item.style.fontSize = (20 + Math.random() * 16) + 'px';
+            item.style.animationDuration = (20 + Math.random() * 15) + 's';
+            itemsContainer.appendChild(item);
+            
+            setTimeout(() => {
+              item.remove();
+            }, 35000);
+          }
+        }, 3000);
+        activeIntervals.push(floatInterval);
+
+        // Pre-populate some items
+        for (let i = 0; i < 8; i++) {
+          if (itemsContainer) {
+            const item = document.createElement('div');
+            item.className = 'float-block';
+            item.textContent = CHERRY_ITEMS[Math.floor(Math.random() * CHERRY_ITEMS.length)];
+            item.style.left = Math.random() * 90 + 5 + '%';
+            item.style.bottom = Math.random() * 80 + 'vh';
+            item.style.fontSize = (20 + Math.random() * 16) + 'px';
+            item.style.animationDuration = (20 + Math.random() * 15) + 's';
+            itemsContainer.appendChild(item);
+          }
+        }
+
+        // Falling cherry blossom petals
+        const petalInterval = setInterval(() => {
+          if (petalContainer && petalContainer.children.length < 50) {
+            const petal = document.createElement('div');
+            petal.className = 'cherry-petal';
+            
+            // Varied cherry pink colors
+            const colors = ['#ffccd9', '#ff9ebb', '#e57c9f', '#ffb5c0', '#fa819e'];
+            petal.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+            
+            // Random sizing (blocky square sizes)
+            const size = (6 + Math.random() * 6);
+            petal.style.width = size + 'px';
+            petal.style.height = size + 'px';
+            
+            petal.style.left = Math.random() * 100 + 'vw';
+            petal.style.opacity = (0.6 + Math.random() * 0.4);
+            
+            const duration = (8 + Math.random() * 8);
+            petal.style.animation = `fallAndSway ${duration}s linear forwards`;
+            
+            petalContainer.appendChild(petal);
+            
+            setTimeout(() => {
+              petal.remove();
+            }, duration * 1000);
+          }
+        }, 150);
+        activeIntervals.push(petalInterval);
+      }
+
+      function stopThemeAnimations() {
+        activeIntervals.forEach(clearInterval);
+        activeIntervals = [];
+        if (itemsContainer) itemsContainer.innerHTML = '';
+        if (petalContainer) petalContainer.innerHTML = '';
+      }
+
+      // Detect theme dynamically
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.attributeName === 'data-theme') {
+            const theme = document.documentElement.getAttribute('data-theme');
+            if (theme === 'minecraft') {
+              startMinecraftClassic();
+            } else if (theme === 'cherry-grove') {
+              startCherryGrove();
+            } else {
+              stopThemeAnimations();
+            }
+          }
+        });
+      });
+
+      observer.observe(document.documentElement, { attributes: true });
+
+      // Run immediately if initialized to minecraft or cherry-grove theme
+      const initialTheme = document.documentElement.getAttribute('data-theme');
+      if (initialTheme === 'minecraft') {
+        startMinecraftClassic();
+      } else if (initialTheme === 'cherry-grove') {
+        startCherryGrove();
+      }
+    });
+  </script>
 </body>
 </html>

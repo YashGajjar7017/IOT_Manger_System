@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
 /* ==========================================================================
    NEBULA CYBER-NEON COLOR SYSTEM & VARIABLES
    ========================================================================== */
@@ -2313,6 +2314,612 @@ body {
   color: var(--accent-secondary);
 }
 
+/* Default state for seaweed, petals & items is hidden */
+.kelp-forest-left, .kelp-forest-right,
+.cherry-forest-left, .cherry-forest-right,
+.petal-layer, .item-layer {
+  display: none !important;
+}
+
+/* ==========================================================================
+   THEME 1: MINECRAFT CLASSIC (GREEN / BROWN GRASS BIOME)
+   ========================================================================== */
+[data-theme="minecraft"] {
+  --font-sans: 'VT323', monospace !important;
+  --font-mono: 'VT323', monospace !important;
+
+  /* Classic Grass Palette */
+  --bg-space: #141217 !important;
+  --bg-terminal: #151515 !important;
+  --mc-panel: #212121 !important;
+  --mc-panel-inner: #151515 !important;
+  --mc-border-light: #555555 !important;
+  --mc-border-dark: #000000 !important;
+
+  --text-white: #ffffff !important;
+  --text-cyan: #ffff55 !important; /* Minecraft Yellow */
+  --text-dim: #aaaaaa !important;
+  --text-muted: #666666 !important;
+
+  --accent-primary: #55ff55 !important; /* Grass Green */
+  --accent-secondary: #ff5555 !important; /* Redstone Red */
+
+  --grad-primary: #5b8731 !important;
+  --grad-pink-blue: #5b8731 !important;
+  --grad-cyan-purple: #3a3a3a !important;
+  --grad-emerald-cyan: #55ff55 !important;
+  --grad-orange-pink: #ff9f0a !important;
+
+  /* Custom navigation highlight colors */
+  --nav-active-bg: #5b8731 !important;
+  --nav-active-border-l: #7dbd43 !important;
+  --nav-active-border-d: #2e4c16 !important;
+  --nav-active-text-shadow: #1e330f !important;
+
+  /* Custom button highlight colors */
+  --btn-bg: #8b8b8b !important;
+  --btn-border-l: #dbdbdb !important;
+  --btn-border-d: #555555 !important;
+  --btn-hover-bg: #a3a3a3 !important;
+  --btn-hover-border-l: #e2e2e2 !important;
+  --btn-hover-border-d: #6a6a6a !important;
+}
+
+/* Enable seaweed & background items when Classic Minecraft theme is active */
+[data-theme="minecraft"] .kelp-forest-left,
+[data-theme="minecraft"] .kelp-forest-right,
+[data-theme="minecraft"] .item-layer {
+  display: block !important;
+}
+
+/* Base Body Classic Minecraft Background Grid */
+[data-theme="minecraft"] body {
+  font-family: 'VT323', monospace !important;
+  font-size: 20px !important;
+  background-color: var(--bg-space) !important;
+  background-image: 
+    linear-gradient(45deg, #111 25%, transparent 25%), 
+    linear-gradient(-45deg, #111 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, #111 75%), 
+    linear-gradient(-45deg, transparent 75%, #111 75%) !important;
+  background-size: 40px 40px !important;
+  background-position: 0 0, 0 20px, 20px -20px, -20px 0px !important;
+  background-attachment: fixed !important;
+}
+
+/* Beveled card inset shadow for Classic */
+[data-theme="minecraft"] .window-titlebar, 
+[data-theme="minecraft"] .sidebar, 
+[data-theme="minecraft"] .card, 
+[data-theme="minecraft"] .panel, 
+[data-theme="minecraft"] .control-box, 
+[data-theme="minecraft"] .stat-chip, 
+[data-theme="minecraft"] .device-card, 
+[data-theme="minecraft"] .data-card, 
+[data-theme="minecraft"] .log-box, 
+[data-theme="minecraft"] .glass-card, 
+[data-theme="minecraft"] .ota-drop, 
+[data-theme="minecraft"] .btn-group-card, 
+[data-theme="minecraft"] .tab-content, 
+[data-theme="minecraft"] .status-box, 
+[data-theme="minecraft"] .terminal-container, 
+[data-theme="minecraft"] .device-details, 
+[data-theme="minecraft"] .cert-card, 
+[data-theme="minecraft"] .telemetry-grid, 
+[data-theme="minecraft"] .modal-content, 
+[data-theme="minecraft"] .telemetry-card, 
+[data-theme="minecraft"] .metric-box {
+  box-shadow: inset 3px 3px 0px #121212, inset -3px -3px 0px #5a5a5c !important;
+}
+
+/* Classic Minecraft branding icons */
+[data-theme="minecraft"] .brand-icon::after {
+  content: '⛏️' !important;
+  font-size: 24px !important;
+}
+[data-theme="minecraft"] .titlebar-logo::before {
+  content: '⚡' !important;
+  margin-right: 8px !important;
+}
 
 
+/* ==========================================================================
+   THEME 2: CHERRY GROVE BIOME (PINK WOOD & CHERRY BLOSSOMS)
+   ========================================================================== */
+[data-theme="cherry-grove"] {
+  --font-sans: 'VT323', monospace !important;
+  --font-mono: 'VT323', monospace !important;
 
+  /* Cherry Grove Palette */
+  --bg-space: #1d1117 !important;
+  --bg-terminal: #140a0e !important;
+  --mc-panel: #2a1720 !important;
+  --mc-panel-inner: #1a0f14 !important;
+  --mc-border-light: #8c4d60 !important;
+  --mc-border-dark: #47202d !important;
+
+  --text-white: #ffffff !important;
+  --text-cyan: #ffb5d0 !important; /* Cherry Blossom Pink */
+  --text-dim: #d8a0b0 !important;
+  --text-muted: #8c5d6c !important;
+
+  --accent-primary: #ff8da1 !important; /* Bright Cherry Petal Pink */
+  --accent-secondary: #ff4f70 !important; /* Deep Rose Red-Pink */
+
+  --grad-primary: #8c4d60 !important;
+  --grad-pink-blue: #ff8da1 !important;
+  --grad-cyan-purple: #5e3843 !important;
+  --grad-emerald-cyan: #ffb5d0 !important;
+  --grad-orange-pink: #ff4f70 !important;
+
+  /* Custom navigation highlight colors */
+  --nav-active-bg: #ff8da1 !important;
+  --nav-active-border-l: #ffb5c0 !important;
+  --nav-active-border-d: #cc6a87 !important;
+  --nav-active-text-shadow: #8c4d60 !important;
+
+  /* Custom button highlight colors */
+  --btn-bg: #8c5d6c !important; /* Muted Cherry Wood */
+  --btn-border-l: #d8a0b0 !important;
+  --btn-border-d: #47202d !important;
+  --btn-hover-bg: #a87283 !important;
+  --btn-hover-border-l: #fcaec3 !important;
+  --btn-hover-border-d: #5e3843 !important;
+}
+
+/* Enable Cherry Grove trees, petals & background items when theme is active */
+[data-theme="cherry-grove"] .cherry-forest-left,
+[data-theme="cherry-grove"] .cherry-forest-right,
+[data-theme="cherry-grove"] .petal-layer,
+[data-theme="cherry-grove"] .item-layer {
+  display: block !important;
+}
+
+/* Base Body Cherry Grove Theme Background */
+[data-theme="cherry-grove"] body {
+  font-family: 'VT323', monospace !important;
+  font-size: 20px !important;
+  background-color: var(--bg-space) !important;
+  background-image: 
+    linear-gradient(45deg, #25161f 25%, transparent 25%), 
+    linear-gradient(-45deg, #25161f 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, #25161f 75%), 
+    linear-gradient(-45deg, transparent 75%, #25161f 75%) !important;
+  background-size: 40px 40px !important;
+  background-position: 0 0, 0 20px, 20px -20px, -20px 0px !important;
+  background-attachment: fixed !important;
+}
+
+/* Beveled card inset shadow for Cherry Grove */
+[data-theme="cherry-grove"] .window-titlebar, 
+[data-theme="cherry-grove"] .sidebar, 
+[data-theme="cherry-grove"] .card, 
+[data-theme="cherry-grove"] .panel, 
+[data-theme="cherry-grove"] .control-box, 
+[data-theme="cherry-grove"] .stat-chip, 
+[data-theme="cherry-grove"] .device-card, 
+[data-theme="cherry-grove"] .data-card, 
+[data-theme="cherry-grove"] .log-box, 
+[data-theme="cherry-grove"] .glass-card, 
+[data-theme="cherry-grove"] .ota-drop, 
+[data-theme="cherry-grove"] .btn-group-card, 
+[data-theme="cherry-grove"] .tab-content, 
+[data-theme="cherry-grove"] .status-box, 
+[data-theme="cherry-grove"] .terminal-container, 
+[data-theme="cherry-grove"] .device-details, 
+[data-theme="cherry-grove"] .cert-card, 
+[data-theme="cherry-grove"] .telemetry-grid, 
+[data-theme="cherry-grove"] .modal-content, 
+[data-theme="cherry-grove"] .telemetry-card, 
+[data-theme="cherry-grove"] .metric-box {
+  box-shadow: inset 3px 3px 0px #1a0f14, inset -3px -3px 0px #5e3843 !important;
+}
+
+/* Cherry Grove branding icons */
+[data-theme="cherry-grove"] .brand-icon::after {
+  content: '🌸' !important;
+  font-size: 24px !important;
+}
+[data-theme="cherry-grove"] .titlebar-logo::before {
+  content: '🌸' !important;
+  margin-right: 8px !important;
+}
+
+
+/* ==========================================================================
+   SHARED MINECRAFT/CHERRY GROVE LAYOUT OVERRIDES (DRY STRUCTURAL CSS)
+   ========================================================================== */
+[data-theme="minecraft"] .window-titlebar, [data-theme="cherry-grove"] .window-titlebar,
+[data-theme="minecraft"] .sidebar, [data-theme="cherry-grove"] .sidebar,
+[data-theme="minecraft"] .card, [data-theme="cherry-grove"] .card,
+[data-theme="minecraft"] .panel, [data-theme="cherry-grove"] .panel,
+[data-theme="minecraft"] .control-box, [data-theme="cherry-grove"] .control-box,
+[data-theme="minecraft"] .stat-chip, [data-theme="cherry-grove"] .stat-chip,
+[data-theme="minecraft"] .device-card, [data-theme="cherry-grove"] .device-card,
+[data-theme="minecraft"] .data-card, [data-theme="cherry-grove"] .data-card,
+[data-theme="minecraft"] .log-box, [data-theme="cherry-grove"] .log-box,
+[data-theme="minecraft"] .glass-card, [data-theme="cherry-grove"] .glass-card,
+[data-theme="minecraft"] .ota-drop, [data-theme="cherry-grove"] .ota-drop,
+[data-theme="minecraft"] .btn-group-card, [data-theme="cherry-grove"] .btn-group-card,
+[data-theme="minecraft"] .tab-content, [data-theme="cherry-grove"] .tab-content,
+[data-theme="minecraft"] .status-box, [data-theme="cherry-grove"] .status-box,
+[data-theme="minecraft"] .terminal-container, [data-theme="cherry-grove"] .terminal-container,
+[data-theme="minecraft"] .device-details, [data-theme="cherry-grove"] .device-details,
+[data-theme="minecraft"] .cert-card, [data-theme="cherry-grove"] .cert-card,
+[data-theme="minecraft"] .telemetry-grid, [data-theme="cherry-grove"] .telemetry-grid,
+[data-theme="minecraft"] .modal-content, [data-theme="cherry-grove"] .modal-content,
+[data-theme="minecraft"] .telemetry-card, [data-theme="cherry-grove"] .telemetry-card,
+[data-theme="minecraft"] .metric-box, [data-theme="cherry-grove"] .metric-box {
+  border-radius: 0px !important;
+  border: 4px solid !important;
+  border-color: var(--mc-border-light) var(--mc-border-dark) var(--mc-border-dark) var(--mc-border-light) !important;
+  background-color: var(--mc-panel) !important;
+  background-image: none !important;
+}
+
+[data-theme="minecraft"] .brand-icon svg, [data-theme="cherry-grove"] .brand-icon svg,
+[data-theme="minecraft"] .titlebar-logo .logo-dot, [data-theme="cherry-grove"] .titlebar-logo .logo-dot {
+  display: none !important;
+}
+
+[data-theme="minecraft"] .brand-text h2, [data-theme="cherry-grove"] .brand-text h2,
+[data-theme="minecraft"] .titlebar-logo, [data-theme="cherry-grove"] .titlebar-logo {
+  font-family: 'Press Start 2P', monospace !important;
+  font-size: 11px !important;
+  color: var(--text-cyan) !important;
+  text-shadow: 2px 2px 0px var(--grad-primary) !important;
+  letter-spacing: -0.5px !important;
+}
+
+[data-theme="minecraft"] .brand-text span, [data-theme="cherry-grove"] .brand-text span {
+  font-family: 'VT323', monospace !important;
+  font-size: 15px !important;
+  color: var(--text-dim) !important;
+}
+
+[data-theme="minecraft"] .nav-item, [data-theme="cherry-grove"] .nav-item {
+  font-family: 'Press Start 2P', monospace !important;
+  font-size: 10px !important;
+  border-radius: 0px !important;
+  color: var(--text-dim) !important;
+  text-shadow: 1px 1px 0px var(--bg-terminal) !important;
+  box-shadow: none !important;
+  margin-bottom: 6px !important;
+  border: 3px solid !important;
+  border-color: var(--mc-border-light) var(--mc-border-dark) var(--mc-border-dark) var(--mc-border-light) !important;
+}
+
+[data-theme="minecraft"] .nav-item svg, [data-theme="cherry-grove"] .nav-item svg {
+  color: var(--text-dim) !important;
+}
+
+[data-theme="minecraft"] .nav-item.active, [data-theme="cherry-grove"] .nav-item.active {
+  background: var(--nav-active-bg) !important;
+  color: #ffffff !important;
+  border-color: var(--nav-active-border-l) var(--nav-active-border-d) var(--nav-active-border-d) var(--nav-active-border-l) !important;
+  text-shadow: 1px 1px 0px var(--nav-active-text-shadow) !important;
+}
+
+[data-theme="minecraft"] .nav-item.active svg, [data-theme="cherry-grove"] .nav-item.active svg {
+  color: #ffffff !important;
+}
+
+[data-theme="minecraft"] .nav-item:hover:not(.active), [data-theme="cherry-grove"] .nav-item:hover:not(.active) {
+  background: var(--bg-terminal) !important;
+  color: var(--text-cyan) !important;
+}
+
+[data-theme="minecraft"] .btn, [data-theme="cherry-grove"] .btn,
+[data-theme="minecraft"] button.win-btn, [data-theme="cherry-grove"] button.win-btn,
+[data-theme="minecraft"] .button-row button, [data-theme="cherry-grove"] .button-row button,
+[data-theme="minecraft"] .control-actions button, [data-theme="cherry-grove"] .control-actions button,
+[data-theme="minecraft"] .ota-actions button, [data-theme="cherry-grove"] .ota-actions button,
+[data-theme="minecraft"] .tab-button, [data-theme="cherry-grove"] .tab-button {
+  font-family: 'Press Start 2P', monospace !important;
+  font-size: 10px !important;
+  border-radius: 0px !important;
+  background: var(--btn-bg) !important;
+  border: 4px solid !important;
+  border-color: var(--btn-border-l) var(--btn-border-d) var(--btn-border-d) var(--btn-border-l) !important;
+  color: #ffffff !important;
+  text-shadow: 2px 2px 0px var(--btn-border-d) !important;
+  box-shadow: none !important;
+  padding: 8px 16px !important;
+}
+
+[data-theme="minecraft"] .btn:hover:not(:disabled), [data-theme="cherry-grove"] .btn:hover:not(:disabled),
+[data-theme="minecraft"] button.win-btn:hover, [data-theme="cherry-grove"] button.win-btn:hover,
+[data-theme="minecraft"] .tab-button:hover, [data-theme="cherry-grove"] .tab-button:hover {
+  background: var(--btn-hover-bg) !important;
+  border-color: var(--btn-hover-border-l) var(--btn-hover-border-d) var(--btn-hover-border-d) var(--btn-hover-border-l) !important;
+  color: var(--text-cyan) !important;
+}
+
+[data-theme="minecraft"] .btn:active:not(:disabled), [data-theme="cherry-grove"] .btn:active:not(:disabled),
+[data-theme="minecraft"] .tab-button:active, [data-theme="cherry-grove"] .tab-button:active {
+  background: var(--btn-border-d) !important;
+  border-color: var(--btn-border-d) var(--btn-border-l) var(--btn-border-l) var(--btn-border-d) !important;
+  text-shadow: 1px 1px 0px #000000 !important;
+}
+
+[data-theme="minecraft"] .btn:disabled, [data-theme="cherry-grove"] .btn:disabled {
+  background: var(--bg-terminal) !important;
+  border-color: var(--mc-border-light) var(--mc-border-dark) var(--mc-border-dark) var(--mc-border-light) !important;
+  color: var(--text-muted) !important;
+  text-shadow: none !important;
+}
+
+[data-theme="minecraft"] .btn-primary, [data-theme="cherry-grove"] .btn-primary {
+  background: var(--nav-active-bg) !important;
+  border-color: var(--nav-active-border-l) var(--nav-active-border-d) var(--nav-active-border-d) var(--nav-active-border-l) !important;
+  text-shadow: 1px 1px 0px var(--nav-active-text-shadow) !important;
+}
+
+[data-theme="minecraft"] .btn-accent, [data-theme="cherry-grove"] .btn-accent {
+  background: #4dedf4 !important; /* Diamond blue */
+  border-color: #8effff #1c9ea5 #1c9ea5 #8effff !important;
+  color: #111 !important;
+  text-shadow: 1px 1px 0px #fff !important;
+}
+
+[data-theme="minecraft"] .btn-danger, [data-theme="cherry-grove"] .btn-danger {
+  background: var(--accent-secondary) !important;
+  border-color: var(--accent-primary) var(--grad-primary) var(--grad-primary) var(--accent-primary) !important;
+  text-shadow: 1px 1px 0px var(--grad-cyan-purple) !important;
+}
+
+[data-theme="minecraft"] h1, [data-theme="cherry-grove"] h1,
+[data-theme="minecraft"] h2, [data-theme="cherry-grove"] h2,
+[data-theme="minecraft"] h3, [data-theme="cherry-grove"] h3,
+[data-theme="minecraft"] h4, [data-theme="cherry-grove"] h4,
+[data-theme="minecraft"] h5, [data-theme="cherry-grove"] h5,
+[data-theme="minecraft"] h6, [data-theme="cherry-grove"] h6,
+[data-theme="minecraft"] .card-title, [data-theme="cherry-grove"] .card-title,
+[data-theme="minecraft"] .section-title, [data-theme="cherry-grove"] .section-title,
+[data-theme="minecraft"] .tab-title, [data-theme="cherry-grove"] .tab-title {
+  font-family: 'Press Start 2P', monospace !important;
+  color: var(--text-white) !important;
+  text-shadow: 2px 2px 0px var(--bg-terminal) !important;
+}
+
+[data-theme="minecraft"] .badge, [data-theme="cherry-grove"] .badge,
+[data-theme="minecraft"] .status-badge, [data-theme="cherry-grove"] .status-badge,
+[data-theme="minecraft"] .status-indicator, [data-theme="cherry-grove"] .status-indicator {
+  font-family: 'Press Start 2P', monospace !important;
+  font-size: 8px !important;
+  border-radius: 0px !important;
+  border: 2px solid !important;
+  padding: 4px 8px !important;
+  text-transform: uppercase !important;
+}
+
+[data-theme="minecraft"] .badge-success, [data-theme="cherry-grove"] .badge-success,
+[data-theme="minecraft"] .badge.PASS, [data-theme="cherry-grove"] .badge.PASS,
+[data-theme="minecraft"] .status-connected, [data-theme="cherry-grove"] .status-connected {
+  background: rgba(85, 255, 85, 0.1) !important;
+  border-color: var(--accent-primary) !important;
+  color: var(--accent-primary) !important;
+}
+
+[data-theme="minecraft"] .badge-warning, [data-theme="cherry-grove"] .badge-warning,
+[data-theme="minecraft"] .badge.WARN, [data-theme="cherry-grove"] .badge.WARN,
+[data-theme="minecraft"] .status-waiting, [data-theme="cherry-grove"] .status-waiting {
+  background: rgba(255, 181, 208, 0.1) !important;
+  border-color: var(--text-cyan) !important;
+  color: var(--text-cyan) !important;
+}
+
+[data-theme="minecraft"] .badge-danger, [data-theme="cherry-grove"] .badge-danger,
+[data-theme="minecraft"] .badge.FAIL, [data-theme="cherry-grove"] .badge.FAIL,
+[data-theme="minecraft"] .status-disconnected, [data-theme="cherry-grove"] .status-disconnected {
+  background: rgba(255, 85, 85, 0.1) !important;
+  border-color: var(--accent-secondary) !important;
+  color: var(--accent-secondary) !important;
+}
+
+[data-theme="minecraft"] input, [data-theme="cherry-grove"] input,
+[data-theme="minecraft"] select, [data-theme="cherry-grove"] select,
+[data-theme="minecraft"] textarea, [data-theme="cherry-grove"] textarea {
+  background-color: var(--mc-panel-inner) !important;
+  border: 3px solid !important;
+  border-color: var(--mc-border-dark) var(--mc-border-light) var(--mc-border-light) var(--mc-border-dark) !important;
+  border-radius: 0px !important;
+  color: var(--text-white) !important;
+  font-family: 'VT323', monospace !important;
+  font-size: 18px !important;
+  padding: 6px 12px !important;
+  box-shadow: none !important;
+}
+
+
+/* ==========================================================================
+   MINECRAFT CLASSIC - SEAWEED KELP STYLING
+   ========================================================================== */
+.kelp-forest-left, .kelp-forest-right {
+  position: fixed;
+  bottom: 0;
+  top: 0;
+  width: 140px;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+.kelp-forest-left { left: 0px; }
+.kelp-forest-right { right: 0px; }
+
+[data-theme="minecraft"] .kelp {
+  position: absolute;
+  bottom: -40px;
+  width: 24px;
+  height: 120%;
+  background: repeating-linear-gradient(
+    to bottom,
+    #5c8e32 0px, #5c8e32 20px,
+    #4a7227 20px, #4a7227 28px,
+    #5b8c31 28px, #5b8c31 48px,
+    #3b5c1f 48px, #3b5c1f 56px
+  );
+  border: 4px solid #1a300b;
+}
+
+[data-theme="minecraft"] .kelp::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: 
+    radial-gradient(circle at 0% 15%, #7dbd43 6px, transparent 6px),
+    radial-gradient(circle at 100% 35%, #7dbd43 6px, transparent 6px),
+    radial-gradient(circle at 0% 55%, #7dbd43 6px, transparent 6px),
+    radial-gradient(circle at 100% 75%, #7dbd43 6px, transparent 6px);
+}
+
+[data-theme="minecraft"] .kelp-1 { left: 15px; animation: sway-up-down 8s ease-in-out infinite; }
+[data-theme="minecraft"] .kelp-2 { left: 60px; animation: sway-up-down 11s ease-in-out infinite; animation-delay: -3s; height: 110%; }
+[data-theme="minecraft"] .kelp-3 { right: 15px; animation: sway-up-down 9s ease-in-out infinite; animation-delay: -1s; height: 115%; }
+[data-theme="minecraft"] .kelp-4 { right: 65px; animation: sway-up-down 12s ease-in-out infinite; animation-delay: -5s; }
+
+@keyframes sway-up-down {
+  0%, 100% { transform: translateY(0px) rotate(-3deg); }
+  50% { transform: translateY(-45px) rotate(3deg); }
+}
+
+
+/* ==========================================================================
+   MINECRAFT CHERRY GROVE - TREE STYLING
+   ========================================================================== */
+.cherry-forest-left, .cherry-forest-right {
+  position: fixed;
+  bottom: 0;
+  top: 0;
+  width: 160px;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+.cherry-forest-left { left: 0px; }
+.cherry-forest-right { right: 0px; }
+
+.cherry-tree {
+  position: absolute;
+  width: 100px;
+  height: 220px;
+  bottom: -10px;
+}
+
+.tree-1 { left: 10px; height: 180px; animation: treeSway 10s ease-in-out infinite; }
+.tree-2 { left: 60px; height: 210px; animation: treeSway 13s ease-in-out infinite -4s; bottom: -20px; }
+.tree-3 { right: 10px; height: 190px; animation: treeSway 11s ease-in-out infinite -2s; }
+.tree-4 { right: 55px; height: 220px; animation: treeSway 14s ease-in-out infinite -6s; bottom: -15px; }
+
+.tree-trunk {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 65%;
+  background-color: #4e3526; /* Cherry Wood Bark */
+  border-left: 4px solid #6b4c37; /* Highlight side */
+  border-right: 4px solid #322117; /* Dark shadow side */
+  border-top: 4px solid #322117;
+  z-index: 1;
+}
+
+.tree-canopy {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid #33151f; /* Dark block outline */
+  border-radius: 0px;
+  box-shadow: inset 3px 3px 0px rgba(255,255,255,0.15), inset -3px -3px 0px rgba(0,0,0,0.3);
+}
+
+.canopy-1 {
+  bottom: 50%;
+  width: 80px;
+  height: 60px;
+  background-color: #cc6a87; /* Back leaf shadow layer */
+  z-index: 0;
+}
+
+.canopy-2 {
+  bottom: 60%;
+  width: 60px;
+  height: 50px;
+  background-color: #ff8da1; /* Mid leaf standard layer */
+  z-index: 2;
+}
+
+.canopy-3 {
+  bottom: 70%;
+  width: 44px;
+  height: 36px;
+  background-color: #ffb5c0; /* Top leaf highlight layer */
+  z-index: 3;
+}
+
+.cherry-glow {
+  position: absolute;
+  bottom: 55%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100px;
+  height: 100px;
+  background: rgba(255, 141, 161, 0.12);
+  filter: blur(25px);
+  border-radius: 50%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+@keyframes treeSway {
+  0%, 100% { transform: rotate(-1.5deg) translateY(0); }
+  50% { transform: rotate(1.5deg) translateY(-2px); }
+}
+
+
+/* ==========================================================================
+   CHERRY BLOSSOM PETALS LAYER
+   ========================================================================== */
+.petal-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.cherry-petal {
+  position: absolute;
+  top: -20px;
+  background-color: #ffb5c0;
+  box-shadow: 1px 1px 0px rgba(0, 0, 0, 0.15);
+}
+
+@keyframes fallAndSway {
+  0% {
+    transform: translateY(-20px) translateX(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(50vh) translateX(60px) rotate(180deg);
+  }
+  100% {
+    transform: translateY(105vh) translateX(-20px) rotate(360deg);
+  }
+}
+
+
+/* ==========================================================================
+   FLOATING BLOCK ITEMS IN BACKGROUND
+   ========================================================================== */
+.float-block {
+  position: absolute;
+  font-size: 32px;
+  opacity: 0.12;
+  animation: driftUp 28s linear infinite;
+}
+
+@keyframes driftUp {
+  0% { transform: translateY(110vh) rotate(0deg); }
+  100% { transform: translateY(-15vh) rotate(360deg); }
+}

@@ -1187,7 +1187,7 @@ Overall Status : ${overallStatus}
           filename: cleanFilename,
           content: updatedContent
         });
-        
+
         setTimeout(() => setCertUploadProgress(40), 150);
         setTimeout(() => setCertUploadProgress(85), 350);
       } catch (err) {
@@ -2213,7 +2213,7 @@ Overall Status : ${overallStatus}
 
             {/* Direct Wireless AP & Manual Connection Manager */}
             <div className="dashboard-middle-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px', marginBottom: '20px' }}>
-              
+
               {/* Direct AP Diagnostics & Manual Socket Link */}
               <div className="glass-card direct-ap-panel">
                 <h3><span className="icon">📶</span> Direct Wireless AP & Manual Link</h3>
@@ -2331,7 +2331,7 @@ Overall Status : ${overallStatus}
                   {wifiDetails.ap_clients || queriedInfo?.ap_clients || 0} client(s) active
                 </span>
               </div>
-              
+
               {(!wifiDetails.ap_clients_list || wifiDetails.ap_clients_list.length === 0) ? (
                 <div style={{ textAlign: 'center', padding: '15px', color: '#606080', fontSize: '12px', fontStyle: 'italic', background: 'rgba(255,255,255,0.01)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.05)' }}>
                   No external station clients connected to ESP32 Gateway AP network.
@@ -3559,45 +3559,45 @@ Overall Status : ${overallStatus}
                 <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
                   <h4 style={{ fontSize: '13px', color: 'var(--accent-pink)', marginBottom: '10px' }}>Auto-Download from URL</h4>
 
-                   <div className="input-group">
-                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                       <label>Root CA Certificate URL (.pem)</label>
-                       <CertStatusBadge status={certStatuses['aws_root_ca.pem']} />
-                     </div>
-                     <input
-                       type="text"
-                       value={certRootCaUrl}
-                       onChange={(e) => setCertRootCaUrl(e.target.value)}
-                       placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=1&PROJCD=re"
-                       disabled={isDownloadingCerts}
-                     />
-                   </div>
-                   <div className="input-group">
-                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                       <label>Device Certificate URL (.crt)</label>
-                       <CertStatusBadge status={certStatuses['device_cert.crt']} />
-                     </div>
-                     <input
-                       type="text"
-                       value={certDeviceCertUrl}
-                       onChange={(e) => setCertDeviceCertUrl(e.target.value)}
-                       placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=2&PROJCD=re"
-                       disabled={isDownloadingCerts}
-                     />
-                   </div>
-                   <div className="input-group">
-                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                       <label>Private Key URL (.key)</label>
-                       <CertStatusBadge status={certStatuses['private_key.key']} />
-                     </div>
-                     <input
-                       type="text"
-                       value={certPrivateKeyUrl}
-                       onChange={(e) => setCertPrivateKeyUrl(e.target.value)}
-                       placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=3&PROJCD=re"
-                       disabled={isDownloadingCerts}
-                     />
-                   </div>
+                  <div className="input-group">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label>Root CA Certificate URL (.pem)</label>
+                      <CertStatusBadge status={certStatuses['aws_root_ca.pem']} />
+                    </div>
+                    <input
+                      type="text"
+                      value={certRootCaUrl}
+                      onChange={(e) => setCertRootCaUrl(e.target.value)}
+                      placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=1&PROJCD=re"
+                      disabled={isDownloadingCerts}
+                    />
+                  </div>
+                  <div className="input-group">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label>Device Certificate URL (.crt)</label>
+                      <CertStatusBadge status={certStatuses['device_cert.crt']} />
+                    </div>
+                    <input
+                      type="text"
+                      value={certDeviceCertUrl}
+                      onChange={(e) => setCertDeviceCertUrl(e.target.value)}
+                      placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=2&PROJCD=re"
+                      disabled={isDownloadingCerts}
+                    />
+                  </div>
+                  <div className="input-group">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label>Private Key URL (.key)</label>
+                      <CertStatusBadge status={certStatuses['private_key.key']} />
+                    </div>
+                    <input
+                      type="text"
+                      value={certPrivateKeyUrl}
+                      onChange={(e) => setCertPrivateKeyUrl(e.target.value)}
+                      placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=3&PROJCD=re"
+                      disabled={isDownloadingCerts}
+                    />
+                  </div>
 
                   <button
                     className="btn btn-primary"
@@ -4068,14 +4068,14 @@ Overall Status : ${overallStatus}
             </header>
 
             <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '20px' }}>
-              
+
               {/* Left Column: Files list and storage utilization */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                
+
                 {/* Storage Utilization Card */}
                 <div className="glass-card">
                   <h3><span className="icon">&#128190;</span> Filesystem Space</h3>
-                  
+
                   {spiffsStorage.totalBytes > 0 ? (
                     <div style={{ marginTop: '15px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '8px' }}>
@@ -4097,8 +4097,8 @@ Overall Status : ${overallStatus}
                     </div>
                   )}
 
-                  <button 
-                    className="btn btn-accent" 
+                  <button
+                    className="btn btn-accent"
                     onClick={handleNewSpiffsFileSetup}
                     disabled={!connection.type || connection.type === 'failed'}
                     style={{ marginTop: '20px', width: '100%', height: '36px', fontSize: '12.5px' }}
@@ -4110,7 +4110,7 @@ Overall Status : ${overallStatus}
                 {/* Files List Card */}
                 <div className="glass-card">
                   <h3><span className="icon">&#128194;</span> SPIFFS Files</h3>
-                  
+
                   <div className="cert-list-container" style={{ maxHeight: '350px', overflowY: 'auto', marginTop: '15px' }}>
                     {spiffsStorage.files.length === 0 ? (
                       <div style={{ padding: '30px 10px', textAlign: 'center', color: 'var(--text-dim)', fontSize: '12.5px' }}>
@@ -4121,18 +4121,18 @@ Overall Status : ${overallStatus}
                         const cleanName = file.name.startsWith('/') ? file.name.substring(1) : file.name;
                         const isSelected = selectedSpiffsFile === file.name;
                         return (
-                          <div 
-                            key={idx} 
-                            className="cert-item-row" 
-                            style={{ 
-                              display: 'flex', 
-                              justifyContent: 'space-between', 
-                              alignItems: 'center', 
-                              padding: '10px 12px', 
-                              background: isSelected ? 'rgba(0, 240, 255, 0.05)' : 'rgba(255,255,255,0.01)', 
+                          <div
+                            key={idx}
+                            className="cert-item-row"
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '10px 12px',
+                              background: isSelected ? 'rgba(0, 240, 255, 0.05)' : 'rgba(255,255,255,0.01)',
                               border: isSelected ? '1px solid rgba(0, 240, 255, 0.2)' : '1px solid rgba(255,255,255,0.03)',
-                              borderRadius: '6px', 
-                              marginBottom: '6px' 
+                              borderRadius: '6px',
+                              marginBottom: '6px'
                             }}
                           >
                             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, cursor: 'pointer' }} onClick={() => handleReadSpiffsFile(file.name)}>
@@ -4323,7 +4323,7 @@ Overall Status : ${overallStatus}
                 <div style={{ marginBottom: '20px' }}>
                   <label className="control-title" style={{ fontSize: '10px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold' }}>Color Theme</label>
                   <div className="theme-presets-grid">
-                    <div 
+                    <div
                       className={`theme-preset-card ${currentTheme === 'quantum-indigo' ? 'active' : ''}`}
                       onClick={() => setCurrentTheme('quantum-indigo')}
                       style={{ '--theme-card-border': '#7000ff', '--theme-card-bg-rgb': '112, 0, 255', '--theme-preview-grad': 'linear-gradient(135deg, #7000ff 0%, #00c6ff 100%)' }}
@@ -4332,7 +4332,7 @@ Overall Status : ${overallStatus}
                       <span className="theme-preset-name">Quantum Indigo</span>
                     </div>
 
-                    <div 
+                    <div
                       className={`theme-preset-card ${currentTheme === 'cyber-orchid' ? 'active' : ''}`}
                       onClick={() => setCurrentTheme('cyber-orchid')}
                       style={{ '--theme-card-border': '#f953c6', '--theme-card-bg-rgb': '249, 83, 198', '--theme-preview-grad': 'linear-gradient(135deg, #f953c6 0%, #7000ff 100%)' }}
@@ -4341,7 +4341,7 @@ Overall Status : ${overallStatus}
                       <span className="theme-preset-name">Cyber Orchid</span>
                     </div>
 
-                    <div 
+                    <div
                       className={`theme-preset-card ${currentTheme === 'mint-aurora' ? 'active' : ''}`}
                       onClick={() => setCurrentTheme('mint-aurora')}
                       style={{ '--theme-card-border': '#00e676', '--theme-card-bg-rgb': '0, 230, 118', '--theme-preview-grad': 'linear-gradient(135deg, #00e676 0%, #00c6ff 100%)' }}
@@ -4350,13 +4350,32 @@ Overall Status : ${overallStatus}
                       <span className="theme-preset-name">Mint Aurora</span>
                     </div>
 
-                    <div 
+                    <div
                       className={`theme-preset-card ${currentTheme === 'solar-flare' ? 'active' : ''}`}
                       onClick={() => setCurrentTheme('solar-flare')}
                       style={{ '--theme-card-border': '#ff7300', '--theme-card-bg-rgb': '255, 115, 0', '--theme-preview-grad': 'linear-gradient(135deg, #ff7300 0%, #f953c6 100%)' }}
                     >
                       <div className="theme-preview-bar"></div>
                       <span className="theme-preset-name">Solar Flare</span>
+                    </div>
+
+                    <div
+                      className={`theme-preset-card ${currentTheme === 'minecraft' ? 'active' : ''}`}
+                      onClick={() => setCurrentTheme('minecraft')}
+                      // style={{ '--theme-card-border': '#5b8731', '--theme-card-bg-rgb': '91, 135, 49', '--theme-preview-grad': 'linear-gradient(135deg, #5b8731 0%, #866043 100%)' }}
+                      style={{ '--theme-card-border': '#5b8731', '--theme-card-bg-rgb': '91, 135, 49', '--theme-preview-grad': 'linear-gradient(135deg, #5b8731 0%, #866043 100%)' }}
+                    >
+                      <div className="theme-preview-bar"></div>
+                      <span className="theme-preset-name">Minecraft Edition</span>
+                    </div>
+
+                    <div
+                      className={`theme-preset-card ${currentTheme === 'cherry-grove' ? 'active' : ''}`}
+                      onClick={() => setCurrentTheme('cherry-grove')}
+                      style={{ '--theme-card-border': '#ff8da1', '--theme-card-bg-rgb': '255, 141, 161', '--theme-preview-grad': 'linear-gradient(135deg, #ff8da1 0%, #3a222d 100%)' }}
+                    >
+                      <div className="theme-preview-bar"></div>
+                      <span className="theme-preset-name">Cherry Grove Edition</span>
                     </div>
                   </div>
                 </div>
@@ -4394,7 +4413,7 @@ Overall Status : ${overallStatus}
                   ) : (
                     <button className="btn btn-secondary" onClick={handleGitHubSignIn} style={{ width: '100%', marginTop: '10px', gap: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                        <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+                        <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
                       </svg>
                       Sign in with GitHub
                     </button>
