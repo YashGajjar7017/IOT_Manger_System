@@ -8628,3 +8628,7 @@
 [7/2/2026, 6:00:52 PM] [TX TCP] Send: PING
 [7/2/2026, 6:00:55 PM] [TX TCP] Send: PING
 [7/2/2026, 6:00:58 PM] [TX TCP] Send: PING
+[7/4/2026, 11:53:02 AM] [CACHE] ⚡ Loaded 2 device(s) from disk cache — dashboard ready instantly.
+[7/4/2026, 12:10:33 PM] [CACHE] ⚡ Loaded 2 device(s) from disk cache — dashboard ready instantly.
+[7/4/2026, 12:10:33 PM] [WORKER] Failed to load database module: Cannot read properties of undefined (reading 'then')
+[7/4/2026, 12:10:33 PM] [WORKER] Data processing worker thread started.
