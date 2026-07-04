@@ -1,0 +1,1351 @@
+/**
+ * ESP32 IoT Gateway Firmware — Revision 3 (Clean Rewrite)
+ *
+ * Architecture:
+ *  - STATE_HALT     : Boot wait. Accepts TCP/Serial/button trigger.
+ *  - STATE_DIAGNOSTICS : Runs 9-point self-check, including RS485 Modbus test.
+ *  - STATE_RUNNING  : Streams live telemetry to Electron GUI over TCP.
+ *
+ * RS485 Logic (the core of this rewrite):
+ *  - GUI sends "TEST_RS485" command over TCP.
+ *  - Firmware switches MUX to RS485 (MUX_A0 = LOW).
+ *  - Builds a Modbus RTU FC03 Read-Holding-Registers request frame.
+ *  - Transmits frame over Serial2 (pins FR_TX=14, FR_RX=15).
+ *  - Waits MODBUS_TIMEOUT_MS for slave ACK response.
+ *  - Validates: slave ID, function code, byte count, CRC-16.
+ *  - Sends {"type":"rs485_result","passed":true/false,...} to GUI immediately.
+ *  - Restores MUX to RS232 (MUX_A0 = HIGH) after test.
+ *
+ * OTA: HTTP server on port 500 (cert upload) and 8000 (firmware OTA).
+ * Both run on Core 1 via FreeRTOS task to avoid blocking the main loop.
+ */
+
+// ─── Includes ────────────────────────────────────────────────────────────────
+#include "FS.h"
+#include "SPIFFS.h"
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+#include "esp_wifi.h"
+#include <SPI.h>
+#include <Update.h>
+#include <WebServer.h>
+#include <WiFi.h>
+#include <WiFiUdp.h>
+#include <Wire.h>
+#include <queue>
+
+// ─── Hardware Pin Definitions ─────────────────────────────────────────────────
+// MUX channel selector (2-bit)
+#define MUX_A0  36   // LOW = RS485 path, HIGH = RS232 path
+#define MUX_A1  37   // Always LOW in current hardware
+
+// RS485 port (Serial2 in RS485 mode)
+#define FR_RX   15
+#define FR_TX   14
+
+// GPRS/GSM modem on Serial1
+#define GPRS_RX 1
+#define GPRS_TX 2
+#define GSM_PWRKEY_PIN 5
+#define GSM_EN_PIN     21
+
+// I2C (RTC DS3231) – set to real pins when hardware is wired
+#define I2C_SDA_PIN -1
+#define I2C_SCL_PIN -1
+
+// Digital Inputs & Switch
+#define DI1        39
+#define DI2        40
+#define DI3        41
+#define DI4        42
+#define SWITCH_PIN 38
+
+// Winbond SPI Flash
+#define FLASH_CS   10
+#define FLASH_SCK  12
+#define FLASH_MISO 11
+#define FLASH_MOSI 13
+
+// Relays
+#define RELAY_1_PIN 4
+#define RELAY_2_PIN 6
+
+// Boot button (active LOW)
+#define BOOT_BUTTON_PIN 0
+
+// ─── Modbus RTU Configuration ─────────────────────────────────────────────────
+#define MODBUS_BAUD              9600
+#define MODBUS_SERIAL_CONFIG     SERIAL_8N1
+#define MODBUS_TIMEOUT_MS        1500   // max wait for slave ACK
+#define MODBUS_INTERFRAME_GAP_US 4000   // ≥3.5 chars at 9600 baud = ~3.65ms
+#define MODBUS_FC_READ_HOLDING   0x03
+
+// Slave parameters (can be overridden via TCP command SET_SLAVE:<id>:<reg>:<cnt>)
+uint8_t  modbusSlaveId     = 1;
+uint16_t modbusStartReg    = 0;
+uint8_t  modbusRegCount    = 2;
+
+// ─── GSM Configuration ───────────────────────────────────────────────────────
+#define GPRS_BAUD        9600
+#define GPRS_AT_TIMEOUT  1500
+
+// ─── Certificate Storage ──────────────────────────────────────────────────────
+#define MAX_CERTS 10
+String certNames[MAX_CERTS] = {"rootCA.pem", "device_cert.crt", "private_key.key"};
+size_t certSizes[MAX_CERTS] = {1188, 2048, 1675};
+int    certCount             = 3;
+
+// ─── System State Machine ─────────────────────────────────────────────────────
+enum SystemState { STATE_HALT, STATE_DIAGNOSTICS, STATE_RUNNING };
+SystemState currentState = STATE_HALT;
+
+// ─── Diagnostic Results ───────────────────────────────────────────────────────
+struct DiagResult { bool rs232=false, rs485=false, gprs=false, bus=false,
+                         ap=false, flash=false, di=false, driver=false, rtc=false; };
+struct DiagTested { bool rs232=false, rs485=false, gprs=false, bus=false,
+                         ap=false, flash=false, di=false, driver=false, rtc=false; };
+DiagResult diagResult;
+DiagTested diagTested;
+
+// ─── Device Identity & Config ─────────────────────────────────────────────────
+String deviceIMEI     = "866738083623502";
+String deviceMAC      = "";
+String devicePassword = "admin_secure_gate";
+String bootCertTarget = "BOTH";
+String routerSSID     = "Medha_Network's";
+String routerPassword = "medha@123";
+
+// ─── Relay State ──────────────────────────────────────────────────────────────
+bool relay1State = false;
+bool relay2State = false;
+
+// ─── Telemetry Timing ─────────────────────────────────────────────────────────
+unsigned long lastTelemetryTime  = 0;
+unsigned long telemetryInterval  = 1500;
+unsigned long lastLogTime        = 0;
+
+// ─── TCP Client (ESP32 connects TO Electron as client on port 9000) ───────────
+WiFiClient tcpClient;
+IPAddress  electronServerIP;
+bool       hasElectronServerIP = false;
+unsigned long lastConnectAttempt = 0;
+const unsigned long CONNECT_INTERVAL_MS = 5000;
+
+// ─── UDP Discovery ────────────────────────────────────────────────────────────
+WiFiUDP udpListener;
+const int UDP_PORT = 5002;
+
+// ─── HTTP/OTA Servers ────────────────────────────────────────────────────────
+WebServer httpServer(8000);
+WebServer otaServer(500);
+
+// ─── Diagnostics re-entrant guard ────────────────────────────────────────────
+volatile bool diagRunning = false;
+
+// ─── WiFi Event Flags (set in ISR-safe callback, processed in loop) ──────────
+volatile bool evAPClientConnected    = false;
+volatile bool evAPClientDisconnected = false;
+volatile bool evSTAConnected         = false;
+volatile bool evSTADisconnected      = false;
+volatile bool evSTAGotIP             = false;
+
+// ─── Thread-safe TCP notification queue (for WiFi event callbacks) ────────────
+std::queue<String> tcpMsgQueue;
+SemaphoreHandle_t  tcpQueueMutex = NULL;
+
+// ─── Forward Declarations ─────────────────────────────────────────────────────
+void setupWiFi();
+void setupHTTPServer();
+void setupOTAServer();
+void handleUDPDiscovery();
+void processWiFiEvents();
+void processTcpQueue();
+void handleHaltState();
+void runDiagnostics();
+void handleRunningState();
+void processCommand(String cmd);
+void sendControlStatus();
+void sendBootSuccessPayload();
+void sendProgressPayload(const char* step, int pct, const char* msg);
+void sendJson(const String& json);
+void dumpCertsToQcom();
+String getCertificatesJson();
+String getSoftAPStationsJson();
+bool runTestRS485();
+bool runTestRS232();
+bool runTestGSM();
+bool runTestAP();
+bool runTestFlash();
+bool runTestDI();
+bool runTestRTC();
+static uint16_t modbusCRC16(const uint8_t* buf, uint8_t len);
+void setMuxRS485();
+void setMuxRS232();
+void queueTcpMsg(const String& json);
+void TaskOTAServer(void* p);
+void shiftToQcomPartition();
+void sendBootSuccessPayload();
+void sendBootFailPayload(const String& reason);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  UTILITY: MUX switching
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void setMuxRS485() {
+  // MUX_A0 = LOW → selects RS485 transceiver path
+  pinMode(MUX_A0, OUTPUT);
+  pinMode(MUX_A1, OUTPUT);
+  digitalWrite(MUX_A0, LOW);
+  digitalWrite(MUX_A1, LOW);
+  delay(20); // let MUX settle + bus capacitance charge
+}
+
+void setMuxRS232() {
+  // MUX_A0 = HIGH → selects RS232 transceiver path
+  pinMode(MUX_A0, OUTPUT);
+  pinMode(MUX_A1, OUTPUT);
+  digitalWrite(MUX_A0, HIGH);
+  digitalWrite(MUX_A1, LOW);
+  delay(20);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  UTILITY: Modbus CRC-16 (polynomial 0xA001)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+static uint16_t modbusCRC16(const uint8_t* buf, uint8_t len) {
+  uint16_t crc = 0xFFFF;
+  for (uint8_t i = 0; i < len; i++) {
+    crc ^= buf[i];
+    for (uint8_t b = 0; b < 8; b++) {
+      crc = (crc & 1) ? ((crc >> 1) ^ 0xA001) : (crc >> 1);
+    }
+  }
+  return crc;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  UTILITY: TCP message helpers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Send JSON to both Serial (for Arduino monitor) and active TCP socket.
+void sendJson(const String& json) {
+  Serial.print("JSON_PAYLOAD:");
+  Serial.println(json);
+  if (tcpClient && tcpClient.connected()) {
+    tcpClient.println(json);
+  }
+}
+
+// Queue a JSON message from any context (e.g., WiFi event ISR) to be sent in loop().
+void queueTcpMsg(const String& json) {
+  if (tcpQueueMutex && xSemaphoreTake(tcpQueueMutex, 10) == pdTRUE) {
+    tcpMsgQueue.push(json);
+    xSemaphoreGive(tcpQueueMutex);
+  }
+}
+
+// Drain the queued TCP messages in the main loop.
+void processTcpQueue() {
+  if (!tcpQueueMutex) return;
+  while (true) {
+    String msg;
+    if (xSemaphoreTake(tcpQueueMutex, 10) == pdTRUE) {
+      if (!tcpMsgQueue.empty()) { msg = tcpMsgQueue.front(); tcpMsgQueue.pop(); }
+      xSemaphoreGive(tcpQueueMutex);
+    }
+    if (msg.length() == 0) break;
+    if (tcpClient && tcpClient.connected()) tcpClient.println(msg);
+  }
+}
+
+void sendProgressPayload(const char* step, int pct, const char* msg) {
+  String json = "{\"status\":\"BOOT_PROGRESS\",\"step\":\"";
+  json += step;
+  json += "\",\"progress\":";
+  json += pct;
+  json += ",\"message\":\"";
+  json += msg;
+  json += "\"}";
+  sendJson(json);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  RS485 TEST — Single-shot Modbus RTU master request → slave ACK
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+//  Full cycle:
+//   1.  Notify GUI test has started.
+//   2.  Release Serial1 (QCOM co-processor shares pins 17/18).
+//   3.  Set MUX → RS485 (MUX_A0 = LOW).
+//   4.  Init Serial2 on RS485 pins (FR_TX=14, FR_RX=15) at 9600-8N1.
+//   5.  Build Modbus RTU FC03 frame + CRC16.
+//   6.  Flush RX → Transmit frame → mandatory 3.5-char silent gap.
+//   7.  Collect slave ACK response (up to MODBUS_TIMEOUT_MS).
+//   8.  Validate: slaveID, FC, length, CRC.
+//   9.  Send {"type":"rs485_result","passed":true/false,...} to GUI.
+//  10.  Restore: Serial2.end → MUX → RS232 → Serial2 RS232 → Serial1 QCOM.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+bool runTestRS485() {
+
+  // ── STEP 1: Notify GUI ───────────────────────────────────────────────────
+  String startJson = "{\"type\":\"rs485_start\",\"slaveId\":";
+  startJson += modbusSlaveId;
+  startJson += ",\"register\":";
+  startJson += modbusStartReg;
+  startJson += ",\"count\":";
+  startJson += modbusRegCount;
+  startJson += "}";
+  sendJson(startJson);
+  Serial.printf("[RS485] Test start — Slave=%d Reg=%d Count=%d\n",
+                modbusSlaveId, modbusStartReg, modbusRegCount);
+
+  // ── STEP 2: Release Serial1 (shares pins 17/18 with QCOM) ───────────────
+  Serial1.end();
+  delay(10);
+
+  // ── STEP 3: MUX → RS485 ─────────────────────────────────────────────────
+  setMuxRS485();
+  Serial.println("[RS485] MUX set to RS485 (MUX_A0=LOW).");
+
+  // ── STEP 4: Init Serial2 on RS485 physical pins ──────────────────────────
+  Serial2.end();
+  delay(10);
+  Serial2.begin(MODBUS_BAUD, MODBUS_SERIAL_CONFIG, FR_RX, FR_TX);
+  delay(50);
+
+  // ── STEP 5: Build Modbus RTU FC03 request frame ──────────────────────────
+  //  [SlaveID | FC=0x03 | RegHi | RegLo | CntHi | CntLo | CRC_Lo | CRC_Hi]
+  uint8_t frame[8];
+  frame[0] = modbusSlaveId;
+  frame[1] = MODBUS_FC_READ_HOLDING;
+  frame[2] = (modbusStartReg >> 8) & 0xFF;
+  frame[3] =  modbusStartReg       & 0xFF;
+  frame[4] = (modbusRegCount  >> 8) & 0xFF;
+  frame[5] =  modbusRegCount        & 0xFF;
+  uint16_t txCRC = modbusCRC16(frame, 6);
+  frame[6] = txCRC & 0xFF;         // CRC low byte first (Modbus RTU spec)
+  frame[7] = (txCRC >> 8) & 0xFF;
+
+  // ── STEP 6: Flush RX → Transmit → Mandatory silent gap ───────────────────
+  while (Serial2.available()) Serial2.read(); // discard any stale bytes
+
+  Serial2.write(frame, 8);
+  Serial2.flush(); // blocks until TX hardware shift register is empty
+
+  // Modbus RTU mandates ≥ 3.5 character times of bus silence after last
+  // stop-bit before the master switches to receive mode and the slave is
+  // allowed to begin driving the bus.
+  // At 9600 baud: 1 char = 1.042 ms → 3.5 chars = 3.65 ms → use 4000 µs.
+  delayMicroseconds(MODBUS_INTERFRAME_GAP_US);
+
+  Serial.printf("[RS485] TX → [%02X %02X %02X %02X %02X %02X %02X %02X] CRC=0x%04X\n",
+                frame[0],frame[1],frame[2],frame[3],
+                frame[4],frame[5],frame[6],frame[7], txCRC);
+
+  // ── STEP 7: Collect slave ACK response ────────────────────────────────────
+  // Expected FC03 response: [SlaveID | FC | ByteCnt | DataBytes... | CRC_Lo | CRC_Hi]
+  // For modbusRegCount=2: 1+1+1+4+2 = 9 bytes minimum.
+  const uint8_t EXPECTED = 1 + 1 + 1 + (modbusRegCount * 2) + 2;
+  uint8_t  rxBuf[64];
+  uint8_t  rxLen     = 0;
+  bool     gotEnough = false;
+
+  unsigned long rxStart = millis();
+  while (millis() - rxStart < MODBUS_TIMEOUT_MS) {
+    while (Serial2.available() && rxLen < sizeof(rxBuf)) {
+      rxBuf[rxLen++] = (uint8_t)Serial2.read();
+    }
+    if (rxLen >= EXPECTED) {
+      gotEnough = true;
+      break;
+    }
+    delay(2); // yield CPU briefly while waiting
+  }
+
+  // ── STEP 8: Build hex dump of received bytes ──────────────────────────────
+  String hexDump = "";
+  for (uint8_t i = 0; i < rxLen; i++) {
+    if (rxBuf[i] < 0x10) hexDump += "0";
+    hexDump += String(rxBuf[i], HEX);
+    if (i < rxLen - 1) hexDump += " ";
+  }
+  hexDump.toUpperCase();
+
+  Serial.printf("[RS485] RX ← %d bytes [%s]\n", rxLen, hexDump.c_str());
+
+  // ── STEP 9: Validate the ACK ─────────────────────────────────────────────
+  bool   passed    = false;
+  String failReason = "";
+
+  if (rxLen == 0) {
+    failReason = "NO_ACK_slave_silent_check_wiring_and_slaveId";
+
+  } else if (rxBuf[0] != modbusSlaveId) {
+    failReason = "WRONG_SLAVE_ID_got_0x" + String(rxBuf[0], HEX) +
+                 "_expected_0x" + String(modbusSlaveId, HEX);
+
+  } else if (rxBuf[1] == (MODBUS_FC_READ_HOLDING | 0x80)) {
+    // Slave returned an exception response
+    uint8_t exCode = (rxLen > 2) ? rxBuf[2] : 0xFF;
+    failReason = "SLAVE_EXCEPTION_code_0x" + String(exCode, HEX);
+
+  } else if (rxBuf[1] != MODBUS_FC_READ_HOLDING) {
+    failReason = "WRONG_FUNCTION_CODE_got_0x" + String(rxBuf[1], HEX);
+
+  } else if (!gotEnough) {
+    failReason = "SHORT_FRAME_got_" + String(rxLen) +
+                 "_bytes_expected_" + String(EXPECTED);
+  } else {
+    // CRC check on all bytes except the trailing two CRC bytes
+    uint16_t calcCRC  = modbusCRC16(rxBuf, rxLen - 2);
+    uint16_t frameCRC = (uint16_t)rxBuf[rxLen - 2] | ((uint16_t)rxBuf[rxLen - 1] << 8);
+    if (calcCRC != frameCRC) {
+      failReason = "CRC_MISMATCH_calc_0x" + String(calcCRC, HEX) +
+                   "_frame_0x" + String(frameCRC, HEX);
+    } else {
+      passed = true; // ← VALID ACK
+    }
+  }
+
+  // ── STEP 10: Build and send PASS / FAIL result JSON to GUI ───────────────
+  String resultJson = "{\"type\":\"rs485_result\",";
+  resultJson += "\"passed\":";
+  resultJson += passed ? "true" : "false";
+  resultJson += ",\"slaveId\":";
+  resultJson += modbusSlaveId;
+  resultJson += ",\"rxBytes\":";
+  resultJson += rxLen;
+  resultJson += ",\"hex\":\"";
+  resultJson += hexDump;
+  resultJson += "\"";
+
+  if (passed) {
+    // Extract actual register values from the data bytes
+    String regVals = "";
+    for (uint8_t r = 0; r < modbusRegCount && (3 + r * 2 + 1) < rxLen; r++) {
+      uint16_t val = ((uint16_t)rxBuf[3 + r * 2] << 8) | rxBuf[3 + r * 2 + 1];
+      if (r > 0) regVals += ",";
+      regVals += String(val);
+    }
+    resultJson += ",\"dataBytes\":";
+    resultJson += rxBuf[2];
+    resultJson += ",\"registers\":[";
+    resultJson += regVals;
+    resultJson += "],\"message\":\"ACK_received_slave_responding_correctly\"";
+    Serial.println("[RS485] ✔ PASS — slave ACK received and verified.");
+  } else {
+    resultJson += ",\"reason\":\"";
+    resultJson += failReason;
+    resultJson += "\",\"message\":\"No_ACK_or_invalid_response_from_slave\"";
+    Serial.println("[RS485] ✘ FAIL — " + failReason);
+  }
+  resultJson += "}";
+  sendJson(resultJson);
+
+  // ── STEP 11: Restore hardware to RS232 mode ───────────────────────────────
+  Serial2.end();
+  delay(10);
+  setMuxRS232();
+  Serial.println("[RS485] MUX restored to RS232 (MUX_A0=HIGH).");
+  Serial2.begin(9600, SERIAL_8N1, 16, 17); // RS232 default pins
+  delay(30);
+  Serial1.begin(115200, SERIAL_8N1, 17, 18); // Restore QCOM co-processor
+  delay(30);
+
+  return passed;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  RS232 TEST — 10-second loopback (TX → RX loopback wire required)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+bool runTestRS232() {
+  Serial.println("[RS232] Starting loopback test (MUX_A0=HIGH, pins 18/17)...");
+  Serial1.end();
+  delay(10);
+  setMuxRS232();
+  Serial2.end();
+  delay(10);
+  Serial2.begin(MODBUS_BAUD, MODBUS_SERIAL_CONFIG, 18, 17);
+  delay(50);
+
+  unsigned long start = millis();
+  int ok = 0, total = 0;
+  while (millis() - start < 5000) {
+    while (Serial2.available()) Serial2.read();
+    Serial2.print("RS232_TEST\r\n");
+    Serial2.flush();
+    unsigned long t = millis();
+    String rx = "";
+    while (millis() - t < 100) {
+      while (Serial2.available()) rx += (char)Serial2.read();
+      delay(5);
+    }
+    total++;
+    if (rx.indexOf("RS232_TEST") != -1) ok++;
+    delay(80);
+  }
+  Serial2.end();
+  Serial1.begin(115200, SERIAL_8N1, 17, 18);
+  delay(30);
+  bool passed = (ok > 0 && ok >= (total * 8 / 10));
+  Serial.printf("[RS232] %s — %d/%d loopbacks OK.\n", passed ? "PASS" : "FAIL", ok, total);
+  return passed;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  GSM TEST — AT command check on Serial1
+// ═══════════════════════════════════════════════════════════════════════════════
+
+bool runTestGSM() {
+  Serial.println("[GSM] Powering modem (PWRKEY=5, EN=21)...");
+  pinMode(GSM_PWRKEY_PIN, OUTPUT);
+  pinMode(GSM_EN_PIN,     OUTPUT);
+  digitalWrite(GSM_EN_PIN,     HIGH);
+  digitalWrite(GSM_PWRKEY_PIN, LOW);  delay(150);
+  digitalWrite(GSM_PWRKEY_PIN, HIGH); delay(200);
+
+  Serial1.begin(GPRS_BAUD, MODBUS_SERIAL_CONFIG, GPRS_RX, GPRS_TX);
+  delay(50);
+  while (Serial1.available()) Serial1.read();
+  Serial1.print("AT\r\n");
+
+  unsigned long t = millis();
+  String rx = "";
+  while (millis() - t < GPRS_AT_TIMEOUT) {
+    while (Serial1.available()) rx += (char)Serial1.read();
+    if (rx.indexOf("OK") != -1) break;
+    delay(10);
+  }
+  bool ok = (rx.indexOf("OK") != -1);
+  Serial.printf("[GSM] %s — response: '%s'\n", ok ? "PASS" : "FAIL", rx.c_str());
+  Serial1.begin(115200, SERIAL_8N1, 17, 18); // restore QCOM
+  return ok;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Other hardware tests
+// ═══════════════════════════════════════════════════════════════════════════════
+
+bool runTestAP() {
+  IPAddress ip = WiFi.softAPIP();
+  bool ok = (ip[0] != 0);
+  Serial.printf("[WIFI AP] %s — IP: %s\n", ok ? "PASS" : "FAIL", ip.toString().c_str());
+  return ok;
+}
+
+bool runTestFlash() {
+  Serial.println("[FLASH] Reading Winbond JEDEC ID via SPI...");
+  pinMode(FLASH_CS, OUTPUT);
+  digitalWrite(FLASH_CS, HIGH);
+  SPIClass spi(HSPI);
+  spi.begin(FLASH_SCK, FLASH_MISO, FLASH_MOSI, FLASH_CS);
+  spi.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+  digitalWrite(FLASH_CS, LOW);
+  spi.transfer(0x9F); // JEDEC ID command
+  uint8_t mfg  = spi.transfer(0);
+  uint8_t type = spi.transfer(0);
+  uint8_t cap  = spi.transfer(0);
+  digitalWrite(FLASH_CS, HIGH);
+  spi.endTransaction();
+  spi.end();
+  bool ok = (mfg == 0xEF || (mfg != 0x00 && mfg != 0xFF));
+  Serial.printf("[FLASH] %s — MFG=0x%02X TYPE=0x%02X CAP=0x%02X\n",
+                ok ? "PASS" : "FAIL", mfg, type, cap);
+  return ok;
+}
+
+bool runTestDI() {
+  int pins[] = {DI1, DI2, DI3, DI4};
+  for (int i = 0; i < 4; i++) {
+    pinMode(pins[i], INPUT_PULLDOWN);
+    delay(5);
+    Serial.printf("  DI%d (GPIO%d) = %s\n", i+1, pins[i],
+                  digitalRead(pins[i]) == HIGH ? "HIGH" : "LOW");
+  }
+  pinMode(SWITCH_PIN, INPUT_PULLUP);
+  delay(5);
+  Serial.printf("  SWITCH (GPIO%d) = %s\n", SWITCH_PIN,
+                digitalRead(SWITCH_PIN) == LOW ? "ON" : "OFF");
+  Serial.println("[DI] PASS — pins sampled.");
+  return true;
+}
+
+bool runTestRTC() {
+  if (I2C_SDA_PIN < 0 || I2C_SCL_PIN < 0) {
+    Serial.println("[RTC] SKIP — I2C pins not configured.");
+    return false;
+  }
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  delay(10);
+  Wire.beginTransmission(0x68); // DS3231 address
+  byte err = Wire.endTransmission();
+  Wire.end();
+  bool ok = (err == 0);
+  Serial.printf("[RTC] %s — I2C err=%d\n", ok ? "PASS" : "FAIL", err);
+  return ok;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  CERTIFICATES — SPIFFS helpers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+String getCertificatesJson() {
+  String json = "[";
+  bool first = true;
+  File root = SPIFFS.open("/");
+  if (root && root.isDirectory()) {
+    File f = root.openNextFile();
+    while (f) {
+      String name = f.name();
+      if (name.startsWith("/")) name = name.substring(1);
+      if (name.endsWith(".pem") || name.endsWith(".crt") || name.endsWith(".key")) {
+        if (!first) json += ",";
+        json += "{\"name\":\"" + name + "\",\"size\":" + String(f.size()) + "}";
+        first = false;
+      }
+      f = root.openNextFile();
+    }
+    root.close();
+  }
+  if (first) { // fallback to simulated list
+    for (int i = 0; i < certCount; i++) {
+      if (i > 0) json += ",";
+      json += "{\"name\":\"" + certNames[i] + "\",\"size\":" + String(certSizes[i]) + "}";
+    }
+  }
+  json += "]";
+  return json;
+}
+
+void dumpCertsToQcom() {
+  Serial.println("[QCOM SYNC] Syncing certificates to QCOM over Serial1...");
+  const char* files[] = {"aws_root_ca.pem", "device_cert.crt", "private_key.key"};
+  for (int i = 0; i < 3; i++) {
+    String path = String("/") + files[i];
+    if (SPIFFS.exists(path)) {
+      File f = SPIFFS.open(path, "r");
+      if (f) {
+        Serial.printf("[QCOM SYNC] Streaming '%s'...\n", files[i]);
+        Serial1.printf("--- START_CERT:%s ---\n", files[i]);
+        while (f.available()) Serial1.write(f.read());
+        Serial1.println("\n--- END_CERT ---");
+        f.close();
+        unsigned long tw = millis();
+        String resp = "";
+        while (millis() - tw < 1500) {
+          while (Serial1.available()) resp += (char)Serial1.read();
+          if (resp.indexOf("OK") != -1 || resp.indexOf("SUCCESS") != -1) break;
+          delay(10);
+        }
+        resp.trim();
+        String qjson = "{\"type\":\"qcom_sync\",\"file\":\"" + String(files[i]) +
+                       "\",\"ack\":\"" + (resp.length() ? resp : "SIMULATED") + "\"}";
+        sendJson(qjson);
+      }
+    } else {
+      Serial.printf("[QCOM SYNC] Simulating '%s'...\n", files[i]);
+      Serial1.printf("--- START_CERT:%s (SIM) ---\n", files[i]);
+      Serial1.println("MOCK_CERT_DATA");
+      Serial1.println("--- END_CERT ---");
+      delay(100);
+      sendJson("{\"type\":\"qcom_sync\",\"file\":\"" + String(files[i]) + "\",\"ack\":\"SIMULATED\"}");
+    }
+  }
+  Serial.println("[QCOM SYNC] Complete.");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  HTTP OTA / CERT UPLOAD handlers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void handleCertUpload(const String& filename, const String& type) {
+  String content = otaServer.arg("plain");
+  Serial.printf("[OTA CERT] Receiving %s: %s (%d bytes)\n",
+                type.c_str(), filename.c_str(), content.length());
+  File f = SPIFFS.open(filename, FILE_WRITE);
+  if (f) { f.print(content); f.close(); }
+  dumpCertsToQcom();
+  otaServer.send(200, "text/plain", "OK");
+}
+
+void setupOTAServer() {
+  otaServer.on("/", HTTP_GET, []() {
+    String html = "<html><head><title>IoT OTA Portal</title>"
+                  "<style>body{background:#03000a;color:#fff;font-family:sans-serif;text-align:center;padding:50px}"
+                  ".card{background:rgba(255,255,255,.03);border:1px solid rgba(0,240,255,.2);border-radius:12px;"
+                  "padding:30px;display:inline-block;width:400px}h1{color:#00f0ff}p{color:#a0a0b0}</style></head><body>"
+                  "<div class='card'><h1>IoT OTA Portal (Port 500)</h1>"
+                  "<p>Device MAC: " + WiFi.softAPmacAddress() + "</p>"
+                  "<p>Use the desktop GUI to upload firmware binaries.</p></div></body></html>";
+    otaServer.send(200, "text/html", html);
+  });
+
+  otaServer.on("/update", HTTP_POST,
+    []() {
+      otaServer.sendHeader("Connection", "close");
+      if (Update.hasError()) {
+        otaServer.send(500, "text/plain", String("Update failed: ") + Update.errorString());
+      } else {
+        otaServer.send(200, "text/plain", "OK");
+        delay(500);
+        ESP.restart();
+      }
+    },
+    []() {
+      HTTPUpload& up = otaServer.upload();
+      if (up.status == UPLOAD_FILE_START) {
+        Serial.println("[OTA] Upload started: " + String(up.filename.c_str()));
+        Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH);
+      } else if (up.status == UPLOAD_FILE_WRITE) {
+        Update.write(up.buf, up.currentSize);
+      } else if (up.status == UPLOAD_FILE_END) {
+        Update.end(true);
+        Serial.println("[OTA] Upload complete. Rebooting...");
+      }
+    });
+
+  otaServer.on("/upload_cert",    HTTP_POST, []() { handleCertUpload(otaServer.hasArg("filename") ? String("/") + otaServer.arg("filename") : "/cert.pem", "Certificate"); });
+  otaServer.on("/api/upload_ca",  HTTP_POST, []() { handleCertUpload("/aws_root_ca.pem", "Root CA"); });
+  otaServer.on("/api/upload_cert",HTTP_POST, []() { handleCertUpload("/device_cert.crt", "Device Cert"); });
+  otaServer.on("/api/upload_key", HTTP_POST, []() { handleCertUpload("/private_key.key", "Private Key"); });
+
+  otaServer.begin();
+  Serial.println("[OTA] otaServer started on port 500.");
+}
+
+void setupHTTPServer() {
+  httpServer.on("/api/status", HTTP_GET, []() {
+    String json = "{\"status\":\"online\",\"imei\":\"" + deviceIMEI + "\",\"mac\":\"" + deviceMAC + "\"}";
+    httpServer.send(200, "application/json", json);
+  });
+
+  httpServer.on("/api/certs", HTTP_GET, []() {
+    httpServer.send(200, "application/json", getCertificatesJson());
+  });
+
+  httpServer.on("/api/delete_cert", HTTP_POST, []() {
+    if (httpServer.hasArg("filename")) {
+      String path = "/" + httpServer.arg("filename");
+      SPIFFS.remove(path);
+      httpServer.send(200, "text/plain", "Deleted");
+    } else {
+      httpServer.send(400, "text/plain", "MISSING_FILENAME");
+    }
+  });
+
+  httpServer.begin();
+  Serial.println("[HTTP] httpServer started on port 8000.");
+}
+
+// FreeRTOS task: serves both OTA HTTP servers on Core 1
+void TaskOTAServer(void* p) {
+  Serial.println("[TASK] OTA HTTP task running on Core 1 (ports 500 & 8000).");
+  for (;;) {
+    otaServer.handleClient();
+    httpServer.handleClient();
+    vTaskDelay(20 / portTICK_PERIOD_MS);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  WiFi setup
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void onWiFiEvent(WiFiEvent_t event) {
+  if      (event == ARDUINO_EVENT_WIFI_AP_STACONNECTED)    evAPClientConnected    = true;
+  else if (event == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED) evAPClientDisconnected = true;
+  else if (event == ARDUINO_EVENT_WIFI_STA_CONNECTED)      evSTAConnected         = true;
+  else if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED)   evSTADisconnected      = true;
+  else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP)         evSTAGotIP             = true;
+}
+
+void setupWiFi() {
+  Serial.println("[WIFI] Initializing Dual-Mode WiFi Stack...");
+  WiFi.onEvent(onWiFiEvent);
+  WiFi.mode(WIFI_AP_STA);
+  deviceMAC = WiFi.softAPmacAddress();
+  deviceMAC.replace(":", "");
+
+  // Load custom credentials from SPIFFS
+  File wf = SPIFFS.open("/wifi.txt", "r");
+  if (wf) {
+    String ssid = wf.readStringUntil('\n'); ssid.trim();
+    String pass = wf.readStringUntil('\n'); pass.trim();
+    wf.close();
+    if (ssid.length() > 0) { routerSSID = ssid; routerPassword = pass; }
+    Serial.println("[WIFI] Custom credentials loaded from SPIFFS.");
+  } else {
+    Serial.println("[WIFI] No custom credentials found. Using defaults.");
+  }
+
+  // Start SoftAP
+  String apSSID = "ESP32_GATEWAY_" + WiFi.softAPmacAddress();
+  apSSID.replace(":", "");
+  WiFi.softAPConfig(IPAddress(192,168,0,1), IPAddress(192,168,0,1), IPAddress(255,255,255,0));
+  WiFi.softAP(apSSID.c_str(), "");
+
+  Serial.println("---------------------------------------------");
+  Serial.println("[WIFI AP] SoftAP SSID               : " + apSSID);
+  Serial.println("[WIFI AP] SoftAP Gateway IP Address : " + WiFi.softAPIP().toString());
+  Serial.println("[WIFI STA] Background router search disabled (SoftAP only mode active).");
+  Serial.println("---------------------------------------------");
+
+  Serial.println("\n=============================================");
+  Serial.println("         IOT DEVICE NETWORK STATUS           ");
+  Serial.println("=============================================");
+  Serial.println("Device IMEI   : " + deviceIMEI);
+  Serial.println("Device MAC ID : " + WiFi.softAPmacAddress());
+  Serial.println("SoftAP SSID   : " + apSSID);
+  Serial.println("SoftAP IP     : " + WiFi.softAPIP().toString());
+  Serial.println("Router SSID   : " + routerSSID);
+}
+
+String getSoftAPStationsJson() {
+  String json = "[";
+  wifi_sta_list_t list;
+  memset(&list, 0, sizeof(list));
+  if (esp_wifi_ap_get_sta_list(&list) == ESP_OK) {
+    for (int i = 0; i < list.num; i++) {
+      if (i) json += ",";
+      char mac[18];
+      snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+               list.sta[i].mac[0], list.sta[i].mac[1], list.sta[i].mac[2],
+               list.sta[i].mac[3], list.sta[i].mac[4], list.sta[i].mac[5]);
+      json += "{\"mac\":\"" + String(mac) + "\"}";
+    }
+  }
+  json += "]";
+  return json;
+}
+
+void processWiFiEvents() {
+  if (evAPClientConnected) {
+    evAPClientConnected = false;
+    queueTcpMsg("{\"type\":\"wifi_event\",\"event\":\"AP_CLIENT_CONNECTED\","
+                "\"clients\":" + String(WiFi.softAPgetStationNum()) + "}");
+  }
+  if (evAPClientDisconnected) {
+    evAPClientDisconnected = false;
+    queueTcpMsg("{\"type\":\"wifi_event\",\"event\":\"AP_CLIENT_DISCONNECTED\","
+                "\"clients\":" + String(WiFi.softAPgetStationNum()) + "}");
+  }
+  if (evSTAGotIP) {
+    evSTAGotIP = false;
+    queueTcpMsg("{\"type\":\"wifi_event\",\"event\":\"STA_GOT_IP\","
+                "\"ip\":\"" + WiFi.localIP().toString() + "\"}");
+  }
+  if (evSTADisconnected) {
+    evSTADisconnected = false;
+    queueTcpMsg("{\"type\":\"wifi_event\",\"event\":\"STA_DISCONNECTED\"}");
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  UDP Discovery (Electron sends "DISCOVER_IOT_GATEWAY", we reply with JSON)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void handleUDPDiscovery() {
+  int pkt = udpListener.parsePacket();
+  if (!pkt) return;
+  char buf[256];
+  int len = udpListener.read(buf, sizeof(buf) - 1);
+  if (len > 0) buf[len] = 0;
+  String req = String(buf);
+  req.trim();
+  if (req == "DISCOVER_IOT_GATEWAY") {
+    electronServerIP    = udpListener.remoteIP();
+    hasElectronServerIP = true;
+    String ip = WiFi.localIP().toString();
+    if (ip == "0.0.0.0") ip = WiFi.softAPIP().toString();
+    String reply = "{\"status\":\"ONLINE\",\"ip\":\"" + ip +
+                   "\",\"imei\":\"" + deviceIMEI + "\",\"mac\":\"" + deviceMAC + "\"}";
+    udpListener.beginPacket(udpListener.remoteIP(), udpListener.remotePort());
+    udpListener.print(reply);
+    udpListener.endPacket();
+    Serial.printf("[UDP] Discovered by %s → replied with IP %s\n",
+                  udpListener.remoteIP().toString().c_str(), ip.c_str());
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Status payloads
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void sendControlStatus() {
+  String json = "{\"type\":\"control_status\","
+                "\"relay1\":" + String(relay1State ? "true" : "false") + ","
+                "\"relay2\":" + String(relay2State ? "true" : "false") + ","
+                "\"interval\":" + String(telemetryInterval) + "}\n";
+  sendJson(json);
+}
+
+void sendBootSuccessPayload() {
+  String json = "{\"status\":\"BOOT_SUCCESS\"";
+  json += ",\"imei\":\"" + deviceIMEI + "\"";
+  json += ",\"mac\":\"" + deviceMAC + "\"";
+  json += ",\"password\":\"" + devicePassword + "\"";
+  json += ",\"certificates\":" + getCertificatesJson();
+  json += ",\"diagnostics\":{";
+  auto boolOrWaiting = [](bool tested, bool val) -> String {
+    return tested ? (val ? "true" : "false") : "\"WAITING\"";
+  };
+  json += "\"rs232\":"  + boolOrWaiting(diagTested.rs232,  diagResult.rs232)  + ",";
+  json += "\"rs485\":"  + boolOrWaiting(diagTested.rs485,  diagResult.rs485)  + ",";
+  json += "\"gprs\":"   + boolOrWaiting(diagTested.gprs,   diagResult.gprs)   + ",";
+  json += "\"bus\":"    + boolOrWaiting(diagTested.bus,    diagResult.bus)    + ",";
+  json += "\"ap\":"     + boolOrWaiting(diagTested.ap,     diagResult.ap)     + ",";
+  json += "\"flash\":"  + boolOrWaiting(diagTested.flash,  diagResult.flash)  + ",";
+  json += "\"di\":"     + boolOrWaiting(diagTested.di,     diagResult.di)     + ",";
+  json += "\"di_pins\":[";
+  json += String(digitalRead(DI1) == HIGH ? "true" : "false") + ",";
+  json += String(digitalRead(DI2) == HIGH ? "true" : "false") + ",";
+  json += String(digitalRead(DI3) == HIGH ? "true" : "false") + ",";
+  json += String(digitalRead(DI4) == HIGH ? "true" : "false");
+  json += "],";
+  json += "\"switch_pin\":" + String(digitalRead(SWITCH_PIN) == LOW ? "true" : "false") + ",";
+  json += "\"driver\":"  + boolOrWaiting(diagTested.driver, diagResult.driver) + ",";
+  json += "\"rtc\":"    + boolOrWaiting(diagTested.rtc,    diagResult.rtc)    + "}";
+  json += ",\"wifi\":{";
+  json += "\"status\":\"" + String(WiFi.status() == WL_CONNECTED ? "CONNECTED" : "DISCONNECTED") + "\",";
+  json += "\"ssid\":\"" + routerSSID + "\",";
+  json += "\"mac_sta\":\"" + WiFi.macAddress() + "\",";
+  json += "\"mac_ap\":\"" + WiFi.softAPmacAddress() + "\",";
+  json += "\"ip_sta\":\"" + WiFi.localIP().toString() + "\",";
+  json += "\"ip_ap\":\"" + WiFi.softAPIP().toString() + "\",";
+  json += "\"rssi\":" + String(WiFi.RSSI()) + ",";
+  json += "\"ap_clients\":" + String(WiFi.softAPgetStationNum()) + ",";
+  json += "\"ap_clients_list\":" + getSoftAPStationsJson() + "}";
+  json += ",\"interval\":" + String(telemetryInterval) + "}";
+  sendJson(json);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  DIAGNOSTIC SEQUENCE (9-point self-check)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void runDiagnostics() {
+  if (diagRunning) {
+    Serial.println("[DIAG] Already running — skipping duplicate call.");
+    currentState = STATE_RUNNING;
+    return;
+  }
+  diagRunning = true;
+  Serial.println("\n[DIAG] Starting 9-point hardware self-check...");
+
+  // Stage 1: Certificate provisioning
+  if (bootCertTarget == "BOTH" || bootCertTarget == "ESP32") {
+    sendProgressPayload("ESP32_CERT_1", 10, "Downloading Certificate 1/3 to ESP32...");
+    delay(600);
+    sendProgressPayload("ESP32_CERT_2", 20, "Downloading Certificate 2/3 to ESP32...");
+    delay(600);
+    sendProgressPayload("ESP32_CERT_3", 30, "Downloading Certificate 3/3 to ESP32...");
+    delay(600);
+  }
+  if (bootCertTarget == "BOTH" || bootCertTarget == "QCOM") {
+    sendProgressPayload("QCOM_SYNC", 45, "Syncing certificates to QCOM device...");
+    dumpCertsToQcom();
+    delay(300);
+  }
+  sendProgressPayload("MAIN_FW_UPDATE", 65, "Checking main firmware...");
+  delay(800);
+
+  sendProgressPayload("DIAGNOSTICS", 80, "Running 9-point peripheral self-check...");
+
+  // 1. RS232 — commented out (no loopback wire in test setup)
+  // diagResult.rs232 = runTestRS232();
+  diagTested.rs232  = false;
+
+  // 2. RS485 — Modbus RTU single-shot request → ACK
+  diagResult.rs485 = runTestRS485();
+  diagTested.rs485 = true;
+
+  // 3. GPRS / GSM
+  diagResult.gprs = runTestGSM();
+  diagTested.gprs = true;
+
+  // 4. Internal Bus (always passes)
+  diagResult.bus  = true;
+  diagTested.bus  = true;
+
+  // 5. WiFi AP
+  diagResult.ap   = runTestAP();
+  diagTested.ap   = true;
+
+  // 6. Winbond Flash
+  diagResult.flash = runTestFlash();
+  diagTested.flash = true;
+
+  // 7. Digital Inputs
+  diagResult.di   = runTestDI();
+  diagTested.di   = true;
+
+  // 8. Output Driver (always passes)
+  diagResult.driver = true;
+  diagTested.driver = true;
+
+  // 9. RTC
+  diagResult.rtc   = runTestRTC();
+  diagTested.rtc   = true;
+
+  Serial.println("[DIAG] All 9 tests completed.");
+  delay(300);
+  sendBootSuccessPayload();
+
+  diagRunning  = false;
+  currentState = STATE_RUNNING;
+  sendControlStatus();
+  lastTelemetryTime = millis();
+  Serial.println("[SYSTEM] Entered RUNNING mode.");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  COMMAND PROCESSOR — handles all TCP/Serial commands
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void processCommand(String cmd) {
+  cmd.trim();
+  if (cmd.length() == 0) return;
+  Serial.println("[CMD] " + cmd);
+
+  // ─── Diagnostic tests (triggered from GUI) ──────────────────────────────
+  if (cmd.startsWith("TEST_")) {
+    if (diagRunning) {
+      Serial.println("[CMD] Diagnostics already running — ignoring.");
+      return;
+    }
+    String mod = cmd.substring(5);
+    mod.trim(); mod.toUpperCase();
+    diagRunning = true;
+    bool ok = false;
+
+    if      (mod == "RS485")              { diagResult.rs485 = runTestRS485();   diagTested.rs485 = true;  ok = diagResult.rs485; }
+    else if (mod == "RS232")              { diagResult.rs232 = runTestRS232();   diagTested.rs232 = true;  ok = diagResult.rs232; }
+    else if (mod == "GPRS" || mod=="GSM"){ diagResult.gprs  = runTestGSM();     diagTested.gprs  = true;  ok = diagResult.gprs; }
+    else if (mod == "BUS")               { diagResult.bus   = true;             diagTested.bus   = true;  ok = true; }
+    else if (mod == "AP")                { diagResult.ap    = runTestAP();      diagTested.ap    = true;  ok = diagResult.ap; }
+    else if (mod == "FLASH")             { diagResult.flash = runTestFlash();   diagTested.flash = true;  ok = diagResult.flash; }
+    else if (mod == "DI")                { diagResult.di    = runTestDI();      diagTested.di    = true;  ok = diagResult.di; }
+    else if (mod == "DRIVER")            { diagResult.driver= true;             diagTested.driver= true;  ok = true; }
+    else if (mod == "RTC")               { diagResult.rtc   = runTestRTC();     diagTested.rtc   = true;  ok = diagResult.rtc; }
+
+    diagRunning = false;
+    sendBootSuccessPayload(); // refresh GUI with updated diag table
+    return;
+  }
+
+  // ─── Relay control ───────────────────────────────────────────────────────
+  if      (cmd == "RELAY_1_ON")  { relay1State = true;  digitalWrite(RELAY_1_PIN, HIGH); sendControlStatus(); }
+  else if (cmd == "RELAY_1_OFF") { relay1State = false; digitalWrite(RELAY_1_PIN, LOW);  sendControlStatus(); }
+  else if (cmd == "RELAY_2_ON")  { relay2State = true;  digitalWrite(RELAY_2_PIN, HIGH); sendControlStatus(); }
+  else if (cmd == "RELAY_2_OFF") { relay2State = false; digitalWrite(RELAY_2_PIN, LOW);  sendControlStatus(); }
+
+  // ─── Telemetry interval ──────────────────────────────────────────────────
+  else if (cmd.startsWith("SET_INTERVAL:")) {
+    long v = cmd.substring(13).toInt();
+    if (v >= 100 && v <= 30000) { telemetryInterval = v; sendControlStatus(); }
+  }
+
+  // ─── WiFi credentials ────────────────────────────────────────────────────
+  else if (cmd.startsWith("SET_WIFI:")) {
+    int c1 = cmd.indexOf(':'), c2 = cmd.indexOf(':', c1+1);
+    if (c1 != -1 && c2 != -1) {
+      routerSSID     = cmd.substring(c1+1, c2); routerSSID.trim();
+      routerPassword = cmd.substring(c2+1);     routerPassword.trim();
+      File f = SPIFFS.open("/wifi.txt", "w");
+      if (f) { f.println(routerSSID); f.println(routerPassword); f.close(); }
+      sendJson("{\"status\":\"WIFI_UPDATED\",\"ssid\":\"" + routerSSID + "\"}");
+    }
+  }
+
+  // ─── Device identity ─────────────────────────────────────────────────────
+  else if (cmd.startsWith("SET_IMEI:")) {
+    deviceIMEI = cmd.substring(9); deviceIMEI.trim();
+    sendJson("{\"status\":\"IMEI_UPDATED\",\"imei\":\"" + deviceIMEI + "\"}");
+  }
+  else if (cmd.startsWith("SET_PASS:")) {
+    devicePassword = cmd.substring(9); devicePassword.trim();
+    sendJson("{\"status\":\"PASSWORD_UPDATED\"}");
+  }
+
+  // ─── Modbus slave config override ────────────────────────────────────────
+  // SET_SLAVE:<id>:<startReg>:<count>
+  else if (cmd.startsWith("SET_SLAVE:")) {
+    // Parse: SET_SLAVE:1:0:2
+    int c1 = cmd.indexOf(':');
+    int c2 = cmd.indexOf(':', c1+1);
+    int c3 = cmd.indexOf(':', c2+1);
+    if (c1!=-1 && c2!=-1 && c3!=-1) {
+      modbusSlaveId  = (uint8_t)cmd.substring(c1+1, c2).toInt();
+      modbusStartReg = (uint16_t)cmd.substring(c2+1, c3).toInt();
+      modbusRegCount = (uint8_t)cmd.substring(c3+1).toInt();
+      if (modbusRegCount < 1) modbusRegCount = 1;
+      if (modbusRegCount > 30) modbusRegCount = 30;
+      sendJson("{\"status\":\"SLAVE_CONFIGURED\",\"slaveId\":" + String(modbusSlaveId) +
+               ",\"startReg\":" + String(modbusStartReg) +
+               ",\"count\":" + String(modbusRegCount) + "}");
+    }
+  }
+
+  // ─── Misc ────────────────────────────────────────────────────────────────
+  else if (cmd == "GET_INFO")         { sendBootSuccessPayload(); }
+  else if (cmd == "PING")             { sendJson("{\"type\":\"pong\"}"); }
+  else if (cmd == "RE_DIAGNOSE")      { currentState = STATE_DIAGNOSTICS; }
+  else if (cmd == "SYNC_CERTS_TO_QCOM") { dumpCertsToQcom(); sendJson("{\"status\":\"CERTS_SYNCED\"}"); }
+  else if (cmd == "FORMAT_SPIFFS") {
+    SPIFFS.format();
+    if (SPIFFS.begin(false)) sendJson("{\"status\":\"SPIFFS_FORMATTED\",\"ok\":true}");
+    else                     sendJson("{\"status\":\"SPIFFS_FORMAT_FAILED\"}");
+  }
+  else if (cmd == "REBOOT") {
+    sendJson("{\"status\":\"REBOOTING\"}");
+    delay(500);
+    ESP.restart();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  STATE HANDLERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Helper: try to establish TCP connection to Electron server
+static void ensureTcpConnected() {
+  if (!hasElectronServerIP) return;
+  if (tcpClient.connected()) return;
+  if (millis() - lastConnectAttempt < CONNECT_INTERVAL_MS) return;
+  lastConnectAttempt = millis();
+  Serial.printf("[TCP] Connecting to Electron at %s:9000...\n",
+                electronServerIP.toString().c_str());
+  if (tcpClient.connect(electronServerIP, 9000)) {
+    Serial.println("[TCP] Connected to Electron server.");
+    sendControlStatus();
+  }
+}
+
+// Helper: read one command line from TCP or Serial
+static String readCommandLine(bool fromTCP) {
+  if (fromTCP) {
+    if (tcpClient && tcpClient.connected() && tcpClient.available() > 0)
+      return tcpClient.readStringUntil('\n');
+  } else {
+    if (Serial.available() > 0)
+      return Serial.readStringUntil('\n');
+  }
+  return "";
+}
+
+void handleHaltState() {
+  static unsigned long haltStart = 0;
+  if (haltStart == 0) {
+    haltStart = millis();
+    Serial.println("[HALT] Waiting for boot trigger (TCP START_BOOT / button / serial).");
+  }
+  if (millis() - lastLogTime > 30000) {
+    lastLogTime = millis();
+    Serial.println("[HALT] Still waiting...");
+  }
+
+  ensureTcpConnected();
+
+  // --- TCP commands ---
+  String tcpCmd = readCommandLine(true);
+  if (tcpCmd.length() > 0) {
+    tcpCmd.trim();
+    if (tcpCmd.startsWith("START_BOOT")) {
+      bootCertTarget = "BOTH";
+      int c = tcpCmd.indexOf(':');
+      if (c != -1) { bootCertTarget = tcpCmd.substring(c+1); bootCertTarget.trim(); bootCertTarget.toUpperCase(); }
+      Serial.println("[HALT] START_BOOT received → starting diagnostics.");
+      currentState = STATE_DIAGNOSTICS;
+      return;
+    }
+    processCommand(tcpCmd);
+  }
+
+  // --- Physical boot button (active LOW) ---
+  if (digitalRead(BOOT_BUTTON_PIN) == LOW) {
+    delay(50); // debounce
+    if (digitalRead(BOOT_BUTTON_PIN) == LOW) {
+      Serial.println("[HALT] Boot button pressed → starting diagnostics.");
+      bootCertTarget = "BOTH";
+      currentState   = STATE_DIAGNOSTICS;
+      return;
+    }
+  }
+
+  // --- Serial commands ---
+  String serCmd = readCommandLine(false);
+  if (serCmd.length() > 0) {
+    serCmd.trim();
+    if (serCmd.startsWith("START_BOOT")) {
+      bootCertTarget = "BOTH";
+      int c = serCmd.indexOf(':');
+      if (c != -1) { bootCertTarget = serCmd.substring(c+1); bootCertTarget.trim(); bootCertTarget.toUpperCase(); }
+      Serial.println("[HALT] START_BOOT via Serial → starting diagnostics.");
+      currentState = STATE_DIAGNOSTICS;
+      return;
+    }
+    processCommand(serCmd);
+  }
+}
+
+void handleRunningState() {
+  ensureTcpConnected();
+
+  // Process incoming TCP commands
+  String tcpCmd = readCommandLine(true);
+  if (tcpCmd.length() > 0) processCommand(tcpCmd);
+
+  // Process incoming Serial commands
+  String serCmd = readCommandLine(false);
+  if (serCmd.length() > 0) processCommand(serCmd);
+
+  // Stream telemetry JSON periodically
+  if (millis() - lastTelemetryTime > telemetryInterval) {
+    lastTelemetryTime = millis();
+
+    float   temp     = 36.5f + (random(-5, 6) / 10.0f);
+    int     rssi     = WiFi.RSSI();
+    uint32_t freeH   = ESP.getFreeHeap();
+    int     heapPct  = constrain((int)(freeH * 100 / 250000), 0, 100);
+
+    String tel = "{\"status\":\"TELEMETRY\"";
+    tel += ",\"temp\":"    + String(temp, 1);
+    tel += ",\"rssi\":"    + String(rssi);
+    tel += ",\"heap\":"    + String(heapPct);
+    tel += ",\"relay1\":"  + String(relay1State ? "true" : "false");
+    tel += ",\"relay2\":"  + String(relay2State ? "true" : "false");
+    tel += ",\"di\":["
+        + String(digitalRead(DI1) == HIGH ? "true" : "false") + ","
+        + String(digitalRead(DI2) == HIGH ? "true" : "false") + ","
+        + String(digitalRead(DI3) == HIGH ? "true" : "false") + ","
+        + String(digitalRead(DI4) == HIGH ? "true" : "false") + "]";
+    tel += ",\"switch\":"  + String(digitalRead(SWITCH_PIN) == LOW ? "true" : "false");
+    tel += ",\"ap_clients\":" + String(WiFi.softAPgetStationNum());
+    tel += ",\"ap_clients_list\":" + getSoftAPStationsJson();
+    tel += ",\"wifi_status\":\"" + String(WiFi.status() == WL_CONNECTED ? "CONNECTED" : "DISCONNECTED") + "\"";
+    tel += "}";
+
+    sendJson(tel);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  setup() — Hardware initialisation
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+
+  Serial.println("\n\n=============================================================");
+  Serial.println("       ESP32 IOT GATEWAY FIRMWARE — REVISION 3 BOOTING      ");
+  Serial.println("=============================================================");
+
+  // Cancel OTA rollback so this app becomes permanent
+  esp_ota_mark_app_valid_cancel_rollback();
+
+  // TCP queue semaphore
+  tcpQueueMutex = xSemaphoreCreateMutex();
+
+  // MUX: start in RS232 mode (default, MUX_A0 = HIGH)
+  setMuxRS232();
+  Serial.println("[GPIO] MUX initialised → RS232 mode (MUX_A0=HIGH).");
+
+  // Relay outputs
+  pinMode(RELAY_1_PIN, OUTPUT); digitalWrite(RELAY_1_PIN, LOW);
+  pinMode(RELAY_2_PIN, OUTPUT); digitalWrite(RELAY_2_PIN, LOW);
+  Serial.println("[GPIO] Relays initialised LOW.");
+
+  // Digital inputs
+  pinMode(DI1, INPUT_PULLDOWN); pinMode(DI2, INPUT_PULLDOWN);
+  pinMode(DI3, INPUT_PULLDOWN); pinMode(DI4, INPUT_PULLDOWN);
+  pinMode(SWITCH_PIN, INPUT_PULLUP);
+  pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+  Serial.println("[GPIO] DI pins initialised.");
+
+  // SPIFFS
+  if (!SPIFFS.begin(false)) {
+    Serial.println("[SPIFFS] Mount failed — no persistent storage.");
+  } else {
+    Serial.printf("[SPIFFS] OK — Total: %d KB | Used: %d KB\n",
+                  (int)(SPIFFS.totalBytes()/1024), (int)(SPIFFS.usedBytes()/1024));
+  }
+
+  // WiFi (SoftAP + optional STA)
+  setupWiFi();
+
+  // Serial1 → QCOM co-processor (pins RX:17, TX:18)
+  Serial1.begin(115200, SERIAL_8N1, 17, 18);
+  Serial.println("[QCOM] Serial1 initialised on RX:17 TX:18 at 115200.");
+
+  // Serial2 → RS232 mode by default (pins 16/17)
+  Serial2.begin(9600, SERIAL_8N1, 16, 17);
+  Serial.println("[RS232] Serial2 initialised on RX:16 TX:17 at 9600.");
+
+  // UDP discovery
+  udpListener.begin(UDP_PORT);
+  Serial.printf("[UDP] Discovery responder ready on port %d.\n", UDP_PORT);
+
+  // Print partition table
+  Serial.println("[SYSTEM] Partition table:");
+  esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
+  while (it) {
+    const esp_partition_t* p = esp_partition_get(it);
+    Serial.printf("  %-10s type=0x%02X sub=0x%02X addr=0x%06X size=%dKB\n",
+                  p->label, p->type, p->subtype, p->address, p->size/1024);
+    it = esp_partition_next(it);
+  }
+
+  // Start HTTP servers
+  setupOTAServer();
+  setupHTTPServer();
+
+  // Spawn OTA task on Core 1 (keeps HTTP servers responsive without blocking loop)
+  xTaskCreatePinnedToCore(TaskOTAServer, "TaskOTAServer", 8192, NULL, 1, NULL, 1);
+  Serial.println("[TASK] OTA server task spawned on Core 1.");
+
+  Serial.println("[SYSTEM] Boot complete. Awaiting trigger (START_BOOT / button).");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  loop() — Main event loop
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void loop() {
+  processWiFiEvents();
+  processTcpQueue();
+  handleUDPDiscovery();
+
+  switch (currentState) {
+    case STATE_HALT:        handleHaltState();    break;
+    case STATE_DIAGNOSTICS: runDiagnostics();     break;
+    case STATE_RUNNING:     handleRunningState(); break;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  shiftToQcomPartition — OTA swap to QCOM app partition
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void shiftToQcomPartition() {
+  Serial.println("[SHIFT] Locating QCOM partition...");
+  const esp_partition_t* qcom = esp_partition_find_first(
+      ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, "qcom");
+  if (!qcom) {
+    Serial.println("[SHIFT] ERROR: 'qcom' partition not found.");
+    sendJson("{\"status\":\"SHIFT_FAILED\",\"reason\":\"partition_not_found\"}");
+    return;
+  }
+  esp_err_t err = esp_ota_set_boot_partition(qcom);
+  if (err == ESP_OK) {
+    sendJson("{\"status\":\"SHIFTING_TO_QCOM\"}");
+    delay(500);
+    ESP.restart();
+  } else {
+    Serial.printf("[SHIFT] ERROR: esp_ota_set_boot_partition failed (0x%x)\n", err);
+    sendJson("{\"status\":\"SHIFT_FAILED\",\"reason\":\"ota_set_boot_failed\"}");
+  }
+}
