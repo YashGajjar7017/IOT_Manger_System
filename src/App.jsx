@@ -148,7 +148,8 @@ export default function App() {
   const [isFlashingAdvanced, setIsFlashingAdvanced] = useState(false);
 
   // Dynamic Theme, Font, and GitHub Integration States
-  const [currentTheme, setCurrentTheme] = useState(() => localStorage.getItem('theme') || 'quantum-indigo');
+  // Default to the 1st theme 'quantum-indigo' on startup
+  const [currentTheme, setCurrentTheme] = useState('quantum-indigo');
   const [currentFont, setCurrentFont] = useState(() => localStorage.getItem('font') || 'outfit');
   const [gitHubUser, setGitHubUser] = useState(() => {
     const saved = localStorage.getItem('github_user');
@@ -158,45 +159,53 @@ export default function App() {
   // Ocean theme cinematic state variables
   const [showOceanAnim, setShowOceanAnim] = useState(false);
   const [oceanAnimStage, setOceanAnimStage] = useState('idle');
+  const oceanTimersRef = useRef([]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', currentTheme);
     localStorage.setItem('theme', currentTheme);
   }, [currentTheme]);
 
-  // Hook to run ocean temple entrance cinematic timeline
+  // Dedicated trigger for ocean temple entrance cinematic sequence
+  const triggerOceanAnimation = () => {
+    // Clear any existing timers
+    if (oceanTimersRef.current) {
+      oceanTimersRef.current.forEach(clearTimeout);
+    }
+    
+    setShowOceanAnim(true);
+    setOceanAnimStage('sky-to-sea');
+
+    // Timeline sequence
+    const t1 = setTimeout(() => {
+      setOceanAnimStage('temple-reach');
+    }, 3000); // 3 seconds diving through sky into sea
+
+    const t2 = setTimeout(() => {
+      setOceanAnimStage('shaking');
+    }, 6000); // 3 seconds reaching/descending onto the temple
+
+    const t3 = setTimeout(() => {
+      setOceanAnimStage('door-opening');
+    }, 8000); // 2 seconds earthquake/temple shaking
+
+    const t4 = setTimeout(() => {
+      setOceanAnimStage('done');
+      setShowOceanAnim(false);
+    }, 10500); // 2.5 seconds opening door with bright golden flash
+
+    oceanTimersRef.current = [t1, t2, t3, t4];
+  };
+
+  // Clean up timers on theme switch away
   useEffect(() => {
-    if (currentTheme === 'deep-sea-ocean') {
-      setShowOceanAnim(true);
-      setOceanAnimStage('sky-to-sea');
-
-      // Timeline sequence
-      const t1 = setTimeout(() => {
-        setOceanAnimStage('temple-reach');
-      }, 3000); // 3 seconds diving through sky into sea
-
-      const t2 = setTimeout(() => {
-        setOceanAnimStage('shaking');
-      }, 6000); // 3 seconds reaching/descending onto the temple
-
-      const t3 = setTimeout(() => {
-        setOceanAnimStage('door-opening');
-      }, 8000); // 2 seconds earthquake/temple shaking
-
-      const t4 = setTimeout(() => {
-        setOceanAnimStage('done');
-        setShowOceanAnim(false);
-      }, 10500); // 2.5 seconds opening door with bright golden flash
-
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
-        clearTimeout(t4);
-      };
-    } else {
+    if (currentTheme !== 'deep-sea-ocean') {
       setShowOceanAnim(false);
       setOceanAnimStage('idle');
+      if (oceanTimersRef.current) {
+        oceanTimersRef.current.forEach(clearTimeout);
+        oceanTimersRef.current = [];
+      }
     }
   }, [currentTheme]);
 
@@ -4421,7 +4430,7 @@ Overall Status : ${overallStatus}
                       className={`theme-preset-card ${currentTheme === 'deep-sea-ocean' ? 'active' : ''}`}
                       onClick={() => {
                         setCurrentTheme('deep-sea-ocean');
-                        setShowOceanAnim(true);
+                        triggerOceanAnimation();
                       }}
                       style={{ '--theme-card-border': '#0d9488', '--theme-card-bg-rgb': '13, 148, 136', '--theme-preview-grad': 'linear-gradient(135deg, #060e17 0%, #0d9488 100%)' }}
                     >
@@ -4556,10 +4565,13 @@ Overall Status : ${overallStatus}
       {showOceanAnim && (
         <div className={`ocean-anim-overlay stage-${oceanAnimStage}`}>
           <div className="sky-bg">
-            <div className="cloud-pixel c1"></div>
-            <div className="cloud-pixel c2"></div>
-            <div className="cloud-pixel c3"></div>
+            <div className="sky-sun"></div>
+            <div className="cloud-vector c1"></div>
+            <div className="cloud-vector c2"></div>
+            <div className="cloud-vector c3"></div>
           </div>
+
+          <div className="sea-entrance-line"></div>
           
           <div className="water-depths">
             <div className="sun-rays"></div>
@@ -4572,17 +4584,59 @@ Overall Status : ${overallStatus}
 
           <div className="temple-container">
             <div className="temple-silhouette">
+              <div className="temple-roof-decorations">
+                <div className="roof-tip rt-1"></div>
+                <div className="roof-tip rt-2"></div>
+              </div>
               <div className="temple-roof"></div>
               <div className="temple-body">
                 <div className="temple-pillars">
-                  <div className="pillar p1"></div>
-                  <div className="pillar p2"></div>
+                  <div className="pillar p1">
+                    <div className="pillar-cap"></div>
+                    <div className="pillar-base"></div>
+                  </div>
+                  <div className="pillar p2">
+                    <div className="pillar-cap"></div>
+                    <div className="pillar-base"></div>
+                  </div>
                 </div>
+                <div className="temple-lantern tl1"><div className="glow"></div></div>
+                <div className="temple-lantern tl2"><div className="glow"></div></div>
                 <div className="temple-entrance">
-                  <div className="door-left"></div>
-                  <div className="door-right"></div>
+                  <div className="door-left">
+                    <div className="door-handle"></div>
+                  </div>
+                  <div className="door-right">
+                    <div className="door-handle"></div>
+                  </div>
                   <div className="gold-glow"></div>
                 </div>
+              </div>
+              <div className="seabed-flora">
+                <div className="kelp-plant kp1">
+                  <div className="leaf lf1"></div>
+                  <div className="leaf lf2"></div>
+                  <div className="leaf lf3"></div>
+                </div>
+                <div className="kelp-plant kp2">
+                  <div className="leaf lf1"></div>
+                  <div className="leaf lf2"></div>
+                  <div className="leaf lf3"></div>
+                </div>
+                <div className="kelp-plant kp3">
+                  <div className="leaf lf1"></div>
+                  <div className="leaf lf2"></div>
+                  <div className="leaf lf3"></div>
+                </div>
+                <div className="kelp-plant kp4">
+                  <div className="leaf lf1"></div>
+                  <div className="leaf lf2"></div>
+                  <div className="leaf lf3"></div>
+                </div>
+                <div className="sea-flower sf1"></div>
+                <div className="sea-flower sf2"></div>
+                <div className="sea-flower sf3"></div>
+                <div className="sea-flower sf4"></div>
               </div>
             </div>
           </div>

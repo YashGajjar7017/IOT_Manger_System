@@ -9526,3 +9526,6 @@
 [7/4/2026, 4:19:42 PM] [WORKER] Failed to load database module: Cannot read properties of undefined (reading 'then')
 [7/4/2026, 4:19:42 PM] [CACHE] ⚡ Loaded 2 device(s) from disk cache — dashboard ready instantly.
 [7/4/2026, 4:19:42 PM] [WORKER] Data processing worker thread started.
+[7/4/2026, 4:27:20 PM] [WORKER] Failed to load database module: Cannot read properties of undefined (reading 'then')
+[7/4/2026, 4:27:20 PM] [CACHE] ⚡ Loaded 2 device(s) from disk cache — dashboard ready instantly.
+[7/4/2026, 4:27:20 PM] [WORKER] Data processing worker thread started.
