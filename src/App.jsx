@@ -97,7 +97,29 @@ export default function App() {
   const [dbHistory, setDbHistory] = useState([]);
   const [expandedLogId, setExpandedLogId] = useState(null);
   const [registeredDevices, setRegisteredDevices] = useState([]);
-  const [dbSubTab, setDbSubTab] = useState('tab-db-history'); // 'tab-db-history' or 'tab-db-devices'
+  const [dbSubTab, setDbSubTab] = useState('tab-db-history');
+  // Login / Signup State
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authMode, setAuthMode] = useState('login');
+  const [authUsername, setAuthUsername] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  const handleAuth = async () => {
+    setAuthError('');
+    try {
+      const result = await ipcRenderer.invoke(authMode === 'login' ? 'admin-login' : 'admin-signup', { username: authUsername, password: authPassword });
+      if (result.success) {
+        if (authMode === 'login') setIsLoggedIn(true);
+        else setAuthMode('login'); // switch to login after signup
+      } else {
+        setAuthError(result.message);
+      }
+    } catch (e) {
+      setAuthError(e.message);
+    }
+  };
+ // 'tab-db-history' or 'tab-db-devices'
 
   // Registered Device Form state
   const [regImei, setRegImei] = useState('');
@@ -362,46 +384,18 @@ export default function App() {
       return;
     }
     setIsProvisioning(true);
-    setProvisioningStatus('Initiating secure download from SCADA server...');
-    addLogLine(`[EXPRESS CLIENT] POSTing certificate provision request for IMEI: ${imeiProvisionInput}...`);
-
-    try {
-      const res = await fetch('/api/certificates/provision', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imei: imeiProvisionInput,
-          password: passwordProvisionInput,
-          gatewayIp: gatewayIpProvisionInput
-        })
-      });
-
-      const result = await res.json();
-      if (res.ok) {
-        setProvisioningStatus('Success! Certificates provisioned to ESP32 SPIFFS & QCOM synced.');
-        addLogLine('[EXPRESS CLIENT] SUCCESS: Certificate provisioning completed.', 'success');
-        alert('Certificates provisioned successfully!');
-        fetchCertProvisionHistory();
-        sendControlCommand('GET_INFO');
-      } else {
-        setProvisioningStatus(`Error: ${result.error || 'Failed'}`);
-        addLogLine(`[EXPRESS CLIENT ERROR] ${result.error || 'Failed'}`, 'error');
-        alert(`Provisioning Failed:\n${result.error || 'Unknown error'}`);
-        fetchCertProvisionHistory();
-      }
-    } catch (err) {
-      setProvisioningStatus(`Error: ${err.message}`);
-      addLogLine(`[EXPRESS CLIENT ERROR] ${err.message}`, 'error');
-      alert(`Provisioning Failed:\n${err.message}`);
-      fetchCertProvisionHistory();
-    } finally {
-      setIsProvisioning(false);
-    }
+    setProvisioningStatus('Starting secure provisioning...');
+    addLogLine(`[PROVISION] Starting certificate provisioning for IMEI: ${imeiProvisionInput}...`);
+    
+    // Call the step-by-step IPC provisioner
+    startCertProvisioning();
   };
   /* const [certBaseUrl, setCertBaseUrl] = useState('http://localhost:8000/certs'); */
-  const [certRootCaUrl, setCertRootCaUrl] = useState('https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=1&PROJCD=re');
-  const [certDeviceCertUrl, setCertDeviceCertUrl] = useState('https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=2&PROJCD=re');
-  const [certPrivateKeyUrl, setCertPrivateKeyUrl] = useState('https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=3&PROJCD=re');
+  const [certRootCaUrl, setCertRootCaUrl] = useState('https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IEMI}&user={IEMI}&pass={passowrd}&ctype=1&PROJCD=re');
+  const [certDeviceCertUrl, setCertDeviceCertUrl] = useState('https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IEMI}&user={IEMI}&pass={passowrd}&ctype=2&PROJCD=re');
+  const [certPrivateKeyUrl, setCertPrivateKeyUrl] = useState('https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IEMI}&user={IEMI}&pass={passowrd}&ctype=3&PROJCD=re');
+  const [certTarget, setCertTarget] = useState('esp32');
+
   const [isDownloadingCerts, setIsDownloadingCerts] = useState(false);
   const [certDownloadStatus, setCertDownloadStatus] = useState('');
   const [uuidToken, setUuidToken] = useState('');
@@ -1487,18 +1481,23 @@ Overall Status : ${overallStatus}
       return;
     }
 
-    // Check if IMEI and Password inputs are provided since they are used in formatting (Requirement 4)
-    if (!imeiInput || !passwordInput) {
-      alert('Please provide IMEI and Password inputs (in Security & Config) to format certificate URLs.');
+    // Check if IMEI and Password inputs are provided since they are used in formatting
+    const checkImei = imeiProvisionInput || imeiInput;
+    const checkPass = passwordProvisionInput || passwordInput;
+    if (!checkImei || !checkPass) {
+      alert('Please provide IMEI and Password to format certificate URLs.');
       return;
     }
 
     const formatUrl = (url) => {
+      const activeImei = imeiProvisionInput || imeiInput || '';
+      const activePass = passwordProvisionInput || passwordInput || '';
       return url
-        .replace(/\{IMEI\}/gi, imeiInput)
-        .replace(/\{IEMI\}/gi, imeiInput) // Handle IMEI vs IEMI typo
-        .replace(/\{PASSWORD\}/gi, passwordInput)
-        .replace(/\{PASS\}/gi, passwordInput); // Handle PASS vs PASSWORD template
+        .replace(/\{IMEI\}/gi, activeImei)
+        .replace(/\{IEMI\}/gi, activeImei)
+        .replace(/\{PASSWORD\}/gi, activePass)
+        .replace(/\{PASS\}/gi, activePass)
+        .replace(/\{passowrd\}/gi, activePass);
     };
 
     setIsDownloadingCerts(true);
@@ -1514,8 +1513,9 @@ Overall Status : ${overallStatus}
         'device_cert.crt': formatUrl(certDeviceCertUrl),
         'private_key.key': formatUrl(certPrivateKeyUrl)
       },
-      ip: wifiIp,
-      port: otaPort
+      ip: gatewayIpProvisionInput || wifiIp,
+      port: otaPort,
+      target: certTarget
     });
   };
 
@@ -1817,6 +1817,22 @@ Overall Status : ${overallStatus}
 
   return (
     <>
+      {!isLoggedIn && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{ background: 'var(--bg-terminal)', padding: '30px', borderRadius: '10px', width: '300px', border: '1px solid var(--accent-primary)' }}>
+            <h2 style={{ color: 'var(--text-white)', marginBottom: '20px' }}>{authMode === 'login' ? 'Login' : 'Signup'}</h2>
+            <input type="text" placeholder="Username" value={authUsername} onChange={e => setAuthUsername(e.target.value)} style={{ width: '100%', marginBottom: '10px', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)' }} />
+            <input type="password" placeholder="Password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} style={{ width: '100%', marginBottom: '10px', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)' }} />
+            {authError && <div style={{ color: 'var(--accent-red)', marginBottom: '10px', fontSize: '12px' }}>{authError}</div>}
+            <button onClick={handleAuth} style={{ width: '100%', padding: '10px', background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', marginBottom: '10px' }}>
+              {authMode === 'login' ? 'Login' : 'Signup'}
+            </button>
+            <div style={{ color: 'var(--text-dim)', fontSize: '12px', textAlign: 'center', cursor: 'pointer' }} onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}>
+              {authMode === 'login' ? 'Create an account' : 'Already have an account? Login'}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Frameless window header bar */}
       <div className="window-titlebar">
         <div className="titlebar-logo">
@@ -2736,17 +2752,67 @@ Overall Status : ${overallStatus}
 
               {/* Database status widget */}
               <div className="glass-card db-status-card" style={{ marginBottom: '15px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '20px', alignItems: 'center' }}>
                   <div>
                     <h4 style={{ textTransform: 'uppercase', letterSpacing: '0.1em', fontSize: '11px', color: 'var(--accent-pink)', marginBottom: '5px' }}>MERN database state</h4>
-                    <span style={{ fontSize: '16px', fontWeight: 'bold' }}>
-                      {dbStatus.mongodb === 'CONNECTED' ? '🟢 MONGODB CONNECTED' : '🟡 MEMORY LOGGER FALLBACK (DB OFFLINE)'}
+                    <span style={{ fontSize: '15px', fontWeight: 'bold', color: dbStatus.mongodb === 'CONNECTED' ? '#00ff66' : '#ff9900' }}>
+                      {dbStatus.mongodb === 'CONNECTED' ? '🟢 MONGODB CONNECTED' : '🟡 MEMORY LOGGER FALLBACK'}
                     </span>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <span className="control-title" style={{ marginBottom: '2px' }}>Snapshots Logged</span>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '18px', fontWeight: 'bold', color: 'var(--accent-blue)' }}>
-                      {dbHistory.length} snapshots
+
+                  <div className="input-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '10px' }}>MongoDB connection URL</label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input 
+                        type="text" 
+                        value={dbUriInput} 
+                        onChange={(e) => setDbUriInput(e.target.value)} 
+                        style={{ fontSize: '11px', padding: '6px 10px', height: '28px', background: 'var(--input-bg)', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '4px' }} 
+                      />
+                      <button 
+                        className="btn btn-secondary" 
+                        style={{ height: '28px', minWidth: 'auto', padding: '0 10px', fontSize: '11px' }}
+                        onClick={triggerDbReconnect}
+                        disabled={isReconnectingDb}
+                      >
+                        {isReconnectingDb ? '...' : 'Connect'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                    <button 
+                      className="btn btn-secondary" 
+                      style={{ height: '30px', minWidth: 'auto', padding: '0 12px', fontSize: '11px', border: '1px dashed var(--accent-pink)' }}
+                      onClick={async () => {
+                        const randomRecord = {
+                          count: 1,
+                          devices: [{
+                            id: Math.floor(Math.random() * 10) + 1,
+                            temp: Math.floor(Math.random() * 15) + 20,
+                            rssi: -Math.floor(Math.random() * 40) - 40,
+                            bat: Math.floor(Math.random() * 40) + 60,
+                            status: 'ACTIVE'
+                          }]
+                        };
+                        try {
+                          const res = await ipcRenderer.invoke('db-manual-insert', randomRecord);
+                          if (res.success) {
+                            alert('Successfully manually inserted telemetry snapshot record!');
+                            // Refresh db history
+                            ipcRenderer.send('reconnect-database', { uri: dbUriInput });
+                          } else {
+                            alert('Insertion failed: ' + res.error);
+                          }
+                        } catch (e) {
+                          alert('Error calling manual insert: ' + e.message);
+                        }
+                      }}
+                    >
+                      ➕ Manual Insert Test
+                    </button>
+                    <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
+                      Logs: {dbHistory.length} snapshots
                     </span>
                   </div>
                 </div>
@@ -4075,30 +4141,47 @@ Overall Status : ${overallStatus}
             <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
 
               {/* Form Card */}
-              <div className="glass-card">
-                <h3><span className="icon">🔑</span> Request SCADA Certificates</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
-                  Enter the device identity credentials to download the Root CA, Device Certificate, and Private Key from the SCADA gateway.
+              <div className="glass-card" style={{
+                transition: 'all 0.5s ease',
+                borderColor: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00ff66' : 'var(--glass-border)',
+                boxShadow: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '0 0 25px rgba(0, 255, 100, 0.25)' : 'var(--glow-theme)'
+              }}>
+                <h3><span className="icon">🔑</span> SCADA Credentials & Target</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                  Select the target storage and enter credentials to pull certificates from the SCADA system.
                 </p>
 
                 <div className="input-group">
-                  <label>Device IMEI ID</label>
-                  <input
-                    type="text"
-                    value={imeiProvisionInput}
-                    onChange={(e) => setImeiProvisionInput(e.target.value)}
-                    placeholder="e.g. 866738083623502"
-                  />
+                  <label>Storage Target Option</label>
+                  <select 
+                    value={certTarget} 
+                    onChange={(e) => setCertTarget(e.target.value)} 
+                    style={{ width: '100%', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
+                  >
+                    <option value="esp32">1. Store into ESP32 SPIFFS + co-processor sync</option>
+                    <option value="qcom">2. Store directly to QCOM co-processor</option>
+                  </select>
                 </div>
 
-                <div className="input-group">
-                  <label>SCADA User Password</label>
-                  <input
-                    type="password"
-                    value={passwordProvisionInput}
-                    onChange={(e) => setPasswordProvisionInput(e.target.value)}
-                    placeholder="Enter device credentials password"
-                  />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div className="input-group">
+                    <label>Device IMEI ID</label>
+                    <input
+                      type="text"
+                      value={imeiProvisionInput}
+                      onChange={(e) => setImeiProvisionInput(e.target.value)}
+                      placeholder="e.g. 866738083623502"
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label>SCADA Password</label>
+                    <input
+                      type="password"
+                      value={passwordProvisionInput}
+                      onChange={(e) => setPasswordProvisionInput(e.target.value)}
+                      placeholder="User Password"
+                    />
+                  </div>
                 </div>
 
                 <div className="input-group">
@@ -4114,15 +4197,78 @@ Overall Status : ${overallStatus}
                 <button
                   className="btn btn-primary"
                   onClick={triggerCertificateProvision}
-                  disabled={isProvisioning}
-                  style={{ marginTop: '20px', width: '100%' }}
+                  disabled={isProvisioning || isDownloadingCerts}
+                  style={{ marginTop: '10px', width: '100%', background: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00cc55' : 'var(--accent-primary)' }}
                 >
-                  {isProvisioning ? 'Downloading & Provisioning...' : 'Start Secure Provisioning'}
+                  {isDownloadingCerts ? 'Processing Provisioning...' : 'Start Secure Provisioning'}
                 </button>
 
+                {/* All Acknowledgement Steps & Logs on Single Page */}
+                <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <h4 style={{ fontSize: '12px', color: 'var(--accent-pink)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Provisioning Verification Stepper
+                  </h4>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>1. Fetch Root CA (rootCA.pem)</span>
+                      <span style={{ 
+                        fontWeight: 'bold', 
+                        color: certStatuses['aws_root_ca.pem'] === 'success' ? '#00ff66' : 
+                               certStatuses['aws_root_ca.pem'] === 'downloading' ? '#00ffff' : 
+                               certStatuses['aws_root_ca.pem'] === 'failed' ? '#ff3366' : '#707090' 
+                      }}>
+                        {certStatuses['aws_root_ca.pem'] === 'success' ? '✔ SUCCESS' : 
+                         certStatuses['aws_root_ca.pem'] === 'downloading' ? '⌛ FETCHING...' : 
+                         certStatuses['aws_root_ca.pem'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>2. Fetch Client Cert (client.pem)</span>
+                      <span style={{ 
+                        fontWeight: 'bold', 
+                        color: certStatuses['device_cert.crt'] === 'success' ? '#00ff66' : 
+                               certStatuses['device_cert.crt'] === 'downloading' ? '#00ffff' : 
+                               certStatuses['device_cert.crt'] === 'failed' ? '#ff3366' : '#707090' 
+                      }}>
+                        {certStatuses['device_cert.crt'] === 'success' ? '✔ SUCCESS' : 
+                         certStatuses['device_cert.crt'] === 'downloading' ? '⌛ FETCHING...' : 
+                         certStatuses['device_cert.crt'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>3. Fetch Private Key (key.pem)</span>
+                      <span style={{ 
+                        fontWeight: 'bold', 
+                        color: certStatuses['private_key.key'] === 'success' ? '#00ff66' : 
+                               certStatuses['private_key.key'] === 'downloading' ? '#00ffff' : 
+                               certStatuses['private_key.key'] === 'failed' ? '#ff3366' : '#707090' 
+                      }}>
+                        {certStatuses['private_key.key'] === 'success' ? '✔ SUCCESS' : 
+                         certStatuses['private_key.key'] === 'downloading' ? '⌛ FETCHING...' : 
+                         certStatuses['private_key.key'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '6px' }}>
+                      <span>4. Write to Device storage target</span>
+                      <span style={{ 
+                        fontWeight: 'bold', 
+                        color: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00ff66' : 
+                               isDownloadingCerts ? '#00ffff' : '#707090' 
+                      }}>
+                        {(certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '✔ WRITTEN' : 
+                         isDownloadingCerts ? '⌛ WRITING...' : '💤 PENDING'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
                 {provisioningStatus && (
-                  <div style={{ marginTop: '15px', fontSize: '12.5px', color: provisioningStatus.startsWith('Success') ? '#00ff66' : provisioningStatus.startsWith('Error') ? '#ff3366' : '#00ffff', fontFamily: 'var(--font-mono)' }}>
-                    • {provisioningStatus}
+                  <div style={{ marginTop: '15px', padding: '10px', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', fontSize: '12px', color: '#00ffff', fontFamily: 'var(--font-mono)' }}>
+                    {provisioningStatus}
                   </div>
                 )}
               </div>

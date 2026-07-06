@@ -1,122 +1,20 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IoT Monitor Gateway Console · Minecraft Edition</title>
-  <link rel="stylesheet" href="styles.css">
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
-</head>
-<body>
-  <!-- Mojang Studio Intro -->
-  <div id="mojang-intro" class="mojang-intro">
-    <div class="mojang-logo">MOJANG</div>
-    <div class="mojang-subtitle">STUDIOS</div>
-  </div>
+with open('index.html', 'r', encoding='utf-8') as f:
+    html = f.read()
 
-  <!-- Giant Snowball Event -->
-  <div id="giant-snowball" class="snowball-strike"></div>
+# Find the script tag start and end
+start_tag = '<script>'
+end_tag = '</script>'
 
-  <!-- Minecraft Classic theme kelp (wale plants) left and right -->
-  <div class="kelp-forest-left">
-    <div class="kelp kelp-1"></div>
-    <div class="kelp kelp-2"></div>
-  </div>
-  <div class="kelp-forest-right">
-    <div class="kelp kelp-3"></div>
-    <div class="kelp kelp-4"></div>
-  </div>
+# We want the script after line 118: <!-- Background animations and observers -->
+# Let's locate the last script block.
+idx_start = html.find('<script>', html.find('<!-- Background animations and observers -->'))
+idx_end = html.find('</script>', idx_start)
 
-  <!-- Minecraft Cherry Grove theme trees left and right -->
-  <div class="cherry-forest-left">
-    <div class="cherry-tree tree-1">
-      <div class="tree-trunk"></div>
-      <div class="tree-canopy canopy-1"></div>
-      <div class="tree-canopy canopy-2"></div>
-      <div class="tree-canopy canopy-3"></div>
-    </div>
-    <div class="cherry-tree tree-2">
-      <div class="tree-trunk"></div>
-      <div class="cherry-glow"></div>
-      <div class="tree-canopy canopy-1"></div>
-      <div class="tree-canopy canopy-2"></div>
-      <div class="tree-canopy canopy-3"></div>
-    </div>
-  </div>
-  
-  <div class="cherry-forest-right">
-    <div class="cherry-tree tree-3">
-      <div class="tree-trunk"></div>
-      <div class="tree-canopy canopy-1"></div>
-      <div class="tree-canopy canopy-2"></div>
-      <div class="tree-canopy canopy-3"></div>
-    </div>
-    <div class="cherry-tree tree-4">
-      <div class="tree-trunk"></div>
-      <div class="cherry-glow"></div>
-      <div class="tree-canopy canopy-1"></div>
-      <div class="tree-canopy canopy-2"></div>
-      <div class="tree-canopy canopy-3"></div>
-    </div>
-  </div>
+if idx_start == -1 or idx_end == -1:
+    print("Could not find script block")
+    exit(1)
 
-  <!-- Falling cherry blossom petals container -->
-  <div class="petal-layer" id="cherry-petals"></div>
-
-  <!-- Background block items layer -->
-  <div class="item-layer" id="block-items"></div>
-
-  <!-- Deep Sea Ocean theme background elements -->
-  <div class="ocean-background">
-    <div class="ocean-sunrays"></div>
-    <div class="ocean-bubbles-container" id="ocean-bubbles"></div>
-    <div class="background-temple">
-      <div class="temple-roof-bg"></div>
-      <div class="temple-arch-bg"></div>
-      <div class="temple-lantern-bg l1"></div>
-      <div class="temple-lantern-bg l2"></div>
-      <div class="seabed-flora">
-        <div class="kelp-plant kp1">
-          <div class="leaf lf1"></div>
-          <div class="leaf lf2"></div>
-          <div class="leaf lf3"></div>
-        </div>
-        <div class="kelp-plant kp2">
-          <div class="leaf lf1"></div>
-          <div class="leaf lf2"></div>
-          <div class="leaf lf3"></div>
-        </div>
-        <div class="kelp-plant kp3">
-          <div class="leaf lf1"></div>
-          <div class="leaf lf2"></div>
-          <div class="leaf lf3"></div>
-        </div>
-        <div class="kelp-plant kp4">
-          <div class="leaf lf1"></div>
-          <div class="leaf lf2"></div>
-          <div class="leaf lf3"></div>
-        </div>
-        <div class="sea-flower sf1"></div>
-        <div class="sea-flower sf2"></div>
-        <div class="sea-flower sf3"></div>
-        <div class="sea-flower sf4"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Hacking Theme background elements -->
-  <div class="hacking-background">
-    <div class="matrix-rain" id="matrix-rain"></div>
-  </div>
-
-  <!-- React App Root Container -->
-  <div id="root"></div>
-  
-  <!-- React App Entry Script -->
-  <script type="module" src="/src/main.jsx"></script>
-
-  <!-- Background animations and observers -->
-  <script>
+new_script = """<script>
     document.addEventListener("DOMContentLoaded", () => {
       const itemsContainer = document.getElementById('block-items');
       const petalContainer = document.getElementById('cherry-petals');
@@ -363,6 +261,10 @@
       // Run Mojang Intro automatically on startup
       startMojangIntro();
     });
-  </script>
-</body>
-</html>
+  </script>"""
+
+html = html[:idx_start] + new_script + html[idx_end + len(end_tag):]
+
+with open('index.html', 'w', encoding='utf-8') as f:
+    f.write(html)
+print("Updated index.html successfully")

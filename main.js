@@ -2679,12 +2679,13 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
 });
 */
 
-ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port }) => {
+ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port, target }) => {
   const gatewayIP = ip || '192.168.0.1';
   const targetPort1 = parseInt(port) || 8000;
   const targetPort2 = targetPort1 === 8000 ? (appConfig.otaPort || 500) : 8000;
+  const isQcom = (target === 'qcom');
 
-  event.reply('console-log', `[CERTS] Starting step-by-step certificate provisioning process...`);
+  event.reply('console-log', `[CERTS] Starting step-by-step certificate provisioning process (Target: ${target.toUpperCase()})...`);
 
   const scratchDir = path.join(__dirname, 'scratch', 'certs');
   if (!fs.existsSync(scratchDir)) {
@@ -2763,81 +2764,105 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port }) => 
       }
     }
 
-    // Step 2: Upload locally stored files to ESP32 SPIFFS with Port Fallback
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const localFilePath = path.join(scratchDir, file);
+    if (isQcom) {
+      // Step 2 for QCOM: Stream files directly over active serial/TCP interface
+      event.reply('console-log', `[CERTS] [STEP 2/3] Streaming certificates directly to QCOM Co-processor over active channel...`);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const localFilePath = path.join(scratchDir, file);
+        const content = fs.readFileSync(localFilePath, 'utf8');
+        const formattedCertData = `--- START_CERT:${file} ---\n${content}\n--- END_CERT ---\n`;
 
-      event.reply('cert-status-update', { file, status: 'uploading' });
-      event.reply('console-log', `[CERTS] [STEP 2/3] Uploading ${file} from local storage to ESP32 SPIFFS...`);
-
-      const content = fs.readFileSync(localFilePath, 'utf8');
-      const contentBytes = Buffer.byteLength(content);
-
-      const uploadToPort = (portNum) => {
-        return new Promise((resolve, reject) => {
-          const options = {
-            hostname: gatewayIP,
-            port: portNum,
-            path: `/upload_cert?filename=${encodeURIComponent(file)}`,
-            method: 'POST',
-            headers: {
-              'Content-Type': 'text/plain',
-              'Content-Length': contentBytes
-            }
-          };
-
-          const req = http.request(options, (res) => {
-            let responseData = '';
-            res.on('data', (chunk) => { responseData += chunk.toString(); });
-            res.on('end', () => {
-              if (res.statusCode === 200) resolve();
-              else reject(new Error(`Upload failed. Code ${res.statusCode}: ${responseData}`));
-            });
-          });
-          req.on('error', err => reject(err));
-          req.write(content);
-          req.end();
-        });
-      };
-
-      // Attempt 1: Upload to primary target port
-      try {
-        await uploadToPort(targetPort1);
-        event.reply('cert-status-update', { file, status: 'success' });
-        event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on Port ${targetPort1}.`);
-      } catch (err1) {
-        event.reply('console-log', `[WIFI] Port ${targetPort1} upload failed: ${err1.message}. Retrying on fallback Port ${targetPort2}...`);
-
-        // Attempt 2: Fallback to secondary port
-        try {
-          await uploadToPort(targetPort2);
-          event.reply('cert-status-update', { file, status: 'success' });
-          event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on fallback Port ${targetPort2}.`);
-        } catch (err2) {
-          event.reply('cert-status-update', { file, status: 'failed' });
-          throw err2;
+        event.reply('cert-status-update', { file, status: 'uploading' });
+        if (activeTcpSocket && !activeTcpSocket.destroyed) {
+          activeTcpSocket.write(formattedCertData);
+          event.reply('console-log', `[CERTS] Streamed ${file} directly to QCOM via TCP socket.`);
+        } else if (activeSerialPort && activeSerialPort.isOpen) {
+          activeSerialPort.write(formattedCertData);
+          event.reply('console-log', `[CERTS] Streamed ${file} directly to QCOM via Serial Port.`);
+        } else {
+          throw new Error('No active TCP socket or Serial Port connection to stream QCOM certificates.');
         }
+        event.reply('cert-status-update', { file, status: 'success' });
+      }
+
+      // Step 3 for QCOM: Complete
+      event.reply('console-log', `[CERTS] [STEP 3/3] Certificates stored directly to QCOM.`);
+    } else {
+      // Step 2 for ESP32: Upload locally stored files to ESP32 SPIFFS with Port Fallback
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const localFilePath = path.join(scratchDir, file);
+
+        event.reply('cert-status-update', { file, status: 'uploading' });
+        event.reply('console-log', `[CERTS] [STEP 2/3] Uploading ${file} from local storage to ESP32 SPIFFS...`);
+
+        const content = fs.readFileSync(localFilePath, 'utf8');
+        const contentBytes = Buffer.byteLength(content);
+
+        const uploadToPort = (portNum) => {
+          return new Promise((resolve, reject) => {
+            const options = {
+              hostname: gatewayIP,
+              port: portNum,
+              path: `/upload_cert?filename=${encodeURIComponent(file)}`,
+              method: 'POST',
+              headers: {
+                'Content-Type': 'text/plain',
+                'Content-Length': contentBytes
+              }
+            };
+
+            const req = http.request(options, (res) => {
+              let responseData = '';
+              res.on('data', (chunk) => { responseData += chunk.toString(); });
+              res.on('end', () => {
+                if (res.statusCode === 200) resolve();
+                else reject(new Error(`Upload failed. Code ${res.statusCode}: ${responseData}`));
+              });
+            });
+            req.on('error', err => reject(err));
+            req.write(content);
+            req.end();
+          });
+        };
+
+        // Attempt 1: Upload to primary target port
+        try {
+          await uploadToPort(targetPort1);
+          event.reply('cert-status-update', { file, status: 'success' });
+          event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on Port ${targetPort1}.`);
+        } catch (err1) {
+          event.reply('console-log', `[WIFI] Port ${targetPort1} upload failed: ${err1.message}. Retrying on fallback Port ${targetPort2}...`);
+
+          // Attempt 2: Fallback to secondary port
+          try {
+            await uploadToPort(targetPort2);
+            event.reply('cert-status-update', { file, status: 'success' });
+            event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on fallback Port ${targetPort2}.`);
+          } catch (err2) {
+            event.reply('cert-status-update', { file, status: 'failed' });
+            throw err2;
+          }
+        }
+      }
+
+      // Step 3 for ESP32: Sync to QCOM via serial channel
+      event.reply('console-log', '[CERTS] [STEP 3/3] Initiating sync from ESP32 to QCOM co-processor storage...');
+      if (activeTcpSocket && !activeTcpSocket.destroyed) {
+        activeTcpSocket.write('SYNC_CERTS_TO_QCOM\n');
+      } else if (activeSerialPort && activeSerialPort.isOpen) {
+        activeSerialPort.write('SYNC_CERTS_TO_QCOM\n');
       }
     }
 
-    // Step 3: Sync to QCOM via serial channel
-    event.reply('console-log', '[CERTS] [STEP 3/3] Initiating sync from ESP32 to QCOM co-processor storage...');
-    if (activeTcpSocket && !activeTcpSocket.destroyed) {
-      activeTcpSocket.write('SYNC_CERTS_TO_QCOM\n');
-    } else if (activeSerialPort && activeSerialPort.isOpen) {
-      activeSerialPort.write('SYNC_CERTS_TO_QCOM\n');
-    }
-
-    event.reply('console-log', '[CERTS] All certificates successfully provisioned from URL -> Local -> ESP32 -> QCOM channel.');
+    event.reply('console-log', `[CERTS] All certificates successfully provisioned to ${target.toUpperCase()}.`);
     event.reply('provision-certs-status', { status: 'success' });
   } catch (err) {
     event.reply('console-log', `[CERTS ERROR] Provisioning failed: ${err.message}`);
     event.reply('provision-certs-status', { status: 'error', message: err.message });
   }
 });
-
-// IPC Handler: Download firmware from URL locally and flash to ESP32 (Requirement 3)
 ipcMain.on('download-and-flash-firmware', async (event, { firmwareUrl, ip, port, target }) => {
   const gatewayIP = ip || '192.168.0.1';
   const gatewayPort = parseInt(port) || 8000;
@@ -3326,3 +3351,15 @@ ipcMain.on('append-to-log-file', (event, text) => {
 });
 
 
+
+ipcMain.handle('admin-login', async (event, { username, password }) => { return await db.verifyAdminUser(username, password); });
+ipcMain.handle('admin-signup', async (event, { username, password }) => { return await db.createAdminUser(username, password); });
+
+ipcMain.handle('db-manual-insert', async (event, record) => {
+  try {
+    await db.saveTelemetrySnapshot(record);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});

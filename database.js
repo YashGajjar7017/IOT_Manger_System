@@ -323,3 +323,12 @@ module.exports = {
   clearMemoryHistoryBuffer: () => { memoryHistoryBuffer = []; }
 };
 
+
+// Admin User Schema
+const AdminSchema = new mongoose.Schema({ username: { type: String, required: true, unique: true }, password: { type: String, required: true } });
+const AdminModel = mongoose.model('AdminUser', AdminSchema);
+async function createAdminUser(username, password) { if(!mongodbConnected) return {success: false, message: 'DB disconnected'}; try { const existing = await AdminModel.findOne({ username }); if(existing) return {success: false, message: 'User exists'}; await AdminModel.create({ username, password }); return {success: true, message: 'Signup successful'}; } catch(e) { return {success: false, message: e.message}; } }
+async function verifyAdminUser(username, password) { if(!mongodbConnected) return {success: false, message: 'DB disconnected'}; try { const user = await AdminModel.findOne({ username, password }); if(user) return {success: true, message: 'Login successful'}; return {success: false, message: 'Invalid credentials'}; } catch(e) { return {success: false, message: e.message}; } }
+module.exports.createAdminUser = createAdminUser;
+module.exports.verifyAdminUser = verifyAdminUser;
+module.exports.getDbStatus = () => ({ connected: mongodbConnected });
