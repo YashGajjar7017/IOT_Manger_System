@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
   <link rel="stylesheet" href="styles.css">
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 </head>
+
 <body>
   <!-- Mojang Studio Intro -->
   <div id="mojang-intro" class="mojang-intro">
@@ -43,7 +45,7 @@
       <div class="tree-canopy canopy-3"></div>
     </div>
   </div>
-  
+
   <div class="cherry-forest-right">
     <div class="cherry-tree tree-3">
       <div class="tree-trunk"></div>
@@ -111,7 +113,7 @@
 
   <!-- React App Root Container -->
   <div id="root"></div>
-  
+
   <!-- React App Entry Script -->
   <script type="module" src="/src/main.jsx"></script>
 
@@ -124,16 +126,28 @@
       const rainContainer = document.getElementById('matrix-rain');
       const snowball = document.getElementById('giant-snowball');
       const root = document.getElementById('root');
-      
+
       let activeIntervals = [];
+      let activeTimeouts = [];
       let biomeTimer = null;
+      let introTimeout = null;
+
+      function trackTimeout(fn, ms) {
+        const t = setTimeout(fn, ms);
+        activeTimeouts.push(t);
+        return t;
+      }
 
       function startMojangIntro() {
         const intro = document.getElementById('mojang-intro');
         if (intro) {
           intro.style.display = 'flex';
-          setTimeout(() => {
-            intro.style.animation = 'fadeOut 2s forwards';
+          intro.style.animation = 'none';
+          void intro.offsetWidth; // force reflow
+          intro.style.animation = 'fadeOut 2s forwards 3s';
+          
+          if (introTimeout) clearTimeout(introTimeout);
+          introTimeout = setTimeout(() => {
             startBiomeCycle();
           }, 3000);
         } else {
@@ -144,24 +158,24 @@
       function startBiomeCycle() {
         let biomes = ['summer', 'winter', 'rain'];
         let currentIndex = 0;
-        
+
         function switchBiome() {
           stopThemeAnimations();
-          
+
           // Remove active classes from body/document for other themes
-          document.body.className = ''; 
-          
+          document.body.className = '';
+
           let currentBiome = biomes[currentIndex];
           document.body.classList.add('biome-' + currentBiome);
-          
+
           console.log("Switching to biome: " + currentBiome);
 
           if (currentBiome === 'summer') {
-             startCherryGrove(); // summer is warm, beautiful cherry grove with petals
+            startCherryGrove(); // summer is warm, beautiful cherry grove with petals
           } else if (currentBiome === 'rain') {
-             startDeepSeaOcean(); // rain is wet, let's use sea theme / bubbles
+            startDeepSeaOcean(); // rain is wet, let's use sea theme / bubbles
           } else if (currentBiome === 'winter') {
-             startWinter();
+            startWinter();
           }
 
           currentIndex = (currentIndex + 1) % biomes.length;
@@ -176,17 +190,17 @@
           snowball.classList.remove('snowball-animate');
           void snowball.offsetWidth; // force reflow
           snowball.classList.add('snowball-animate');
-          
+
           // strike animation hides dashboard
-          setTimeout(() => {
+          trackTimeout(() => {
             root.classList.add('dashboard-hidden');
-          }, 1500); 
+          }, 1500);
 
           // comes back in seconds
-          setTimeout(() => {
-             root.classList.remove('dashboard-hidden');
-             snowball.style.display = 'none';
-          }, 4000); 
+          trackTimeout(() => {
+            root.classList.remove('dashboard-hidden');
+            snowball.style.display = 'none';
+          }, 4000);
         }
       }
 
@@ -326,16 +340,29 @@
       }
 
       function stopThemeAnimations() {
+        if (introTimeout) clearTimeout(introTimeout);
+        introTimeout = null;
         if (biomeTimer) clearTimeout(biomeTimer);
-        activeIntervals.forEach(interval => {
-          clearInterval(interval);
-          clearTimeout(interval);
-        });
+        biomeTimer = null;
+        
+        activeIntervals.forEach(clearInterval);
         activeIntervals = [];
+        
+        activeTimeouts.forEach(clearTimeout);
+        activeTimeouts = [];
+
         if (itemsContainer) itemsContainer.innerHTML = '';
         if (petalContainer) petalContainer.innerHTML = '';
         if (bubblesContainer) bubblesContainer.innerHTML = '';
         if (rainContainer) rainContainer.innerHTML = '';
+
+        if (snowball) {
+          snowball.style.display = 'none';
+          snowball.classList.remove('snowball-animate');
+        }
+        if (root) {
+          root.classList.remove('dashboard-hidden');
+        }
       }
 
       // Check external theme switcher observer
@@ -343,7 +370,21 @@
         mutations.forEach((mutation) => {
           if (mutation.attributeName === 'data-theme') {
             const theme = document.documentElement.getAttribute('data-theme');
-            if (theme === 'minecraft') {
+            console.log("Observer detected theme change to: " + theme);
+            stopThemeAnimations();
+
+            // Clean biome classes from body
+            document.body.className = '';
+
+            // Remove Mojang Intro div from display if switching away
+            const intro = document.getElementById('mojang-intro');
+            if (intro && theme !== 'mojang-studios') {
+              intro.style.display = 'none';
+            }
+
+            if (theme === 'mojang-studios') {
+              startMojangIntro();
+            } else if (theme === 'minecraft') {
               startMinecraftClassic();
             } else if (theme === 'cherry-grove') {
               startCherryGrove();
@@ -351,8 +392,6 @@
               startDeepSeaOcean();
             } else if (theme === 'hacking') {
               startHackingTheme();
-            } else {
-              stopThemeAnimations();
             }
           }
         });
@@ -360,9 +399,22 @@
 
       observer.observe(document.documentElement, { attributes: true });
 
-      // Run Mojang Intro automatically on startup
-      startMojangIntro();
+      // Run initial theme check
+      const initialTheme = document.documentElement.getAttribute('data-theme') || 'mojang-studios';
+      console.log("Initial theme is: " + initialTheme);
+      if (initialTheme === 'mojang-studios') {
+        startMojangIntro();
+      } else if (initialTheme === 'minecraft') {
+        startMinecraftClassic();
+      } else if (initialTheme === 'cherry-grove') {
+        startCherryGrove();
+      } else if (initialTheme === 'deep-sea-ocean') {
+        startDeepSeaOcean();
+      } else if (initialTheme === 'hacking') {
+        startHackingTheme();
+      }
     });
   </script>
 </body>
+
 </html>

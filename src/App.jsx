@@ -98,8 +98,8 @@ export default function App() {
   const [expandedLogId, setExpandedLogId] = useState(null);
   const [registeredDevices, setRegisteredDevices] = useState([]);
   const [dbSubTab, setDbSubTab] = useState('tab-db-history');
-  // Login / Signup State
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  // Login / Signup State (Bypassed temporarily)
+  const [isLoggedIn, setIsLoggedIn] = useState(true);
   const [authMode, setAuthMode] = useState('login');
   const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -110,8 +110,13 @@ export default function App() {
     try {
       const result = await ipcRenderer.invoke(authMode === 'login' ? 'admin-login' : 'admin-signup', { username: authUsername, password: authPassword });
       if (result.success) {
-        if (authMode === 'login') setIsLoggedIn(true);
-        else setAuthMode('login'); // switch to login after signup
+        if (authMode === 'login') {
+          localStorage.setItem('isLoggedIn', 'true');
+          setIsLoggedIn(true);
+        } else {
+          setAuthMode('login'); // switch to login after signup
+          alert('Signup successful! Please log in with your new credentials.');
+        }
       } else {
         setAuthError(result.message);
       }
@@ -170,8 +175,8 @@ export default function App() {
   const [isFlashingAdvanced, setIsFlashingAdvanced] = useState(false);
 
   // Dynamic Theme, Font, and GitHub Integration States
-  // Default to the 1st theme 'quantum-indigo' on startup
-  const [currentTheme, setCurrentTheme] = useState('quantum-indigo');
+  // Default to the 1st theme 'mojang-studios' on startup
+  const [currentTheme, setCurrentTheme] = useState(() => localStorage.getItem('theme') || 'mojang-studios');
   const [currentFont, setCurrentFont] = useState(() => localStorage.getItem('font') || 'outfit');
   const [gitHubUser, setGitHubUser] = useState(() => {
     const saved = localStorage.getItem('github_user');
@@ -1815,24 +1820,198 @@ Overall Status : ${overallStatus}
     ipcRenderer.send('download-and-flash-firmware', { firmwareUrl, ip: otaIp, port: otaPort, target: otaTarget });
   };
 
-  return (
-    <>
-      {!isLoggedIn && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          <div style={{ background: 'var(--bg-terminal)', padding: '30px', borderRadius: '10px', width: '300px', border: '1px solid var(--accent-primary)' }}>
-            <h2 style={{ color: 'var(--text-white)', marginBottom: '20px' }}>{authMode === 'login' ? 'Login' : 'Signup'}</h2>
-            <input type="text" placeholder="Username" value={authUsername} onChange={e => setAuthUsername(e.target.value)} style={{ width: '100%', marginBottom: '10px', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)' }} />
-            <input type="password" placeholder="Password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} style={{ width: '100%', marginBottom: '10px', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)' }} />
-            {authError && <div style={{ color: 'var(--accent-red)', marginBottom: '10px', fontSize: '12px' }}>{authError}</div>}
-            <button onClick={handleAuth} style={{ width: '100%', padding: '10px', background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', marginBottom: '10px' }}>
-              {authMode === 'login' ? 'Login' : 'Signup'}
+  if (!isLoggedIn) {
+    return (
+      <>
+        {/* Frameless window header bar */}
+        <div className="window-titlebar">
+          <div className="titlebar-logo">
+            <div className="logo-dot"></div>
+            <span>IOT System Manager</span>
+          </div>
+          <div className="titlebar-controls">
+            <button className="win-btn" onClick={() => ipcRenderer.send('window-minimize')}>&#128469;&#xFE0E;</button>
+            <button className="win-btn" onClick={() => ipcRenderer.send('window-maximize')}>&#128470;&#xFE0E;</button>
+            <button className="win-btn close" onClick={() => ipcRenderer.send('window-close')}>&#128473;&#xFE0E;</button>
+          </div>
+        </div>
+        <div style={{ 
+          width: '100vw', 
+          height: 'calc(100vh - 38px)', 
+          background: 'linear-gradient(135deg, #090d16 0%, #111827 50%, #1e1b4b 100%)', 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          fontFamily: 'var(--font-sans)',
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+          {/* Glassy Prism Background Blobs */}
+          <div style={{
+            background: 'radial-gradient(circle, rgba(236, 72, 153, 0.15) 0%, rgba(217, 70, 239, 0.08) 50%, transparent 100%)',
+            width: '450px',
+            height: '450px',
+            filter: 'blur(70px)',
+            position: 'absolute',
+            top: '-150px',
+            left: '-150px',
+            zIndex: 1,
+            pointerEvents: 'none'
+          }} />
+          <div style={{
+            background: 'radial-gradient(circle, rgba(6, 182, 212, 0.15) 0%, rgba(59, 130, 246, 0.08) 50%, transparent 100%)',
+            width: '500px',
+            height: '500px',
+            filter: 'blur(80px)',
+            position: 'absolute',
+            bottom: '-200px',
+            right: '-200px',
+            zIndex: 1,
+            pointerEvents: 'none'
+          }} />
+          <div style={{
+            background: 'radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, rgba(79, 70, 229, 0.05) 60%, transparent 100%)',
+            width: '400px',
+            height: '400px',
+            filter: 'blur(60px)',
+            position: 'absolute',
+            top: '25%',
+            left: '35%',
+            zIndex: 1,
+            pointerEvents: 'none'
+          }} />
+
+          {/* Sexy Glassy Prism Login Card */}
+          <div style={{ 
+            background: 'rgba(255, 255, 255, 0.02)', 
+            backdropFilter: 'blur(25px) saturate(180%)', 
+            WebkitBackdropFilter: 'blur(25px) saturate(180%)',
+            padding: '45px 35px', 
+            borderRadius: '24px', 
+            width: '380px', 
+            border: '1px solid rgba(255, 255, 255, 0.08)', 
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.1)', 
+            textAlign: 'center',
+            zIndex: 2
+          }}>
+            {/* Header Emblem */}
+            <div style={{ 
+              marginBottom: '20px', 
+              display: 'inline-flex', 
+              justifyContent: 'center', 
+              alignItems: 'center', 
+              width: '64px', 
+              height: '64px', 
+              borderRadius: '50%', 
+              background: 'linear-gradient(135deg, rgba(236,72,153,0.1) 0%, rgba(6,182,212,0.1) 100%)', 
+              border: '1px solid rgba(255,255,255,0.15)',
+              boxShadow: '0 0 20px rgba(236,72,153,0.2)'
+            }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ color: '#ec4899' }}>
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+            </div>
+
+            <h2 style={{ color: '#fff', marginBottom: '8px', fontSize: '24px', fontWeight: '800', letterSpacing: '-0.02em', background: 'linear-gradient(135deg, #fff 0%, #a5b4fc 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              {authMode === 'login' ? 'Admin Dashboard' : 'Create Credentials'}
+            </h2>
+            <p style={{ color: 'var(--text-dim)', fontSize: '12px', marginBottom: '30px', lineHeight: '1.5' }}>
+              {authMode === 'login' ? 'Enter credentials to manage IoT Monitor Systems.' : 'Set up a new master password and login.'}
+            </p>
+
+            <div className="input-group" style={{ textAlign: 'left', marginBottom: '16px' }}>
+              <label style={{ color: '#a5b4fc', fontSize: '10.5px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Username</label>
+              <input 
+                type="text" 
+                placeholder="Enter username" 
+                value={authUsername} 
+                onChange={e => setAuthUsername(e.target.value)} 
+                style={{ 
+                  width: '100%', 
+                  padding: '12px 14px', 
+                  background: 'rgba(255,255,255,0.03)', 
+                  color: '#fff', 
+                  border: '1px solid rgba(255,255,255,0.1)', 
+                  borderRadius: '10px',
+                  outline: 'none',
+                  fontSize: '13.5px',
+                  boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)',
+                  transition: 'all 0.3s'
+                }} 
+              />
+            </div>
+            
+            <div className="input-group" style={{ textAlign: 'left', marginBottom: '20px' }}>
+              <label style={{ color: '#a5b4fc', fontSize: '10.5px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Password</label>
+              <input 
+                type="password" 
+                placeholder="Enter password" 
+                value={authPassword} 
+                onChange={e => setAuthPassword(e.target.value)} 
+                style={{ 
+                  width: '100%', 
+                  padding: '12px 14px', 
+                  background: 'rgba(255,255,255,0.03)', 
+                  color: '#fff', 
+                  border: '1px solid rgba(255,255,255,0.1)', 
+                  borderRadius: '10px',
+                  outline: 'none',
+                  fontSize: '13.5px',
+                  boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)',
+                  transition: 'all 0.3s'
+                }} 
+              />
+            </div>
+
+            {authError && (
+              <div style={{ 
+                color: '#ef4444', 
+                background: 'rgba(239,68,68,0.1)', 
+                border: '1px solid rgba(239,68,68,0.2)', 
+                padding: '10px', 
+                borderRadius: '8px', 
+                fontSize: '12px', 
+                marginBottom: '15px' 
+              }}>
+                ⚠️ {authError}
+              </div>
+            )}
+
+            <button 
+              onClick={handleAuth} 
+              style={{ 
+                width: '100%', 
+                padding: '14px', 
+                background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: '10px', 
+                cursor: 'pointer', 
+                fontWeight: 'bold', 
+                textTransform: 'uppercase', 
+                letterSpacing: '0.05em',
+                fontSize: '13px',
+                boxShadow: '0 4px 15px rgba(99,102,241,0.4)',
+                transition: 'all 0.3s'
+              }}
+            >
+              {authMode === 'login' ? 'Unlock System' : 'Create Admin'}
             </button>
-            <div style={{ color: 'var(--text-dim)', fontSize: '12px', textAlign: 'center', cursor: 'pointer' }} onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}>
-              {authMode === 'login' ? 'Create an account' : 'Already have an account? Login'}
+
+            <div 
+              style={{ color: '#a5b4fc', fontSize: '12px', marginTop: '20px', cursor: 'pointer', display: 'inline-block', borderBottom: '1px dotted #a5b4fc' }} 
+              onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+            >
+              {authMode === 'login' ? "Register New Credentials" : 'Already have credentials? Log In'}
             </div>
           </div>
         </div>
-      )}
+      </>
+    );
+  }
+
+  return (
+    <>
       {/* Frameless window header bar */}
       <div className="window-titlebar">
         <div className="titlebar-logo">
@@ -4680,6 +4859,15 @@ Overall Status : ${overallStatus}
                       <div className="theme-preview-bar"></div>
                       <span className="theme-preset-name">Hacking Edition</span>
                     </div>
+
+                    <div
+                      className={`theme-preset-card ${currentTheme === 'mojang-studios' ? 'active' : ''}`}
+                      onClick={() => setCurrentTheme('mojang-studios')}
+                      style={{ '--theme-card-border': '#ef323d', '--theme-card-bg-rgb': '239, 50, 61', '--theme-preview-grad': 'linear-gradient(135deg, #ef323d 0%, #000 100%)' }}
+                    >
+                      <div className="theme-preview-bar"></div>
+                      <span className="theme-preset-name">Mojang Studios</span>
+                    </div>
                   </div>
                 </div>
 
@@ -4756,6 +4944,17 @@ Overall Status : ${overallStatus}
                 </div>
                 <button className="btn btn-accent" onClick={saveAppConfigSettings} style={{ marginTop: '15px', width: '100%' }}>
                   Save Communications Config
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    localStorage.removeItem('isLoggedIn');
+                    setIsLoggedIn(false);
+                    alert('Logged out successfully!');
+                  }}
+                  style={{ marginTop: '10px', width: '100%', borderColor: 'rgba(239, 68, 68, 0.4)', color: '#ef4444', background: 'rgba(239, 68, 68, 0.05)' }}
+                >
+                  🔒 Log Out Admin Session
                 </button>
               </div>
 
