@@ -4100,7 +4100,7 @@ body {
   width: 100vw;
   height: 100vh;
   background-color: #ef323d;
-  display: flex;
+  display: none; /* Changed from flex to none to prevent the red flash glitch on startup */
   flex-direction: column;
   justify-content: center;
   align-items: center;
@@ -4146,15 +4146,6 @@ body {
 .biome-active {
   opacity: 1;
 }
-.biome-winter {
-  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
-}
-.biome-rain {
-  background: linear-gradient(180deg, #090d16 0%, #1e293b 100%);
-}
-.biome-summer {
-  background: linear-gradient(180deg, #1a0b2e 0%, #0c051a 100%);
-}
 .snowball-strike {
   position: fixed;
   top: -500px;
@@ -4196,6 +4187,87 @@ body {
   opacity: 0 !important;
   transition: opacity 0.2s;
 }
-body.biome-summer, body.biome-winter, body.biome-rain {
-  background-image: none !important;
+
+/* Realistic themed body gradients for biomes (overrides default background-image) */
+body.biome-winter {
+  background-image: linear-gradient(180deg, #090e1a 0%, #151e33 60%, #03060c 100%) !important;
+  background-color: #090e1a !important;
+}
+body.biome-rain {
+  background-image: linear-gradient(180deg, #04100c 0%, #0a241d 60%, #020806 100%) !important;
+  background-color: #04100c !important;
+}
+body.biome-summer {
+  background-image: linear-gradient(180deg, #17071f 0%, #2b0b3b 60%, #0b0210 100%) !important;
+  background-color: #17071f !important;
+}
+
+/* Sideways drifting items */
+.float-sideways {
+  position: absolute;
+  opacity: 0.15;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes driftLeftToRight {
+  0% {
+    transform: translate(-10vw, 0vh) rotate(0deg);
+  }
+  100% {
+    transform: translate(110vw, 10vh) rotate(360deg);
+  }
+}
+
+@keyframes driftRightToLeft {
+  0% {
+    transform: translate(110vw, 0vh) rotate(360deg);
+  }
+  100% {
+    transform: translate(-10vw, 10vh) rotate(0deg);
+  }
+}
+
+/* Slanted realistic swamp/jungle rain */
+.slanted-rain {
+  position: absolute;
+  top: -30px;
+  width: 1.5px;
+  height: 30px;
+  background: rgba(14, 165, 233, 0.35); /* Glowing aqua drop */
+  transform: rotate(15deg);
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes rainFallSlanted {
+  0% {
+    transform: translateY(0) rotate(15deg);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(105vh) translateX(-150px) rotate(15deg);
+    opacity: 0.15;
+  }
+}
+
+/* Diagonal realistic snowy taiga snow */
+.taiga-snow {
+  position: absolute;
+  top: -30px;
+  color: rgba(255, 255, 255, 0.7);
+  pointer-events: none;
+  font-family: monospace;
+  z-index: 1;
+}
+
+@keyframes snowFallDiagonally {
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(105vh) translateX(-80px) rotate(360deg);
+    opacity: 0.2;
+  }
 }

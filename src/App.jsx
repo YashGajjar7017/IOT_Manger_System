@@ -124,7 +124,7 @@ export default function App() {
       setAuthError(e.message);
     }
   };
- // 'tab-db-history' or 'tab-db-devices'
+  // 'tab-db-history' or 'tab-db-devices'
 
   // Registered Device Form state
   const [regImei, setRegImei] = useState('');
@@ -204,7 +204,7 @@ export default function App() {
     if (oceanTimersRef.current) {
       oceanTimersRef.current.forEach(clearTimeout);
     }
-    
+
     setShowOceanAnim(true);
     setOceanAnimStage('sky-to-sea');
 
@@ -391,7 +391,7 @@ export default function App() {
     setIsProvisioning(true);
     setProvisioningStatus('Starting secure provisioning...');
     addLogLine(`[PROVISION] Starting certificate provisioning for IMEI: ${imeiProvisionInput}...`);
-    
+
     // Call the step-by-step IPC provisioner
     startCertProvisioning();
   };
@@ -1835,13 +1835,13 @@ Overall Status : ${overallStatus}
             <button className="win-btn close" onClick={() => ipcRenderer.send('window-close')}>&#128473;&#xFE0E;</button>
           </div>
         </div>
-        <div style={{ 
-          width: '100vw', 
-          height: 'calc(100vh - 38px)', 
-          background: 'linear-gradient(135deg, #090d16 0%, #111827 50%, #1e1b4b 100%)', 
-          display: 'flex', 
-          justifyContent: 'center', 
-          alignItems: 'center', 
+        <div style={{
+          width: '100vw',
+          height: 'calc(100vh - 38px)',
+          background: 'linear-gradient(135deg, #090d16 0%, #111827 50%, #1e1b4b 100%)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
           fontFamily: 'var(--font-sans)',
           position: 'relative',
           overflow: 'hidden'
@@ -1882,28 +1882,28 @@ Overall Status : ${overallStatus}
           }} />
 
           {/* Sexy Glassy Prism Login Card */}
-          <div style={{ 
-            background: 'rgba(255, 255, 255, 0.02)', 
-            backdropFilter: 'blur(25px) saturate(180%)', 
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.02)',
+            backdropFilter: 'blur(25px) saturate(180%)',
             WebkitBackdropFilter: 'blur(25px) saturate(180%)',
-            padding: '45px 35px', 
-            borderRadius: '24px', 
-            width: '380px', 
-            border: '1px solid rgba(255, 255, 255, 0.08)', 
-            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.1)', 
+            padding: '45px 35px',
+            borderRadius: '24px',
+            width: '380px',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.1)',
             textAlign: 'center',
             zIndex: 2
           }}>
             {/* Header Emblem */}
-            <div style={{ 
-              marginBottom: '20px', 
-              display: 'inline-flex', 
-              justifyContent: 'center', 
-              alignItems: 'center', 
-              width: '64px', 
-              height: '64px', 
-              borderRadius: '50%', 
-              background: 'linear-gradient(135deg, rgba(236,72,153,0.1) 0%, rgba(6,182,212,0.1) 100%)', 
+            <div style={{
+              marginBottom: '20px',
+              display: 'inline-flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, rgba(236,72,153,0.1) 0%, rgba(6,182,212,0.1) 100%)',
               border: '1px solid rgba(255,255,255,0.15)',
               boxShadow: '0 0 20px rgba(236,72,153,0.2)'
             }}>
@@ -1921,74 +1921,74 @@ Overall Status : ${overallStatus}
 
             <div className="input-group" style={{ textAlign: 'left', marginBottom: '16px' }}>
               <label style={{ color: '#a5b4fc', fontSize: '10.5px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Username</label>
-              <input 
-                type="text" 
-                placeholder="Enter username" 
-                value={authUsername} 
-                onChange={e => setAuthUsername(e.target.value)} 
-                style={{ 
-                  width: '100%', 
-                  padding: '12px 14px', 
-                  background: 'rgba(255,255,255,0.03)', 
-                  color: '#fff', 
-                  border: '1px solid rgba(255,255,255,0.1)', 
+              <input
+                type="text"
+                placeholder="Enter username"
+                value={authUsername}
+                onChange={e => setAuthUsername(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px 14px',
+                  background: 'rgba(255,255,255,0.03)',
+                  color: '#fff',
+                  border: '1px solid rgba(255,255,255,0.1)',
                   borderRadius: '10px',
                   outline: 'none',
                   fontSize: '13.5px',
                   boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)',
                   transition: 'all 0.3s'
-                }} 
+                }}
               />
             </div>
-            
+
             <div className="input-group" style={{ textAlign: 'left', marginBottom: '20px' }}>
               <label style={{ color: '#a5b4fc', fontSize: '10.5px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Password</label>
-              <input 
-                type="password" 
-                placeholder="Enter password" 
-                value={authPassword} 
-                onChange={e => setAuthPassword(e.target.value)} 
-                style={{ 
-                  width: '100%', 
-                  padding: '12px 14px', 
-                  background: 'rgba(255,255,255,0.03)', 
-                  color: '#fff', 
-                  border: '1px solid rgba(255,255,255,0.1)', 
+              <input
+                type="password"
+                placeholder="Enter password"
+                value={authPassword}
+                onChange={e => setAuthPassword(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px 14px',
+                  background: 'rgba(255,255,255,0.03)',
+                  color: '#fff',
+                  border: '1px solid rgba(255,255,255,0.1)',
                   borderRadius: '10px',
                   outline: 'none',
                   fontSize: '13.5px',
                   boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)',
                   transition: 'all 0.3s'
-                }} 
+                }}
               />
             </div>
 
             {authError && (
-              <div style={{ 
-                color: '#ef4444', 
-                background: 'rgba(239,68,68,0.1)', 
-                border: '1px solid rgba(239,68,68,0.2)', 
-                padding: '10px', 
-                borderRadius: '8px', 
-                fontSize: '12px', 
-                marginBottom: '15px' 
+              <div style={{
+                color: '#ef4444',
+                background: 'rgba(239,68,68,0.1)',
+                border: '1px solid rgba(239,68,68,0.2)',
+                padding: '10px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                marginBottom: '15px'
               }}>
                 ⚠️ {authError}
               </div>
             )}
 
-            <button 
-              onClick={handleAuth} 
-              style={{ 
-                width: '100%', 
-                padding: '14px', 
-                background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)', 
-                color: 'white', 
-                border: 'none', 
-                borderRadius: '10px', 
-                cursor: 'pointer', 
-                fontWeight: 'bold', 
-                textTransform: 'uppercase', 
+            <button
+              onClick={handleAuth}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                textTransform: 'uppercase',
                 letterSpacing: '0.05em',
                 fontSize: '13px',
                 boxShadow: '0 4px 15px rgba(99,102,241,0.4)',
@@ -1998,8 +1998,8 @@ Overall Status : ${overallStatus}
               {authMode === 'login' ? 'Unlock System' : 'Create Admin'}
             </button>
 
-            <div 
-              style={{ color: '#a5b4fc', fontSize: '12px', marginTop: '20px', cursor: 'pointer', display: 'inline-block', borderBottom: '1px dotted #a5b4fc' }} 
+            <div
+              style={{ color: '#a5b4fc', fontSize: '12px', marginTop: '20px', cursor: 'pointer', display: 'inline-block', borderBottom: '1px dotted #a5b4fc' }}
               onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
             >
               {authMode === 'login' ? "Register New Credentials" : 'Already have credentials? Log In'}
@@ -2489,7 +2489,7 @@ Overall Status : ${overallStatus}
                   <div className="slider-header">
                     <span className="control-title">Interval Rate</span>
                     <span className="slider-value">{telemetryRate} ms</span>
-</div>
+                  </div>
                   <input type="range" min="200" max="5000" step="100" value={telemetryRate} onChange={handleIntervalChange} onMouseUp={commitIntervalChange} disabled={controlsDisabled} />
                   <div className="slider-labels">
                     <span>Fast (200ms)</span>
@@ -2497,22 +2497,26 @@ Overall Status : ${overallStatus}
                   </div>
                 </div>
 
-                <div className="control-row bottom-actions">
-                  <button className="btn btn-primary" onClick={triggerSelfCheckReRun} disabled={controlsDisabled}>
-                    <span className="btn-icon">&#9654;</span> Run All Tests
-                  </button>
-                  <button className="btn btn-secondary" onClick={triggerSelfCheckReRun} disabled={controlsDisabled}>
-                    <span className="btn-icon">&#10227;</span> Recheck Hardware
-                  </button>
-                  <button className="btn btn-accent" onClick={() => sendControlCommand('SHIFT_TO_QCOM')} disabled={!connection.type}>
-                    <span className="btn-icon">&#10145;</span> Shift to QCOM
-                  </button>
-                  <button className="btn btn-danger" onClick={() => sendControlCommand('REBOOT')} disabled={!connection.type}>
-                    <span className="btn-icon">&#10227;</span> Reboot Gateway
-                  </button>
-                  <div className="ping-widget">
-                    <span className="ping-label">Socket RTT Ping:</span>
-                    <span className={`ping-result ${pingLatency.status}`}>{pingLatency.value}</span>
+                <div className="control-row bottom-actions" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <button className="btn btn-primary" onClick={triggerSelfCheckReRun} disabled={controlsDisabled} style={{ padding: '8px 12px', fontSize: '12px' }}>
+                      <span className="btn-icon">&#9654;</span> Run All Tests
+                    </button>
+                    <button className="btn btn-secondary" onClick={triggerSelfCheckReRun} disabled={controlsDisabled} style={{ padding: '8px 12px', fontSize: '12px' }}>
+                      <span className="btn-icon">&#10227;</span> Recheck Hardware
+                    </button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <button className="btn btn-accent" onClick={() => sendControlCommand('SHIFT_TO_QCOM')} disabled={!connection.type} style={{ padding: '8px 12px', fontSize: '12px' }}>
+                      <span className="btn-icon">&#10145;</span> Shift to QCOM
+                    </button>
+                    <button className="btn btn-danger" onClick={() => sendControlCommand('REBOOT')} disabled={!connection.type} style={{ padding: '8px 12px', fontSize: '12px' }}>
+                      <span className="btn-icon">&#10227;</span> Reboot Gateway
+                    </button>
+                  </div>
+                  <div className="ping-widget" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '6px 12px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--glass-border)', borderRadius: '6px', marginTop: '4px' }}>
+                    <span className="ping-label" style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-dim)', fontWeight: 'bold' }}>Socket RTT Ping:</span>
+                    <span className={`ping-result ${pingLatency.status}`} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px' }}>{pingLatency.value}</span>
                   </div>
                 </div>
               </div>
@@ -2942,14 +2946,14 @@ Overall Status : ${overallStatus}
                   <div className="input-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: '10px' }}>MongoDB connection URL</label>
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      <input 
-                        type="text" 
-                        value={dbUriInput} 
-                        onChange={(e) => setDbUriInput(e.target.value)} 
-                        style={{ fontSize: '11px', padding: '6px 10px', height: '28px', background: 'var(--input-bg)', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '4px' }} 
+                      <input
+                        type="text"
+                        value={dbUriInput}
+                        onChange={(e) => setDbUriInput(e.target.value)}
+                        style={{ fontSize: '11px', padding: '6px 10px', height: '28px', background: 'var(--input-bg)', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '4px' }}
                       />
-                      <button 
-                        className="btn btn-secondary" 
+                      <button
+                        className="btn btn-secondary"
                         style={{ height: '28px', minWidth: 'auto', padding: '0 10px', fontSize: '11px' }}
                         onClick={triggerDbReconnect}
                         disabled={isReconnectingDb}
@@ -2960,8 +2964,8 @@ Overall Status : ${overallStatus}
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-                    <button 
-                      className="btn btn-secondary" 
+                    <button
+                      className="btn btn-secondary"
                       style={{ height: '30px', minWidth: 'auto', padding: '0 12px', fontSize: '11px', border: '1px dashed var(--accent-pink)' }}
                       onClick={async () => {
                         const randomRecord = {
@@ -4196,7 +4200,7 @@ Overall Status : ${overallStatus}
               {/* 9-Point diagnostics card */}
               <div className="glass-card hardware-card" style={{ gridColumn: 'span 2' }}>
                 <h3><span className="icon">🛡️</span> Peripheral Self-Check Diagnostician</h3>
-                
+
                 <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr', gap: '20px', marginTop: '20px' }}>
                   {/* Left Column: 8 standard checklist items */}
                   <div className="diag-checklist" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
@@ -4230,7 +4234,7 @@ Overall Status : ${overallStatus}
                       <div className="diag-label" style={{ flex: 1, fontWeight: 'bold', fontSize: '12px' }}>DI (DIGITAL INPUT)</div>
                       <div className="diag-value" style={{ fontWeight: 'bold', fontSize: '12px' }}>{diagnostics.di}</div>
                     </div>
-                    
+
                     <div className="di-pins-container" style={{
                       display: 'grid',
                       gridTemplateColumns: '1fr',
@@ -4332,9 +4336,9 @@ Overall Status : ${overallStatus}
 
                 <div className="input-group">
                   <label>Storage Target Option</label>
-                  <select 
-                    value={certTarget} 
-                    onChange={(e) => setCertTarget(e.target.value)} 
+                  <select
+                    value={certTarget}
+                    onChange={(e) => setCertTarget(e.target.value)}
                     style={{ width: '100%', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
                   >
                     <option value="esp32">1. Store into ESP32 SPIFFS + co-processor sync</option>
@@ -4387,59 +4391,59 @@ Overall Status : ${overallStatus}
                   <h4 style={{ fontSize: '12px', color: 'var(--accent-pink)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Provisioning Verification Stepper
                   </h4>
-                  
+
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>1. Fetch Root CA (rootCA.pem)</span>
-                      <span style={{ 
-                        fontWeight: 'bold', 
-                        color: certStatuses['aws_root_ca.pem'] === 'success' ? '#00ff66' : 
-                               certStatuses['aws_root_ca.pem'] === 'downloading' ? '#00ffff' : 
-                               certStatuses['aws_root_ca.pem'] === 'failed' ? '#ff3366' : '#707090' 
+                      <span style={{
+                        fontWeight: 'bold',
+                        color: certStatuses['aws_root_ca.pem'] === 'success' ? '#00ff66' :
+                          certStatuses['aws_root_ca.pem'] === 'downloading' ? '#00ffff' :
+                            certStatuses['aws_root_ca.pem'] === 'failed' ? '#ff3366' : '#707090'
                       }}>
-                        {certStatuses['aws_root_ca.pem'] === 'success' ? '✔ SUCCESS' : 
-                         certStatuses['aws_root_ca.pem'] === 'downloading' ? '⌛ FETCHING...' : 
-                         certStatuses['aws_root_ca.pem'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
+                        {certStatuses['aws_root_ca.pem'] === 'success' ? '✔ SUCCESS' :
+                          certStatuses['aws_root_ca.pem'] === 'downloading' ? '⌛ FETCHING...' :
+                            certStatuses['aws_root_ca.pem'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
                       </span>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>2. Fetch Client Cert (client.pem)</span>
-                      <span style={{ 
-                        fontWeight: 'bold', 
-                        color: certStatuses['device_cert.crt'] === 'success' ? '#00ff66' : 
-                               certStatuses['device_cert.crt'] === 'downloading' ? '#00ffff' : 
-                               certStatuses['device_cert.crt'] === 'failed' ? '#ff3366' : '#707090' 
+                      <span style={{
+                        fontWeight: 'bold',
+                        color: certStatuses['device_cert.crt'] === 'success' ? '#00ff66' :
+                          certStatuses['device_cert.crt'] === 'downloading' ? '#00ffff' :
+                            certStatuses['device_cert.crt'] === 'failed' ? '#ff3366' : '#707090'
                       }}>
-                        {certStatuses['device_cert.crt'] === 'success' ? '✔ SUCCESS' : 
-                         certStatuses['device_cert.crt'] === 'downloading' ? '⌛ FETCHING...' : 
-                         certStatuses['device_cert.crt'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
+                        {certStatuses['device_cert.crt'] === 'success' ? '✔ SUCCESS' :
+                          certStatuses['device_cert.crt'] === 'downloading' ? '⌛ FETCHING...' :
+                            certStatuses['device_cert.crt'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
                       </span>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>3. Fetch Private Key (key.pem)</span>
-                      <span style={{ 
-                        fontWeight: 'bold', 
-                        color: certStatuses['private_key.key'] === 'success' ? '#00ff66' : 
-                               certStatuses['private_key.key'] === 'downloading' ? '#00ffff' : 
-                               certStatuses['private_key.key'] === 'failed' ? '#ff3366' : '#707090' 
+                      <span style={{
+                        fontWeight: 'bold',
+                        color: certStatuses['private_key.key'] === 'success' ? '#00ff66' :
+                          certStatuses['private_key.key'] === 'downloading' ? '#00ffff' :
+                            certStatuses['private_key.key'] === 'failed' ? '#ff3366' : '#707090'
                       }}>
-                        {certStatuses['private_key.key'] === 'success' ? '✔ SUCCESS' : 
-                         certStatuses['private_key.key'] === 'downloading' ? '⌛ FETCHING...' : 
-                         certStatuses['private_key.key'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
+                        {certStatuses['private_key.key'] === 'success' ? '✔ SUCCESS' :
+                          certStatuses['private_key.key'] === 'downloading' ? '⌛ FETCHING...' :
+                            certStatuses['private_key.key'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
                       </span>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '6px' }}>
                       <span>4. Write to Device storage target</span>
-                      <span style={{ 
-                        fontWeight: 'bold', 
-                        color: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00ff66' : 
-                               isDownloadingCerts ? '#00ffff' : '#707090' 
+                      <span style={{
+                        fontWeight: 'bold',
+                        color: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00ff66' :
+                          isDownloadingCerts ? '#00ffff' : '#707090'
                       }}>
-                        {(certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '✔ WRITTEN' : 
-                         isDownloadingCerts ? '⌛ WRITING...' : '💤 PENDING'}
+                        {(certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '✔ WRITTEN' :
+                          isDownloadingCerts ? '⌛ WRITING...' : '💤 PENDING'}
                       </span>
                     </div>
                   </div>
@@ -5042,7 +5046,7 @@ Overall Status : ${overallStatus}
           </div>
 
           <div className="sea-entrance-line"></div>
-          
+
           <div className="water-depths">
             <div className="sun-rays"></div>
             <div className="bubble b1"></div>
@@ -5196,7 +5200,7 @@ Overall Status : ${overallStatus}
                     </feMerge>
                   </filter>
                 </defs>
-                
+
                 {/* Tribal Dragon Body & Head */}
                 <path
                   d="M 150 40 C 145 25, 130 20, 115 30 C 95 40, 90 60, 105 80 C 120 100, 130 110, 120 130 C 110 150, 80 150, 70 170 C 60 190, 85 200, 100 190 C 115 180, 130 160, 135 140 C 140 120, 135 105, 150 90 C 165 105, 160 120, 165 140 C 170 160, 185 180, 200 190 C 215 200, 240 190, 230 170 C 220 150, 190 150, 180 130 C 170 110, 180 100, 195 80 C 210 60, 205 40, 185 30 C 170 20, 155 25, 150 40 Z"
@@ -5206,7 +5210,7 @@ Overall Status : ${overallStatus}
                   filter="url(#greenGlow)"
                   className="dragon-wings-path"
                 />
-                
+
                 {/* Left Tribal Wing */}
                 <path
                   d="M 105 80 C 80 70, 40 80, 20 100 C 35 110, 60 110, 75 105 C 80 115, 60 130, 45 140 C 65 135, 85 125, 95 115 Z"

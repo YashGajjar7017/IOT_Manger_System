@@ -171,11 +171,11 @@
           console.log("Switching to biome: " + currentBiome);
 
           if (currentBiome === 'summer') {
-            startCherryGrove(); // summer is warm, beautiful cherry grove with petals
+            startMojangSummer();
           } else if (currentBiome === 'rain') {
-            startDeepSeaOcean(); // rain is wet, let's use sea theme / bubbles
+            startMojangRain();
           } else if (currentBiome === 'winter') {
-            startWinter();
+            startMojangWinter();
           }
 
           currentIndex = (currentIndex + 1) % biomes.length;
@@ -204,8 +204,113 @@
         }
       }
 
+      function spawnSidewaysItem(emojiList) {
+        if (!itemsContainer || itemsContainer.children.length > 25) return;
+        const item = document.createElement('div');
+        item.className = 'float-sideways';
+        item.textContent = emojiList[Math.floor(Math.random() * emojiList.length)];
+        
+        const direction = Math.random() > 0.5 ? 'ltr' : 'rtl';
+        const startY = 15 + Math.random() * 70; // 15% to 85% height
+        const fontSize = 24 + Math.random() * 20; // 24px to 44px
+        const duration = 12 + Math.random() * 12; // 12s to 24s
+        
+        item.style.top = startY + 'vh';
+        item.style.fontSize = fontSize + 'px';
+        item.style.animation = `${direction === 'ltr' ? 'driftLeftToRight' : 'driftRightToLeft'} ${duration}s linear forwards`;
+        
+        itemsContainer.appendChild(item);
+        setTimeout(() => { item.remove(); }, duration * 1000);
+      }
+
+      function startMojangSummer() {
+        const CHERRY_ITEMS = ['🌸', '🪵', '🐝', '🍯', '🍒', '💗', '🌱', '🧸'];
+        const itemInterval = setInterval(() => {
+          spawnSidewaysItem(CHERRY_ITEMS);
+        }, 2000);
+        activeIntervals.push(itemInterval);
+        startCherryGrovePetals();
+      }
+
+      function startCherryGrovePetals() {
+        const petalInterval = setInterval(() => {
+          if (petalContainer && petalContainer.children.length < 50) {
+            const petal = document.createElement('div');
+            petal.className = 'cherry-petal';
+            const colors = ['#ffccd9', '#ff9ebb', '#e57c9f', '#ffb5c0', '#fa819e'];
+            petal.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+            const size = (6 + Math.random() * 6);
+            petal.style.width = size + 'px';
+            petal.style.height = size + 'px';
+            petal.style.left = Math.random() * 100 + 'vw';
+            petal.style.opacity = (0.6 + Math.random() * 0.4);
+            const duration = (8 + Math.random() * 8);
+            petal.style.animation = `fallAndSway ${duration}s linear forwards`;
+            petalContainer.appendChild(petal);
+            setTimeout(() => { petal.remove(); }, duration * 1000);
+          }
+        }, 150);
+        activeIntervals.push(petalInterval);
+      }
+
+      function startMojangRain() {
+        const STORM_ITEMS = ['🐸', '🦎', '🪷', '🌿', '🪵', '🐟', '🐙', '🫧', '🦟'];
+        const itemInterval = setInterval(() => {
+          spawnSidewaysItem(STORM_ITEMS);
+        }, 2000);
+        activeIntervals.push(itemInterval);
+        startSlantedRain();
+      }
+
+      function startSlantedRain() {
+        const rainInterval = setInterval(() => {
+          if (rainContainer && rainContainer.children.length < 60) {
+            const drop = document.createElement('div');
+            drop.className = 'slanted-rain';
+            drop.style.left = (Math.random() * 120 - 20) + 'vw';
+            const duration = 0.8 + Math.random() * 0.6;
+            drop.style.animation = `rainFallSlanted ${duration}s linear forwards`;
+            rainContainer.appendChild(drop);
+            setTimeout(() => { drop.remove(); }, duration * 1000);
+          }
+        }, 80);
+        activeIntervals.push(rainInterval);
+      }
+
+      function startMojangWinter() {
+        const WINTER_ITEMS = ['❄️', '⛄', '🌲', '🦊', '🐺', '🐰', '🪵', '🧊', '🧣'];
+        const itemInterval = setInterval(() => {
+          spawnSidewaysItem(WINTER_ITEMS);
+        }, 2000);
+        activeIntervals.push(itemInterval);
+        startTaigaSnow();
+
+        const snowballTimeout = setTimeout(triggerSnowball, 5000 + Math.random() * 4000);
+        activeTimeouts.push(snowballTimeout);
+        
+        const snowballInterval = setInterval(triggerSnowball, 15000);
+        activeIntervals.push(snowballInterval);
+      }
+
+      function startTaigaSnow() {
+        const snowInterval = setInterval(() => {
+          if (petalContainer && petalContainer.children.length < 60) {
+            const flake = document.createElement('div');
+            flake.className = 'taiga-snow';
+            flake.textContent = '❄';
+            flake.style.left = Math.random() * 100 + 'vw';
+            const size = 10 + Math.random() * 12;
+            flake.style.fontSize = size + 'px';
+            const duration = 5 + Math.random() * 5;
+            flake.style.animation = `snowFallDiagonally ${duration}s linear forwards`;
+            petalContainer.appendChild(flake);
+            setTimeout(() => { flake.remove(); }, duration * 1000);
+          }
+        }, 120);
+        activeIntervals.push(snowInterval);
+      }
+
       function startWinter() {
-        // Winter falling snow
         const floatInterval = setInterval(() => {
           if (itemsContainer && itemsContainer.children.length < 40) {
             const item = document.createElement('div');
@@ -220,9 +325,11 @@
         }, 300);
         activeIntervals.push(floatInterval);
 
-        // Schedule snowball strike
         const snowballTimeout = setTimeout(triggerSnowball, 5000 + Math.random() * 4000);
-        activeIntervals.push(setInterval(triggerSnowball, 12000)); // repeat snowball
+        activeTimeouts.push(snowballTimeout);
+        
+        const snowballInterval = setInterval(triggerSnowball, 15000);
+        activeIntervals.push(snowballInterval);
       }
 
       function startMinecraftClassic() {
