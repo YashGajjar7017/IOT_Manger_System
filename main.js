@@ -2679,6 +2679,44 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
 });
 */
 
+function parseCertDetails(content, filename) {
+  try {
+    if (filename.includes('key') || content.includes('PRIVATE KEY') || content.includes('RSA PRIVATE KEY')) {
+      let keyType = 'Private Key';
+      if (content.includes('RSA PRIVATE KEY')) keyType = 'RSA Private Key';
+      return {
+        type: keyType,
+        subject: 'Local Private Key',
+        issuer: 'Self-Generated',
+        validTo: 'N/A'
+      };
+    }
+
+    const { X509Certificate } = require('crypto');
+    const cert = new X509Certificate(content);
+    
+    const parseCN = (dn) => {
+      const match = dn.match(/CN=([^,]+)/);
+      return match ? match[1] : dn;
+    };
+
+    return {
+      type: 'Certificate',
+      subject: parseCN(cert.subject),
+      issuer: parseCN(cert.issuer),
+      validTo: cert.validTo,
+      serialNumber: cert.serialNumber
+    };
+  } catch (e) {
+    return {
+      type: 'Raw Data File',
+      subject: 'Unknown Subject',
+      issuer: 'Unknown Issuer',
+      validTo: 'N/A'
+    };
+  }
+}
+
 ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port, target }) => {
   const gatewayIP = ip || '192.168.0.1';
   const targetPort1 = parseInt(port) || 8000;
@@ -2783,7 +2821,8 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port, targe
         } else {
           throw new Error('No active TCP socket or Serial Port connection to stream QCOM certificates.');
         }
-        event.reply('cert-status-update', { file, status: 'success' });
+        const details = parseCertDetails(content, file);
+        event.reply('cert-status-update', { file, status: 'success', details });
       }
 
       // Step 3 for QCOM: Complete
@@ -2830,7 +2869,8 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port, targe
         // Attempt 1: Upload to primary target port
         try {
           await uploadToPort(targetPort1);
-          event.reply('cert-status-update', { file, status: 'success' });
+          const details = parseCertDetails(content, file);
+          event.reply('cert-status-update', { file, status: 'success', details });
           event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on Port ${targetPort1}.`);
         } catch (err1) {
           event.reply('console-log', `[WIFI] Port ${targetPort1} upload failed: ${err1.message}. Retrying on fallback Port ${targetPort2}...`);
@@ -2838,7 +2878,8 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port, targe
           // Attempt 2: Fallback to secondary port
           try {
             await uploadToPort(targetPort2);
-            event.reply('cert-status-update', { file, status: 'success' });
+            const details = parseCertDetails(content, file);
+            event.reply('cert-status-update', { file, status: 'success', details });
             event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on fallback Port ${targetPort2}.`);
           } catch (err2) {
             event.reply('cert-status-update', { file, status: 'failed' });

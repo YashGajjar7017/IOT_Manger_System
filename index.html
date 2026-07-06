@@ -16,6 +16,9 @@
     <div class="mojang-subtitle">STUDIOS</div>
   </div>
 
+  <!-- Biome Overlay -->
+  <div id="biome-overlay" class="biome-overlay"></div>
+
   <!-- Giant Snowball Event -->
   <div id="giant-snowball" class="snowball-strike"></div>
 
@@ -158,15 +161,23 @@
       function startBiomeCycle() {
         let biomes = ['summer', 'winter', 'rain'];
         let currentIndex = 0;
+        const overlay = document.getElementById('biome-overlay');
 
         function switchBiome() {
           stopThemeAnimations();
 
           // Remove active classes from body/document for other themes
           document.body.className = '';
+          if (overlay) {
+            overlay.className = 'biome-overlay';
+          }
 
           let currentBiome = biomes[currentIndex];
           document.body.classList.add('biome-' + currentBiome);
+          if (overlay) {
+            overlay.classList.add('biome-' + currentBiome);
+            overlay.classList.add('biome-active');
+          }
 
           console.log("Switching to biome: " + currentBiome);
 
@@ -462,6 +473,11 @@
         if (petalContainer) petalContainer.innerHTML = '';
         if (bubblesContainer) bubblesContainer.innerHTML = '';
         if (rainContainer) rainContainer.innerHTML = '';
+
+        const overlay = document.getElementById('biome-overlay');
+        if (overlay) {
+          overlay.className = 'biome-overlay';
+        }
 
         if (snowball) {
           snowball.style.display = 'none';

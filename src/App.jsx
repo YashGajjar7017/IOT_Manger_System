@@ -305,6 +305,11 @@ export default function App() {
     'device_cert.crt': 'idle',
     'private_key.key': 'idle'
   });
+  const [certDetails, setCertDetails] = useState({
+    'aws_root_ca.pem': null,
+    'device_cert.crt': null,
+    'private_key.key': null
+  });
   const [selectedSpiffsFile, setSelectedSpiffsFile] = useState('');
   const [selectedFileContent, setSelectedFileContent] = useState('');
   const [fileContentEdit, setFileContentEdit] = useState('');
@@ -805,8 +810,11 @@ export default function App() {
     };
     ipcRenderer.on('spiffs-delete-result', onSpiffsDeleteResult);
 
-    const onCertStatusUpdate = (event, { file, status }) => {
+    const onCertStatusUpdate = (event, { file, status, details }) => {
       setCertStatuses(prev => ({ ...prev, [file]: status }));
+      if (details) {
+        setCertDetails(prev => ({ ...prev, [file]: details }));
+      }
     };
     ipcRenderer.on('cert-status-update', onCertStatusUpdate);
 
@@ -1512,6 +1520,11 @@ Overall Status : ${overallStatus}
       'device_cert.crt': 'idle',
       'private_key.key': 'idle'
     });
+    setCertDetails({
+      'aws_root_ca.pem': null,
+      'device_cert.crt': null,
+      'private_key.key': null
+    });
     ipcRenderer.send('download-and-provision-certs', {
       urls: {
         'aws_root_ca.pem': formatUrl(certRootCaUrl),
@@ -2100,14 +2113,6 @@ Overall Status : ${overallStatus}
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
               </svg>
               <span>Hardware Info</span>
-            </button>
-
-            <button className={`nav-item ${activeTab === 'page-cert-provision' ? 'active' : ''}`} onClick={() => setActiveTab('page-cert-provision')}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                <path d="M9 11l2 2 4-4" />
-              </svg>
-              <span>Cert Provisioning</span>
             </button>
 
             <button className={`nav-item ${activeTab === 'page-storage' ? 'active' : ''}`} onClick={() => setActiveTab('page-storage')}>
@@ -3696,21 +3701,196 @@ Overall Status : ${overallStatus}
             </div>
           </section>
 
-          {/* ================= VIEW: SECURITY & CREDENTIALS ================= */}
+          {/* ================= VIEW 5: SECURITY & SYSTEM CONFIGURATION ================= */}
           <section id="page-security" className={`page-view ${activeTab === 'page-security' ? 'active' : ''}`}>
             <header className="view-header">
               <div>
                 <h1>Security & System Configuration</h1>
-                <p>Modify device credentials and manage certificates in ESP32 config partition and QCOM device storage</p>
+                <p>Configure dynamic SCADA provisioning, identity credentials, WiFi router, and local filesystems</p>
               </div>
             </header>
 
-            <div className="security-layout-grid">
+            {/* Top Grid: Auto SCADA Downloader & Verification Stepper */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', marginBottom: '20px' }}>
+              
+              {/* Auto SCADA Downloader Form */}
+              <div className="glass-card" style={{
+                transition: 'all 0.5s ease',
+                borderColor: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00ff66' : 'var(--glass-border)',
+                boxShadow: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '0 0 25px rgba(0, 255, 100, 0.25)' : 'var(--glow-theme)'
+              }}>
+                <h3><span className="icon">⚡</span> Auto Certificate Download & Provisioning</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                  Download AWS IoT certificates directly from the SCADA API based on IMEI & Password.
+                </p>
 
+                <div className="input-group">
+                  <label>Storage Target Option</label>
+                  <select
+                    value={certTarget}
+                    onChange={(e) => setCertTarget(e.target.value)}
+                    style={{ width: '100%', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
+                  >
+                    <option value="esp32">1. Store into ESP32 SPIFFS + co-processor sync</option>
+                    <option value="qcom">2. Store directly to QCOM co-processor</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div className="input-group">
+                    <label>Device IMEI ID</label>
+                    <input
+                      type="text"
+                      value={imeiProvisionInput}
+                      onChange={(e) => setImeiProvisionInput(e.target.value)}
+                      placeholder="e.g. 866738083623502"
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label>SCADA Password</label>
+                    <input
+                      type="password"
+                      value={passwordProvisionInput}
+                      onChange={(e) => setPasswordProvisionInput(e.target.value)}
+                      placeholder="User Password"
+                    />
+                  </div>
+                </div>
+
+                <div className="input-group">
+                  <label>ESP32 Gateway IP Address</label>
+                  <input
+                    type="text"
+                    value={gatewayIpProvisionInput}
+                    onChange={(e) => setGatewayIpProvisionInput(e.target.value)}
+                    placeholder="e.g. 192.168.0.1"
+                  />
+                </div>
+
+                <button
+                  className="btn btn-primary"
+                  onClick={triggerCertificateProvision}
+                  disabled={isProvisioning || isDownloadingCerts}
+                  style={{ marginTop: '10px', width: '100%', background: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00cc55' : 'var(--accent-primary)' }}
+                >
+                  {isDownloadingCerts ? 'Processing Provisioning...' : 'Start Secure Provisioning'}
+                </button>
+
+                {provisioningStatus && (
+                  <div style={{ marginTop: '15px', padding: '10px', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', fontSize: '12px', color: '#00ffff', fontFamily: 'var(--font-mono)' }}>
+                    {provisioningStatus}
+                  </div>
+                )}
+              </div>
+
+              {/* Provisioning Verification Stepper */}
+              <div className="glass-card">
+                <h3><span className="icon">🛡️</span> Provisioning Verification Steps</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                  Real-time status updates and X.509 signature metadata parsed upon successful download.
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '12px' }}>
+                  {/* Step 1 */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 'bold' }}>1st Cert: Fetch Root CA (rootCA.pem)</span>
+                      <span style={{
+                        fontWeight: 'bold',
+                        color: certStatuses['aws_root_ca.pem'] === 'success' ? '#00ff66' :
+                          certStatuses['aws_root_ca.pem'] === 'downloading' ? '#00ffff' :
+                            certStatuses['aws_root_ca.pem'] === 'failed' ? '#ff3366' : '#707090'
+                      }}>
+                        {certStatuses['aws_root_ca.pem'] === 'success' ? '✔ SUCCESS' :
+                          certStatuses['aws_root_ca.pem'] === 'downloading' ? '⌛ FETCHING...' :
+                            certStatuses['aws_root_ca.pem'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
+                      </span>
+                    </div>
+                    {certStatuses['aws_root_ca.pem'] === 'success' && certDetails['aws_root_ca.pem'] && (
+                      <div style={{ fontSize: '11px', color: '#a49fc4', paddingLeft: '12px', borderLeft: '2px solid #00f0ff', marginTop: '4px', lineHeight: '1.4' }}>
+                        <div><strong>Issuer:</strong> {certDetails['aws_root_ca.pem'].issuer}</div>
+                        <div><strong>Subject:</strong> {certDetails['aws_root_ca.pem'].subject}</div>
+                        <div><strong>Valid To:</strong> {certDetails['aws_root_ca.pem'].validTo !== 'N/A' ? new Date(certDetails['aws_root_ca.pem'].validTo).toLocaleDateString() : 'N/A'}</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Step 2 */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 'bold' }}>2nd Cert: Fetch Client Cert (client.pem)</span>
+                      <span style={{
+                        fontWeight: 'bold',
+                        color: certStatuses['device_cert.crt'] === 'success' ? '#00ff66' :
+                          certStatuses['device_cert.crt'] === 'downloading' ? '#00ffff' :
+                            certStatuses['device_cert.crt'] === 'failed' ? '#ff3366' : '#707090'
+                      }}>
+                        {certStatuses['device_cert.crt'] === 'success' ? '✔ SUCCESS' :
+                          certStatuses['device_cert.crt'] === 'downloading' ? '⌛ FETCHING...' :
+                            certStatuses['device_cert.crt'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
+                      </span>
+                    </div>
+                    {certStatuses['device_cert.crt'] === 'success' && certDetails['device_cert.crt'] && (
+                      <div style={{ fontSize: '11px', color: '#a49fc4', paddingLeft: '12px', borderLeft: '2px solid #00f0ff', marginTop: '4px', lineHeight: '1.4' }}>
+                        <div><strong>Issuer:</strong> {certDetails['device_cert.crt'].issuer}</div>
+                        <div><strong>Subject:</strong> {certDetails['device_cert.crt'].subject}</div>
+                        <div><strong>Valid To:</strong> {certDetails['device_cert.crt'].validTo !== 'N/A' ? new Date(certDetails['device_cert.crt'].validTo).toLocaleDateString() : 'N/A'}</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Step 3 */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 'bold' }}>3rd Cert: Fetch Private Key (key.pem)</span>
+                      <span style={{
+                        fontWeight: 'bold',
+                        color: certStatuses['private_key.key'] === 'success' ? '#00ff66' :
+                          certStatuses['private_key.key'] === 'downloading' ? '#00ffff' :
+                            certStatuses['private_key.key'] === 'failed' ? '#ff3366' : '#707090'
+                      }}>
+                        {certStatuses['private_key.key'] === 'success' ? '✔ SUCCESS' :
+                          certStatuses['private_key.key'] === 'downloading' ? '⌛ FETCHING...' :
+                            certStatuses['private_key.key'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
+                      </span>
+                    </div>
+                    {certStatuses['private_key.key'] === 'success' && certDetails['private_key.key'] && (
+                      <div style={{ fontSize: '11px', color: '#a49fc4', paddingLeft: '12px', borderLeft: '2px solid #00f0ff', marginTop: '4px', lineHeight: '1.4' }}>
+                        <div><strong>Type:</strong> {certDetails['private_key.key'].type}</div>
+                        <div><strong>Subject:</strong> {certDetails['private_key.key'].subject}</div>
+                        <div><strong>Issuer:</strong> {certDetails['private_key.key'].issuer}</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Step 4 */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 'bold' }}>4th Step: Write to Device storage target</span>
+                      <span style={{
+                        fontWeight: 'bold',
+                        color: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00ff66' :
+                          isDownloadingCerts ? '#00ffff' : '#707090'
+                      }}>
+                        {(certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '✔ WRITTEN' :
+                          isDownloadingCerts ? '⌛ WRITING...' : '💤 PENDING'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Middle Grid: Manual files manager and update details */}
+            <div className="security-layout-grid">
+              
+              {/* Credentials & WiFi Card Column */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                
                 {/* Credentials Configuration Card */}
                 <div className="glass-card">
-                  <h3><span className="icon">&#128274;</span> Identity Credentials</h3>
+                  <h3><span className="icon">🔒</span> Identity Credentials</h3>
                   <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
                     Update gateway hardware identifier and communication passphrase. Updates sync dynamically over the active interface.
                   </p>
@@ -3753,7 +3933,7 @@ Overall Status : ${overallStatus}
 
                 {/* WiFi Router Credentials Configuration Card */}
                 <div className="glass-card">
-                  <h3><span className="icon">&#128246;</span> WiFi Router Credentials</h3>
+                  <h3><span className="icon">📶</span> WiFi Router Credentials</h3>
                   <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
                     Update the SSID and Passphrase for the external wireless router. Gateway will store credentials to SPIFFS and auto-reboot to apply.
                   </p>
@@ -3789,8 +3969,9 @@ Overall Status : ${overallStatus}
                 </div>
               </div>
 
+              {/* SPIFFS & QCOM Certificates Manager Card */}
               <div className="glass-card">
-                <h3><span className="icon">&#128190;</span> ESP32 SPIFFS Storage & File Inspector</h3>
+                <h3><span className="icon">💾</span> SPIFFS & QCOM Certificates Manager</h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
                   Inspect space utilization and manage active configuration / certificate files stored directly in the ESP32 SPIFFS filesystem.
                 </p>
@@ -3917,46 +4098,46 @@ Overall Status : ${overallStatus}
                   </div>
                 </div>
 
-                {/* Auto-Download from URL */}
+                {/* URL Template Config Block (Moved below) */}
                 <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-                  <h4 style={{ fontSize: '13px', color: 'var(--accent-pink)', marginBottom: '10px' }}>Auto-Download from URL</h4>
-
+                  <h4 style={{ fontSize: '13px', color: 'var(--accent-pink)', marginBottom: '10px' }}>URL Template Configurations</h4>
+                  
                   <div className="input-group">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label>Root CA Certificate URL (.pem)</label>
+                      <label>Root CA Certificate URL Template</label>
                       <CertStatusBadge status={certStatuses['aws_root_ca.pem']} />
                     </div>
                     <input
                       type="text"
                       value={certRootCaUrl}
                       onChange={(e) => setCertRootCaUrl(e.target.value)}
-                      placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=1&PROJCD=re"
+                      placeholder="Template URL"
                       disabled={isDownloadingCerts}
                     />
                   </div>
                   <div className="input-group">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label>Device Certificate URL (.crt)</label>
+                      <label>Device Certificate URL Template</label>
                       <CertStatusBadge status={certStatuses['device_cert.crt']} />
                     </div>
                     <input
                       type="text"
                       value={certDeviceCertUrl}
                       onChange={(e) => setCertDeviceCertUrl(e.target.value)}
-                      placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=2&PROJCD=re"
+                      placeholder="Template URL"
                       disabled={isDownloadingCerts}
                     />
                   </div>
                   <div className="input-group">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label>Private Key URL (.key)</label>
+                      <label>Private Key URL Template</label>
                       <CertStatusBadge status={certStatuses['private_key.key']} />
                     </div>
                     <input
                       type="text"
                       value={certPrivateKeyUrl}
                       onChange={(e) => setCertPrivateKeyUrl(e.target.value)}
-                      placeholder="e.g. https://api.iotscada-pmsg.com/api/SSLCert/certdownload?imei={IMEI}&user={IMEI}&pass={PASSWORD}&ctype=3&PROJCD=re"
+                      placeholder="Template URL"
                       disabled={isDownloadingCerts}
                     />
                   </div>
@@ -3967,7 +4148,7 @@ Overall Status : ${overallStatus}
                     disabled={(!connection.type || connection.type === 'failed') || isDownloadingCerts}
                     style={{ marginTop: '10px', width: '100%' }}
                   >
-                    {isDownloadingCerts ? 'Downloading & Provisioning...' : 'Fetch & Sync Certificates'}
+                    {isDownloadingCerts ? 'Downloading & Provisioning...' : 'Fetch & Sync Certificates (Template)'}
                   </button>
                   {certDownloadStatus && (
                     <span style={{ display: 'block', marginTop: '8px', fontSize: '11px', color: certDownloadStatus.startsWith('Success') ? '#00ff66' : '#ff3366', fontFamily: 'var(--font-mono)' }}>
@@ -3992,6 +4173,57 @@ Overall Status : ${overallStatus}
                 )}
               </div>
 
+            </div>
+
+            {/* Bottom Section: MERN history audit logs */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px', marginTop: '10px' }}>
+              <div className="glass-card">
+                <h3><span className="icon">🛡️</span> Certificate Provisioning History Audit Logs</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                  Review database logs tracking successful/failed AWS IoT credentials synchronization:
+                </p>
+
+                <div style={{ maxHeight: '350px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                  {certHistoryLogs.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
+                      No certificate provisioning logs recorded in database
+                    </div>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
+                          <th style={{ padding: '8px' }}>Timestamp</th>
+                          <th style={{ padding: '8px' }}>IMEI</th>
+                          <th style={{ padding: '8px' }}>Gateway IP</th>
+                          <th style={{ padding: '8px' }}>Sizes (CA/Cert/Key)</th>
+                          <th style={{ padding: '8px' }}>Status</th>
+                          <th style={{ padding: '8px' }}>Logs</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {certHistoryLogs.map((log, index) => (
+                          <tr key={log._id || index} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
+                            <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>{new Date(log.timestamp).toLocaleString()}</td>
+                            <td style={{ padding: '8px', fontFamily: 'monospace' }}>{log.imei}</td>
+                            <td style={{ padding: '8px', fontFamily: 'monospace' }}>{log.gatewayIp}</td>
+                            <td style={{ padding: '8px', fontFamily: 'monospace' }}>
+                              {log.status === 'SUCCESS' ? `${log.rootCaSize}B / ${log.deviceCertSize}B / ${log.privateKeySize}B` : '--'}
+                            </td>
+                            <td style={{ padding: '8px' }}>
+                              <span style={{ padding: '2px 6px', borderRadius: '4px', background: log.status === 'SUCCESS' ? 'rgba(0,255,100,0.1)' : 'rgba(255,50,50,0.1)', color: log.status === 'SUCCESS' ? '#00ff66' : '#ff3366', fontWeight: 'bold', fontSize: '0.75rem' }}>
+                                {log.status}
+                              </span>
+                            </td>
+                            <td style={{ padding: '8px', color: '#a0a0c0', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.message}>
+                              {log.message}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
             </div>
           </section>
 
@@ -4312,201 +4544,7 @@ Overall Status : ${overallStatus}
             </div>
           </section>
 
-          {/* ================= VIEW 7: CERTIFICATE PROVISIONING ================= */}
-          <section id="page-cert-provision" className={`page-view ${activeTab === 'page-cert-provision' ? 'active' : ''}`}>
-            <header className="view-header">
-              <div>
-                <h1>Certificate Provisioning & Audit</h1>
-                <p>Fetch AWS IoT credentials dynamically from the SCADA server and flash them directly to the ESP32 Winbond flash SPIFFS</p>
-              </div>
-            </header>
 
-            <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-
-              {/* Form Card */}
-              <div className="glass-card" style={{
-                transition: 'all 0.5s ease',
-                borderColor: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00ff66' : 'var(--glass-border)',
-                boxShadow: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '0 0 25px rgba(0, 255, 100, 0.25)' : 'var(--glow-theme)'
-              }}>
-                <h3><span className="icon">🔑</span> SCADA Credentials & Target</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
-                  Select the target storage and enter credentials to pull certificates from the SCADA system.
-                </p>
-
-                <div className="input-group">
-                  <label>Storage Target Option</label>
-                  <select
-                    value={certTarget}
-                    onChange={(e) => setCertTarget(e.target.value)}
-                    style={{ width: '100%', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
-                  >
-                    <option value="esp32">1. Store into ESP32 SPIFFS + co-processor sync</option>
-                    <option value="qcom">2. Store directly to QCOM co-processor</option>
-                  </select>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="input-group">
-                    <label>Device IMEI ID</label>
-                    <input
-                      type="text"
-                      value={imeiProvisionInput}
-                      onChange={(e) => setImeiProvisionInput(e.target.value)}
-                      placeholder="e.g. 866738083623502"
-                    />
-                  </div>
-                  <div className="input-group">
-                    <label>SCADA Password</label>
-                    <input
-                      type="password"
-                      value={passwordProvisionInput}
-                      onChange={(e) => setPasswordProvisionInput(e.target.value)}
-                      placeholder="User Password"
-                    />
-                  </div>
-                </div>
-
-                <div className="input-group">
-                  <label>ESP32 Gateway IP Address</label>
-                  <input
-                    type="text"
-                    value={gatewayIpProvisionInput}
-                    onChange={(e) => setGatewayIpProvisionInput(e.target.value)}
-                    placeholder="e.g. 192.168.0.1"
-                  />
-                </div>
-
-                <button
-                  className="btn btn-primary"
-                  onClick={triggerCertificateProvision}
-                  disabled={isProvisioning || isDownloadingCerts}
-                  style={{ marginTop: '10px', width: '100%', background: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00cc55' : 'var(--accent-primary)' }}
-                >
-                  {isDownloadingCerts ? 'Processing Provisioning...' : 'Start Secure Provisioning'}
-                </button>
-
-                {/* All Acknowledgement Steps & Logs on Single Page */}
-                <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <h4 style={{ fontSize: '12px', color: 'var(--accent-pink)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Provisioning Verification Stepper
-                  </h4>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>1. Fetch Root CA (rootCA.pem)</span>
-                      <span style={{
-                        fontWeight: 'bold',
-                        color: certStatuses['aws_root_ca.pem'] === 'success' ? '#00ff66' :
-                          certStatuses['aws_root_ca.pem'] === 'downloading' ? '#00ffff' :
-                            certStatuses['aws_root_ca.pem'] === 'failed' ? '#ff3366' : '#707090'
-                      }}>
-                        {certStatuses['aws_root_ca.pem'] === 'success' ? '✔ SUCCESS' :
-                          certStatuses['aws_root_ca.pem'] === 'downloading' ? '⌛ FETCHING...' :
-                            certStatuses['aws_root_ca.pem'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>2. Fetch Client Cert (client.pem)</span>
-                      <span style={{
-                        fontWeight: 'bold',
-                        color: certStatuses['device_cert.crt'] === 'success' ? '#00ff66' :
-                          certStatuses['device_cert.crt'] === 'downloading' ? '#00ffff' :
-                            certStatuses['device_cert.crt'] === 'failed' ? '#ff3366' : '#707090'
-                      }}>
-                        {certStatuses['device_cert.crt'] === 'success' ? '✔ SUCCESS' :
-                          certStatuses['device_cert.crt'] === 'downloading' ? '⌛ FETCHING...' :
-                            certStatuses['device_cert.crt'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>3. Fetch Private Key (key.pem)</span>
-                      <span style={{
-                        fontWeight: 'bold',
-                        color: certStatuses['private_key.key'] === 'success' ? '#00ff66' :
-                          certStatuses['private_key.key'] === 'downloading' ? '#00ffff' :
-                            certStatuses['private_key.key'] === 'failed' ? '#ff3366' : '#707090'
-                      }}>
-                        {certStatuses['private_key.key'] === 'success' ? '✔ SUCCESS' :
-                          certStatuses['private_key.key'] === 'downloading' ? '⌛ FETCHING...' :
-                            certStatuses['private_key.key'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '6px' }}>
-                      <span>4. Write to Device storage target</span>
-                      <span style={{
-                        fontWeight: 'bold',
-                        color: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00ff66' :
-                          isDownloadingCerts ? '#00ffff' : '#707090'
-                      }}>
-                        {(certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '✔ WRITTEN' :
-                          isDownloadingCerts ? '⌛ WRITING...' : '💤 PENDING'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {provisioningStatus && (
-                  <div style={{ marginTop: '15px', padding: '10px', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', fontSize: '12px', color: '#00ffff', fontFamily: 'var(--font-mono)' }}>
-                    {provisioningStatus}
-                  </div>
-                )}
-              </div>
-
-              {/* History Audit Logs Card */}
-              <div className="glass-card" style={{ gridColumn: 'span 2' }}>
-                <h3><span className="icon">🛡️</span> Certificate Provisioning History Audit Logs</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
-                  Review MERN database logs tracking successful/failed AWS IoT credentials synchronization:
-                </p>
-
-                <div style={{ maxHeight: '350px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-                  {certHistoryLogs.length === 0 ? (
-                    <div style={{ padding: '20px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
-                      No certificate provisioning logs recorded in database
-                    </div>
-                  ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
-                          <th style={{ padding: '8px' }}>Timestamp</th>
-                          <th style={{ padding: '8px' }}>IMEI</th>
-                          <th style={{ padding: '8px' }}>Gateway IP</th>
-                          <th style={{ padding: '8px' }}>Sizes (CA/Cert/Key)</th>
-                          <th style={{ padding: '8px' }}>Status</th>
-                          <th style={{ padding: '8px' }}>Logs</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {certHistoryLogs.map((log, index) => (
-                          <tr key={log._id || index} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
-                            <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>{new Date(log.timestamp).toLocaleString()}</td>
-                            <td style={{ padding: '8px', fontFamily: 'monospace' }}>{log.imei}</td>
-                            <td style={{ padding: '8px', fontFamily: 'monospace' }}>{log.gatewayIp}</td>
-                            <td style={{ padding: '8px', fontFamily: 'monospace' }}>
-                              {log.status === 'SUCCESS' ? `${log.rootCaSize}B / ${log.deviceCertSize}B / ${log.privateKeySize}B` : '--'}
-                            </td>
-                            <td style={{ padding: '8px' }}>
-                              <span style={{ padding: '2px 6px', borderRadius: '4px', background: log.status === 'SUCCESS' ? 'rgba(0,255,100,0.1)' : 'rgba(255,50,50,0.1)', color: log.status === 'SUCCESS' ? '#00ff66' : '#ff3366', fontWeight: 'bold', fontSize: '0.75rem' }}>
-                                {log.status}
-                              </span>
-                            </td>
-                            <td style={{ padding: '8px', color: '#a0a0c0', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.message}>
-                              {log.message}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
-
-            </div>
-          </section>
 
           {/* ================= VIEW: ESP32 SPIFFS STORAGE MANAGER ================= */}
           <section id="page-storage" className={`page-view ${activeTab === 'page-storage' ? 'active' : ''}`}>
