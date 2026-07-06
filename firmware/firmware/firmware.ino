@@ -191,8 +191,8 @@ String routerPassword = "medha@123";
 
 enum SystemState { STATE_HALT, STATE_DIAGNOSTICS, STATE_RUNNING };
 
-// Start directly in STATE_DIAGNOSTICS to run the checks immediately on boot!
-SystemState currentState = STATE_DIAGNOSTICS;
+// Start in STATE_HALT to wait for manual trigger
+SystemState currentState = STATE_HALT;
 
 unsigned long lastLogTime = 0;
 unsigned long lastTelemetryTime = 0;

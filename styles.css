@@ -4046,3 +4046,48 @@ body {
     stroke-dashoffset: -800;
   }
 }
+
+/* ==========================================================================
+   EXPLOSION EFFECT (BIG BANG)
+   ========================================================================== */
+.ocean-anim-overlay.stage-explosion {
+  animation: bigBangExplosion 3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.ocean-anim-overlay.stage-explosion * {
+  transition: opacity 0.1s;
+  opacity: 0 !important;
+}
+
+@keyframes bigBangExplosion {
+  0% {
+    background-color: #020914;
+    transform: scale(1);
+    filter: brightness(1) contrast(1);
+    opacity: 1;
+  }
+  10% {
+    background-color: #fff;
+    transform: scale(1.5);
+    filter: brightness(10) contrast(5);
+    opacity: 1;
+  }
+  30% {
+    background-color: #fca5a5;
+    transform: scale(2);
+    filter: brightness(5) blur(10px);
+    opacity: 1;
+  }
+  90% {
+    background-color: #fff;
+    transform: scale(5);
+    filter: brightness(20) blur(20px);
+    opacity: 1;
+  }
+  100% {
+    background-color: #fff;
+    transform: scale(10);
+    filter: brightness(20) blur(50px);
+    opacity: 0;
+  }
+}

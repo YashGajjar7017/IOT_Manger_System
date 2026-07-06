@@ -195,11 +195,16 @@ export default function App() {
     }, 8000); // 2 seconds earthquake/temple shaking
 
     const t4 = setTimeout(() => {
-      setOceanAnimStage('done');
-      setShowOceanAnim(false);
+      setOceanAnimStage('explosion');
     }, 10500); // 2.5 seconds opening door with bright golden flash
 
-    oceanTimersRef.current = [t1, t2, t3, t4];
+    const t5 = setTimeout(() => {
+      setOceanAnimStage('done');
+      setShowOceanAnim(false);
+      setActiveTab('page-dashboard');
+    }, 13500); // 3 seconds explosion
+
+    oceanTimersRef.current = [t1, t2, t3, t4, t5];
   };
 
   // Dedicated trigger for hacking theme entrance cinematic sequence
@@ -2289,7 +2294,7 @@ Overall Status : ${overallStatus}
                   <div className="slider-header">
                     <span className="control-title">Interval Rate</span>
                     <span className="slider-value">{telemetryRate} ms</span>
-                  </div>
+</div>
                   <input type="range" min="200" max="5000" step="100" value={telemetryRate} onChange={handleIntervalChange} onMouseUp={commitIntervalChange} disabled={controlsDisabled} />
                   <div className="slider-labels">
                     <span>Fast (200ms)</span>
@@ -2298,6 +2303,9 @@ Overall Status : ${overallStatus}
                 </div>
 
                 <div className="control-row bottom-actions">
+                  <button className="btn btn-primary" onClick={triggerSelfCheckReRun} disabled={controlsDisabled}>
+                    <span className="btn-icon">&#9654;</span> Run All Tests
+                  </button>
                   <button className="btn btn-secondary" onClick={triggerSelfCheckReRun} disabled={controlsDisabled}>
                     <span className="btn-icon">&#10227;</span> Recheck Hardware
                   </button>
