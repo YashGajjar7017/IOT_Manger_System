@@ -198,6 +198,22 @@ export default function App() {
     localStorage.setItem('theme', currentTheme);
   }, [currentTheme]);
 
+  const changeThemeWithTransition = (newTheme, additionalTrigger = null) => {
+    if (newTheme === currentTheme) return;
+    document.documentElement.classList.add('theme-slide-out-active');
+    setTimeout(() => {
+      setCurrentTheme(newTheme);
+      if (additionalTrigger) {
+        additionalTrigger();
+      }
+      document.documentElement.classList.remove('theme-slide-out-active');
+      document.documentElement.classList.add('theme-slide-in-active');
+      setTimeout(() => {
+        document.documentElement.classList.remove('theme-slide-in-active');
+      }, 550);
+    }, 450);
+  };
+
   // Dedicated trigger for ocean temple entrance cinematic sequence
   const triggerOceanAnimation = () => {
     // Clear any existing timers
@@ -4826,7 +4842,7 @@ Overall Status : ${overallStatus}
                   <div className="theme-presets-grid">
                     <div
                       className={`theme-preset-card ${currentTheme === 'quantum-indigo' ? 'active' : ''}`}
-                      onClick={() => setCurrentTheme('quantum-indigo')}
+                      onClick={() => changeThemeWithTransition('quantum-indigo')}
                       style={{ '--theme-card-border': '#7000ff', '--theme-card-bg-rgb': '112, 0, 255', '--theme-preview-grad': 'linear-gradient(135deg, #7000ff 0%, #00c6ff 100%)' }}
                     >
                       <div className="theme-preview-bar"></div>
@@ -4835,7 +4851,7 @@ Overall Status : ${overallStatus}
 
                     <div
                       className={`theme-preset-card ${currentTheme === 'cyber-orchid' ? 'active' : ''}`}
-                      onClick={() => setCurrentTheme('cyber-orchid')}
+                      onClick={() => changeThemeWithTransition('cyber-orchid')}
                       style={{ '--theme-card-border': '#f953c6', '--theme-card-bg-rgb': '249, 83, 198', '--theme-preview-grad': 'linear-gradient(135deg, #f953c6 0%, #7000ff 100%)' }}
                     >
                       <div className="theme-preview-bar"></div>
@@ -4844,7 +4860,7 @@ Overall Status : ${overallStatus}
 
                     <div
                       className={`theme-preset-card ${currentTheme === 'mint-aurora' ? 'active' : ''}`}
-                      onClick={() => setCurrentTheme('mint-aurora')}
+                      onClick={() => changeThemeWithTransition('mint-aurora')}
                       style={{ '--theme-card-border': '#00e676', '--theme-card-bg-rgb': '0, 230, 118', '--theme-preview-grad': 'linear-gradient(135deg, #00e676 0%, #00c6ff 100%)' }}
                     >
                       <div className="theme-preview-bar"></div>
@@ -4853,7 +4869,7 @@ Overall Status : ${overallStatus}
 
                     <div
                       className={`theme-preset-card ${currentTheme === 'solar-flare' ? 'active' : ''}`}
-                      onClick={() => setCurrentTheme('solar-flare')}
+                      onClick={() => changeThemeWithTransition('solar-flare')}
                       style={{ '--theme-card-border': '#ff7300', '--theme-card-bg-rgb': '255, 115, 0', '--theme-preview-grad': 'linear-gradient(135deg, #ff7300 0%, #f953c6 100%)' }}
                     >
                       <div className="theme-preview-bar"></div>
@@ -4862,7 +4878,7 @@ Overall Status : ${overallStatus}
 
                     <div
                       className={`theme-preset-card ${currentTheme === 'minecraft' ? 'active' : ''}`}
-                      onClick={() => setCurrentTheme('minecraft')}
+                      onClick={() => changeThemeWithTransition('minecraft')}
                       style={{ '--theme-card-border': '#5b8731', '--theme-card-bg-rgb': '91, 135, 49', '--theme-preview-grad': 'linear-gradient(135deg, #5b8731 0%, #866043 100%)' }}
                     >
                       <div className="theme-preview-bar"></div>
@@ -4871,7 +4887,7 @@ Overall Status : ${overallStatus}
 
                     <div
                       className={`theme-preset-card ${currentTheme === 'cherry-grove' ? 'active' : ''}`}
-                      onClick={() => setCurrentTheme('cherry-grove')}
+                      onClick={() => changeThemeWithTransition('cherry-grove')}
                       style={{ '--theme-card-border': '#ff8da1', '--theme-card-bg-rgb': '255, 141, 161', '--theme-preview-grad': 'linear-gradient(135deg, #ff8da1 0%, #3a222d 100%)' }}
                     >
                       <div className="theme-preview-bar"></div>
@@ -4880,10 +4896,7 @@ Overall Status : ${overallStatus}
 
                     <div
                       className={`theme-preset-card ${currentTheme === 'deep-sea-ocean' ? 'active' : ''}`}
-                      onClick={() => {
-                        setCurrentTheme('deep-sea-ocean');
-                        triggerOceanAnimation();
-                      }}
+                      onClick={() => changeThemeWithTransition('deep-sea-ocean', triggerOceanAnimation)}
                       style={{ '--theme-card-border': '#0d9488', '--theme-card-bg-rgb': '13, 148, 136', '--theme-preview-grad': 'linear-gradient(135deg, #060e17 0%, #0d9488 100%)' }}
                     >
                       <div className="theme-preview-bar"></div>
@@ -4892,10 +4905,7 @@ Overall Status : ${overallStatus}
 
                     <div
                       className={`theme-preset-card ${currentTheme === 'hacking' ? 'active' : ''}`}
-                      onClick={() => {
-                        setCurrentTheme('hacking');
-                        triggerHackerAnimation();
-                      }}
+                      onClick={() => changeThemeWithTransition('hacking', triggerHackerAnimation)}
                       style={{ '--theme-card-border': '#00ff00', '--theme-card-bg-rgb': '0, 255, 0', '--theme-preview-grad': 'linear-gradient(135deg, #020202 0%, #00ff00 100%)' }}
                     >
                       <div className="theme-preview-bar"></div>
@@ -4904,7 +4914,7 @@ Overall Status : ${overallStatus}
 
                     <div
                       className={`theme-preset-card ${currentTheme === 'mojang-studios' ? 'active' : ''}`}
-                      onClick={() => setCurrentTheme('mojang-studios')}
+                      onClick={() => changeThemeWithTransition('mojang-studios')}
                       style={{ '--theme-card-border': '#ef323d', '--theme-card-bg-rgb': '239, 50, 61', '--theme-preview-grad': 'linear-gradient(135deg, #ef323d 0%, #000 100%)' }}
                     >
                       <div className="theme-preview-bar"></div>
