@@ -1,7 +1,47 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 
 // Safely load Electron IPC in React loaded in Electron environment
-const { ipcRenderer } = window.require('electron');
+const electron = (typeof window !== 'undefined' && window.require) ? window.require('electron') : null;
+const ipcRenderer = electron ? electron.ipcRenderer : {
+  send: (...args) => console.log('[MOCK IPC SEND]', args),
+  on: (...args) => console.log('[MOCK IPC ON]', args),
+  off: (...args) => console.log('[MOCK IPC OFF]', args),
+  invoke: (...args) => {
+    console.log('[MOCK IPC INVOKE]', args);
+    return Promise.resolve({ success: true, message: 'Mock response' });
+  }
+};
+
+function IoTStarLogo({ size = 28 }) {
+  return (
+    <svg className="iot-star-logo" viewBox="0 0 100 100" width={size} height={size}>
+      <defs>
+        <radialGradient id="starGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#00f0ff" stopOpacity="1" />
+          <stop offset="100%" stopColor="#9d00ff" stopOpacity="0.2" />
+        </radialGradient>
+        <filter id="neonShadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="3" result="blur" />
+          <feComposite in="SourceGraphic" in2="blur" operator="over" />
+        </filter>
+      </defs>
+      <line x1="50" y1="50" x2="50" y2="15" stroke="#00f0ff" strokeWidth="2.5" strokeDasharray="3,3" />
+      <line x1="50" y1="50" x2="86" y2="42" stroke="#00f0ff" strokeWidth="2.5" strokeDasharray="3,3" />
+      <line x1="50" y1="50" x2="72" y2="85" stroke="#00f0ff" strokeWidth="2.5" strokeDasharray="3,3" />
+      <line x1="50" y1="50" x2="28" y2="85" stroke="#00f0ff" strokeWidth="2.5" strokeDasharray="3,3" />
+      <line x1="50" y1="50" x2="14" y2="42" stroke="#00f0ff" strokeWidth="2.5" strokeDasharray="3,3" />
+      <circle cx="50" cy="50" r="28" fill="none" stroke="rgba(255, 0, 127, 0.4)" strokeWidth="1.5" strokeDasharray="5,4" />
+      <path d="M 50 22 L 58 41 L 79 41 L 62 53 L 68 73 L 50 61 L 32 73 L 38 53 L 21 41 L 42 41 Z" 
+            fill="url(#starGlow)" stroke="#ffffff" strokeWidth="1.5" filter="url(#neonShadow)" />
+      <circle cx="50" cy="50" r="5" fill="#ffffff" stroke="#ff007f" strokeWidth="1.5" />
+      <circle cx="50" cy="15" r="4.5" fill="#00f0ff" stroke="#ffffff" strokeWidth="1" />
+      <circle cx="86" cy="42" r="4.5" fill="#00f0ff" stroke="#ffffff" strokeWidth="1" />
+      <circle cx="72" cy="85" r="4.5" fill="#00f0ff" stroke="#ffffff" strokeWidth="1" />
+      <circle cx="28" cy="85" r="4.5" fill="#00f0ff" stroke="#ffffff" strokeWidth="1" />
+      <circle cx="14" cy="42" r="4.5" fill="#00f0ff" stroke="#ffffff" strokeWidth="1" />
+    </svg>
+  );
+}
 
 export default function App() {
   // Navigation State
@@ -98,12 +138,13 @@ export default function App() {
   const [expandedLogId, setExpandedLogId] = useState(null);
   const [registeredDevices, setRegisteredDevices] = useState([]);
   const [dbSubTab, setDbSubTab] = useState('tab-db-history');
-  // Login / Signup State (Bypassed temporarily)
-  const [isLoggedIn, setIsLoggedIn] = useState(true);
+  // Login / Signup State
+  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('isLoggedIn') === 'true');
   const [authMode, setAuthMode] = useState('login');
   const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
 
   const handleAuth = async () => {
     setAuthError('');
@@ -123,6 +164,14 @@ export default function App() {
     } catch (e) {
       setAuthError(e.message);
     }
+  };
+
+  const openAuthView = (mode) => {
+    setAuthMode(mode);
+    setAuthError('');
+    setIsLoggedIn(false);
+    setShowAccountMenu(false);
+    setActiveTab('page-dashboard');
   };
   // 'tab-db-history' or 'tab-db-devices'
 
@@ -461,6 +510,9 @@ export default function App() {
   const [otaPortInput, setOtaPortInput] = useState('500');
   const [udpPortInput, setUdpPortInput] = useState('5002');
   const [defaultBaudRateInput, setDefaultBaudRateInput] = useState('115200');
+
+  const [githubClientIdInput, setGithubClientIdInput] = useState('');
+  const [githubClientSecretInput, setGithubClientSecretInput] = useState('');
 
   // System Info specifications useMemo
   const systemInfo = useMemo(() => {
@@ -919,6 +971,8 @@ export default function App() {
         setOtaPortInput(String(config.otaPort || '500'));
         setUdpPortInput(String(config.udpPort || '5002'));
         setDefaultBaudRateInput(String(config.defaultBaudRate || '115200'));
+        setGithubClientIdInput(config.githubClientId || '');
+        setGithubClientSecretInput(config.githubClientSecret || '');
       }
     });
 
@@ -1411,20 +1465,23 @@ Overall Status : ${overallStatus}
   };
 
   // GitHub Integration Handler
-  const handleGitHubSignIn = () => {
+  const handleGitHubSignIn = async () => {
     if (gitHubUser) {
       setGitHubUser(null);
       localStorage.removeItem('github_user');
       addLogLine('[GITHUB] Signed out from GitHub integration.', 'system');
       return;
     }
-    const mockUser = {
-      username: 'YashGajjar7017',
-      avatarUrl: 'https://github.com/YashGajjar7017.png'
-    };
-    setGitHubUser(mockUser);
-    localStorage.setItem('github_user', JSON.stringify(mockUser));
-    addLogLine('[GITHUB] OAuth authorization successful! Syncing environment workspace to "YashGajjar7017".', 'success');
+    addLogLine('[GITHUB] Opening GitHub OAuth secure sign-in window...', 'system');
+    try {
+      const user = await ipcRenderer.invoke('github-oauth-sign-in');
+      setGitHubUser(user);
+      localStorage.setItem('github_user', JSON.stringify(user));
+      addLogLine(`[GITHUB] OAuth authorization successful! Welcome, ${user.name} (@${user.username}).`, 'success');
+    } catch (e) {
+      addLogLine(`[GITHUB ERROR] Sign-in failed: ${e.message}`, 'error');
+      alert(`GitHub Sign-In Failed:\n${e.message}`);
+    }
   };
 
   // Trigger Connections
@@ -1705,7 +1762,9 @@ Overall Status : ${overallStatus}
       telemetryPort: parseInt(telemetryPortInput) || 9000,
       otaPort: parseInt(otaPortInput) || 500,
       udpPort: parseInt(udpPortInput) || 5002,
-      defaultBaudRate: parseInt(defaultBaudRateInput) || 115200
+      defaultBaudRate: parseInt(defaultBaudRateInput) || 115200,
+      githubClientId: githubClientIdInput,
+      githubClientSecret: githubClientSecretInput
     };
     ipcRenderer.send('save-app-config', config);
     setOtaPort(String(config.otaPort));
@@ -2190,7 +2249,7 @@ Overall Status : ${overallStatus}
       {/* Frameless window header bar */}
       <div className="window-titlebar">
         <div className="titlebar-logo">
-          <div className="logo-dot"></div>
+          <IoTStarLogo size={14} />
           <span>IOT System Manager</span>
         </div>
         <div className="titlebar-controls">
@@ -2202,23 +2261,19 @@ Overall Status : ${overallStatus}
 
       <div className="app-container">
 
-        {/* Navigation Sidebar */}
-        <aside className="sidebar">
-          <div className="brand">
-            <div className="brand-icon">
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-              </svg>
-            </div>
-            <div className="brand-text">
-              <h2>IOT System Manager</h2>
-              <span>IoT Router v3.0</span>
+        {/* Horizontal Navigation Header (Requirement 1 & 2) */}
+        <header className="app-header">
+          <div className="header-brand">
+            <IoTStarLogo size={24} />
+            <div className="header-title-group">
+              <h2 className="header-title">IOT System Manager</h2>
+              <span className="header-subtitle">IoT Router v3.0</span>
             </div>
           </div>
 
-          <nav className="nav-menu">
-            <button className={`nav-item ${activeTab === 'page-dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('page-dashboard')}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+          <nav className="header-nav">
+            <button className={`header-nav-item ${activeTab === 'page-dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('page-dashboard')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="3" width="7" height="9" rx="1" />
                 <rect x="14" y="3" width="7" height="5" rx="1" />
                 <rect x="14" y="12" width="7" height="9" rx="1" />
@@ -2227,8 +2282,8 @@ Overall Status : ${overallStatus}
               <span>Dashboard</span>
             </button>
 
-            <button className={`nav-item ${activeTab === 'page-database' ? 'active' : ''}`} onClick={() => setActiveTab('page-database')}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+            <button className={`header-nav-item ${activeTab === 'page-database' ? 'active' : ''}`} onClick={() => setActiveTab('page-database')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <ellipse cx="12" cy="5" rx="9" ry="3" />
                 <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
                 <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
@@ -2236,8 +2291,8 @@ Overall Status : ${overallStatus}
               <span>MongoDB History</span>
             </button>
 
-            <button className={`nav-item ${activeTab === 'page-device-registry' ? 'active' : ''}`} onClick={() => setActiveTab('page-device-registry')}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+            <button className={`header-nav-item ${activeTab === 'page-device-registry' ? 'active' : ''}`} onClick={() => setActiveTab('page-device-registry')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
                 <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
                 <line x1="6" y1="6" x2="6.01" y2="6" />
@@ -2246,31 +2301,31 @@ Overall Status : ${overallStatus}
               <span>Device Registry</span>
             </button>
 
-            <button className={`nav-item ${activeTab === 'page-security' ? 'active' : ''}`} onClick={() => setActiveTab('page-security')}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+            <button className={`header-nav-item ${activeTab === 'page-security' ? 'active' : ''}`} onClick={() => setActiveTab('page-security')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
               <span>Security & Config</span>
             </button>
 
-            <button className={`nav-item ${activeTab === 'page-ota' ? 'active' : ''}`} onClick={() => setActiveTab('page-ota')}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+            <button className={`header-nav-item ${activeTab === 'page-ota' ? 'active' : ''}`} onClick={() => setActiveTab('page-ota')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
               </svg>
               <span>Wireless OTA</span>
             </button>
 
-            <button className={`nav-item ${activeTab === 'page-console' ? 'active' : ''}`} onClick={() => setActiveTab('page-console')}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+            <button className={`header-nav-item ${activeTab === 'page-console' ? 'active' : ''}`} onClick={() => setActiveTab('page-console')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="4 17 10 11 4 5" />
                 <line x1="12" y1="19" x2="20" y2="19" />
               </svg>
               <span>Debug Console</span>
             </button>
 
-            <button className={`nav-item ${activeTab === 'page-circuit' ? 'active' : ''}`} onClick={() => setActiveTab('page-circuit')}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+            <button className={`header-nav-item ${activeTab === 'page-circuit' ? 'active' : ''}`} onClick={() => setActiveTab('page-circuit')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="2" y="2" width="20" height="20" rx="2" ry="2" />
                 <line x1="6" y1="6" x2="6" y2="18" />
                 <line x1="18" y1="6" x2="18" y2="18" />
@@ -2279,73 +2334,129 @@ Overall Status : ${overallStatus}
               <span>Circuit & Support</span>
             </button>
 
-            <button className={`nav-item ${activeTab === 'page-hardware' ? 'active' : ''}`} onClick={() => setActiveTab('page-hardware')}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+            <button className={`header-nav-item ${activeTab === 'page-hardware' ? 'active' : ''}`} onClick={() => setActiveTab('page-hardware')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
               </svg>
               <span>Hardware Info</span>
             </button>
 
-            <button className={`nav-item ${activeTab === 'page-storage' ? 'active' : ''}`} onClick={() => setActiveTab('page-storage')}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+            <button className={`header-nav-item ${activeTab === 'page-storage' ? 'active' : ''}`} onClick={() => setActiveTab('page-storage')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                 <line x1="9" y1="3" x2="9" y2="21" />
               </svg>
-              <span>ESP32 Storage</span>
-            </button>
-
-            <button className={`nav-item ${activeTab === 'page-settings' ? 'active' : ''}`} onClick={() => setActiveTab('page-settings')}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-              <span>App Settings</span>
+              <span>Storage</span>
             </button>
           </nav>
 
-          <div className="sidebar-status-box">
-            <div className="status-indicator">
+          <div className="header-right">
+            <div className="header-status-box">
               <span className={`pulse-dot ${connection.type === 'failed' ? 'error' : connection.type ? 'connected' : 'idle'}`}></span>
-              <span>{connection.type === 'failed' ? 'Connection Failed' : connection.type ? 'Gateway Online' : 'Not Connected'}</span>
+              <span>{connection.type === 'failed' ? 'Failed' : connection.type ? 'Online' : 'Offline'}</span>
             </div>
-            <div className="connection-details">
-              {connection.type === 'failed' ? connection.target : connection.type ? `Port: ${connection.type.toUpperCase()}\n${connection.target}` : 'Gateway Offline'}
+
+            <div className="header-account-container">
+              <button className="header-account-btn" onClick={() => setShowAccountMenu(prev => !prev)}>
+                Account ▾
+              </button>
+              {showAccountMenu && (
+                <div className="header-dropdown-menu">
+                  {!isLoggedIn ? (
+                    <>
+                      <button className="header-dropdown-item" onClick={() => openAuthView('login')}>
+                        🔑 Login
+                      </button>
+                      <button className="header-dropdown-item" onClick={() => openAuthView('signup')}>
+                        📝 Sign Up
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="header-dropdown-item" style={{ cursor: 'default', color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase', paddingBottom: '2px' }}>
+                        👤 Admin Connected
+                      </div>
+                      <button className="header-dropdown-item" onClick={() => { setActiveTab('page-settings'); setShowAccountMenu(false); }}>
+                        ⚙️ App Settings
+                      </button>
+                      <div className="header-dropdown-divider"></div>
+                      <button className="header-dropdown-item" onClick={() => { localStorage.removeItem('isLoggedIn'); setIsLoggedIn(false); setShowAccountMenu(false); addLogLine('[GUI] Signed out.', 'system'); }}>
+                        🚪 Sign Out
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
-        </aside>
+        </header>
 
         {/* View Layout Panels */}
         <main className="main-content">
 
           {/* ================= VIEW 1: DASHBOARD ================= */}
           <section id="page-dashboard" className={`page-view ${activeTab === 'page-dashboard' ? 'active' : ''}`}>
-            <header className="view-header">
-              {/* <div>
-                <h1>Gateway Dashboard</h1>
-                <p>Monitor peripherals, adjust pacing telemetry speed, and manage gateway actions</p>
-              </div> */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <button className="btn btn-primary" style={{ padding: '8px 12px', fontSize: '11px', height: '34px' }} onClick={triggerSelfCheckReRun} disabled={controlsDisabled || !connection.type}>
+            <header className="view-header glass-header unified-color-bar">
+              <div className="header-actions-wrapper" style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+                <div className="header-left-actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', flex: '1 1 auto' }}>
+                  <button className="btn btn-primary header-btn" onClick={triggerSelfCheckReRun} disabled={controlsDisabled || !connection.type} title="Run diagnostics checking on all modules">
                     Run All Tests
                   </button>
-                  <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '11px', height: '34px' }} onClick={triggerSelfCheckReRun} disabled={controlsDisabled || !connection.type}>
+                  <button className="btn btn-secondary header-btn" onClick={triggerSelfCheckReRun} disabled={controlsDisabled || !connection.type} title="Re-evaluate peripheral hardware status">
                     Recheck Hardware
                   </button>
-                  <button className="btn btn-accent" style={{ padding: '8px 12px', fontSize: '11px', height: '34px' }} onClick={() => sendControlCommand('SHIFT_TO_QCOM')} disabled={!connection.type}>
+                  <button className="btn btn-accent header-btn" onClick={() => sendControlCommand('SHIFT_TO_QCOM')} disabled={!connection.type} title="Shift communications target to QCOM">
                     Shift to QCOM
                   </button>
-                  <button className="btn btn-danger" style={{ padding: '8px 12px', fontSize: '11px', height: '34px' }} onClick={() => sendControlCommand('REBOOT')} disabled={!connection.type}>
+                  <button className="btn btn-accent header-btn" onClick={() => sendControlCommand('FORMAT_SPIFFS')} disabled={!connection.type} title="Format ESP32 flash partition storage">
+                    Format SPIFFS
+                  </button>
+                  <button className="btn btn-accent header-btn" onClick={() => sendControlCommand('SYNC_CERTS_TO_QCOM')} disabled={!connection.type} title="Sync certificates from ESP32 to QCOM">
+                    Sync Certs
+                  </button>
+                  <button className="btn btn-secondary header-btn" onClick={handleDownloadReport} title="Export diagnostics report to local disk">
+                    Download Report
+                  </button>
+                  <button className="btn btn-secondary header-btn" onClick={exportTelemetryJson} title="Export telemetry history as JSON">
+                    Export Telemetry
+                  </button>
+                  <button className="btn btn-secondary header-btn" onClick={() => setConsoleLogs([])} title="Clear live console logs">
+                    Clear Console
+                  </button>
+                  <button className="btn btn-danger header-btn" onClick={() => sendControlCommand('REBOOT')} disabled={!connection.type} title="Force soft reboot of connected gateway">
                     Reboot Gateway
                   </button>
                 </div>
-                <div className="ping-widget" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: '140px', padding: '6px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: '6px' }}>
-                  <span className="ping-label" style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-dim)', fontWeight: 'bold' }}>Socket Ping</span>
-                  <span className={`ping-result ${pingLatency.status}`} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px' }}>{pingLatency.value}</span>
-                </div>
-                <div className={`connection-pill ${connection.type === 'failed' ? 'failed' : connection.type ? 'connected' : ''}`}>
-                  {connection.type === 'failed' ? 'CONNECTION FAILED' : connection.type ? `${connection.type.toUpperCase()} ACTIVE` : 'DISCONNECTED'}
+                
+                <div className="header-right-status" style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: '0 0 auto' }}>
+                  <div className="live-status-container" style={{ display: 'flex', gap: '12px', background: 'rgba(255,255,255,0.02)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '11.5px' }}>
+                    <div className="live-status-item">
+                      <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>Device IMEI: </span>
+                      <span className="live-status-value" style={{ fontWeight: 'bold', color: '#fff' }}>{imei && imei !== '--' ? imei : 'N/A'}</span>
+                    </div>
+                    <div className="live-status-item">
+                      <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>PCB: </span>
+                      <span className="live-status-value" style={{ fontWeight: 'bold', color: '#fff' }}>{pcbNumber || 'N/A'}</span>
+                    </div>
+                    <div className="live-status-item">
+                      <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>Link: </span>
+                      <span className="live-status-value" style={{ fontWeight: 'bold', color: connection.type ? '#00ff66' : 'var(--text-dim)' }}>
+                        {connection.type ? connection.type.toUpperCase() : 'Offline'}
+                      </span>
+                    </div>
+                    <div className="live-status-item">
+                      <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>DB Status: </span>
+                      <span className="live-status-value" style={{ fontWeight: 'bold', color: dbStatus.mongodb === 'CONNECTED' ? '#00ff66' : '#ff9900' }}>
+                        {dbStatus.mongodb === 'CONNECTED' ? 'Connected' : 'Local Fallback'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="header-status-pill" style={{ margin: 0 }}>
+                    <span className="ping-label">Socket Ping</span>
+                    <span className={`ping-result ${pingLatency.status}`}>{pingLatency.value}</span>
+                  </div>
                 </div>
               </div>
             </header>
@@ -3194,14 +3305,21 @@ Overall Status : ${overallStatus}
                       style={{ height: '30px', minWidth: 'auto', padding: '0 12px', fontSize: '11px', border: '1px dashed var(--accent-pink)' }}
                       onClick={async () => {
                         const randomRecord = {
-                          count: 1,
-                          devices: [{
-                            id: Math.floor(Math.random() * 10) + 1,
-                            temp: Math.floor(Math.random() * 15) + 20,
-                            rssi: -Math.floor(Math.random() * 40) - 40,
-                            bat: Math.floor(Math.random() * 40) + 60,
-                            status: 'ACTIVE'
-                          }]
+                          pcbNumber: "PCB-TEST-" + Math.floor(Math.random() * 1000),
+                          connectionType: "tcp",
+                          target: "192.168.1.100:9000",
+                          imei: "86673808" + Math.floor(1000000 + Math.random() * 9000000),
+                          mac: "DE:AD:BE:EF:00:" + Math.floor(10 + Math.random() * 89),
+                          password: "admin_secure_gate",
+                          routerSSID: "Test_SSID",
+                          routerPassword: "test_password",
+                          telemetryInterval: 1500,
+                          rs232Status: "OK",
+                          rs485Status: "WAITING",
+                          gprsStatus: "OK",
+                          rs232Log: "RS232 connection loopback verified.",
+                          rs485Log: "Awaiting peripheral query response.",
+                          gprsLog: "Modem registered on network."
                         };
                         try {
                           const res = await ipcRenderer.invoke('db-manual-insert', randomRecord);
@@ -3220,7 +3338,7 @@ Overall Status : ${overallStatus}
                       ➕ Manual Insert Test
                     </button>
                     <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
-                      Logs: {dbHistory.length} snapshots
+                      Logs: {dbHistory.length} logs
                     </span>
                   </div>
                 </div>
@@ -3234,10 +3352,14 @@ Overall Status : ${overallStatus}
                   </div>
                 ) : (
                   <div className="db-history-table">
-                    <div className="db-table-header" style={{ display: 'grid', gridTemplateColumns: '150px 100px 1fr 100px', padding: '15px 20px', borderBottom: '1px solid var(--glass-border)', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-pink)' }}>
+                    <div className="db-table-header" style={{ display: 'grid', gridTemplateColumns: '140px 140px 140px 140px 85px 85px 85px 1fr', padding: '15px 20px', borderBottom: '1px solid var(--glass-border)', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-pink)' }}>
                       <span>Timestamp</span>
-                      <span>Clients</span>
-                      <span>Nodes Summary</span>
+                      <span>IMEI</span>
+                      <span>PCB Number</span>
+                      <span>Link Target</span>
+                      <span>RS232</span>
+                      <span>RS485</span>
+                      <span>GPRS</span>
                       <span style={{ textAlign: 'right' }}>Details</span>
                     </div>
 
@@ -3248,27 +3370,88 @@ Overall Status : ${overallStatus}
 
                         return (
                           <div key={recordId} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '150px 100px 1fr 100px', padding: '12px 20px', fontSize: '13px', alignItems: 'center' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '140px 140px 140px 140px 85px 85px 85px 1fr', padding: '12px 20px', fontSize: '12.5px', alignItems: 'center' }}>
                               <span style={{ fontFamily: 'var(--font-mono)' }}>{new Date(record.timestamp).toLocaleTimeString()}</span>
-                              <span>{record.count} clients</span>
-                              <span style={{ color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {record.devices.slice(0, 8).map(d => `#${d.id}(${d.temp}°C)`).join(', ')}...
+                              <span style={{ fontWeight: 'bold' }}>{record.imei || '--'}</span>
+                              <span style={{ color: 'var(--text-dim)' }}>{record.pcbNumber || '--'}</span>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{record.target || '--'}</span>
+                              <span>
+                                <span className={`status-tag ${record.rs232Status === 'OK' ? 'ok' : record.rs232Status === 'ERROR' ? 'err' : 'wait'}`}>
+                                  {record.rs232Status || 'WAITING'}
+                                </span>
                               </span>
-                              <button className="btn btn-secondary small-btn" style={{ marginLeft: 'auto' }} onClick={() => setExpandedLogId(isExpanded ? null : recordId)}>
+                              <span>
+                                <span className={`status-tag ${record.rs485Status === 'OK' ? 'ok' : record.rs485Status === 'ERROR' ? 'err' : 'wait'}`}>
+                                  {record.rs485Status || 'WAITING'}
+                                </span>
+                              </span>
+                              <span>
+                                <span className={`status-tag ${record.gprsStatus === 'OK' ? 'ok' : record.gprsStatus === 'ERROR' ? 'err' : 'wait'}`}>
+                                  {record.gprsStatus || 'WAITING'}
+                                </span>
+                              </span>
+                              <button className="btn btn-secondary small-btn" style={{ marginLeft: 'auto', minWidth: '70px', padding: '4px' }} onClick={() => setExpandedLogId(isExpanded ? null : recordId)}>
                                 {isExpanded ? 'Hide' : 'Expand'}
                               </button>
                             </div>
 
                             {isExpanded && (
-                              <div style={{ padding: '15px 25px', background: 'rgba(3, 0, 10, 0.5)', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px', borderTop: '1px dashed var(--glass-border)' }}>
-                                {record.devices.map((d) => (
-                                  <div key={d.id} style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column' }}>
-                                    <span style={{ fontWeight: 'bold' }}>Node #{d.id}</span>
-                                    <span style={{ color: 'var(--accent-orange)' }}>Temp: {parseFloat(d.temp).toFixed(1)}°C</span>
-                                    <span>Signal: {d.rssi}dBm</span>
-                                    <span>Bat: {d.bat}%</span>
+                              <div style={{ padding: '20px 25px', background: 'rgba(3, 0, 10, 0.5)', borderTop: '1px dashed var(--glass-border)' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+                                  <div>
+                                    <div style={{ fontSize: '10.5px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Device Profile</div>
+                                    <div style={{ fontSize: '12.5px', lineHeight: '1.6' }}>
+                                      <div><strong>IMEI ID:</strong> {record.imei || 'N/A'}</div>
+                                      <div><strong>MAC Address:</strong> {record.mac || 'N/A'}</div>
+                                      <div><strong>PCB Serial:</strong> {record.pcbNumber || 'N/A'}</div>
+                                    </div>
                                   </div>
-                                ))}
+                                  <div>
+                                    <div style={{ fontSize: '10.5px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Network Link</div>
+                                    <div style={{ fontSize: '12.5px', lineHeight: '1.6' }}>
+                                      <div><strong>Interface:</strong> {(record.connectionType || 'tcp').toUpperCase()}</div>
+                                      <div><strong>Connection Target:</strong> {record.target || 'N/A'}</div>
+                                      <div><strong>Telemetry Interval:</strong> {record.telemetryInterval || 1500} ms</div>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '10.5px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>WIFI Configurations</div>
+                                    <div style={{ fontSize: '12.5px', lineHeight: '1.6' }}>
+                                      <div><strong>Router SSID:</strong> {record.routerSSID || 'N/A'}</div>
+                                      <div><strong>Router Password:</strong> {record.routerPassword ? '••••••••' : 'N/A'}</div>
+                                      <div><strong>Gateway Credentials:</strong> {record.password || 'admin_secure_gate'}</div>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '10.5px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Peripherals Status</div>
+                                    <div style={{ fontSize: '12.5px', lineHeight: '1.6' }}>
+                                      <div><strong>RS232 Channel:</strong> <span style={{ color: record.rs232Status === 'OK' ? '#00ff66' : record.rs232Status === 'ERROR' ? '#ff3366' : record.rs232Status === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.rs232Status || 'WAITING'}</span></div>
+                                      <div><strong>RS485 Channel:</strong> <span style={{ color: record.rs485Status === 'OK' ? '#00ff66' : record.rs485Status === 'ERROR' ? '#ff3366' : record.rs485Status === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.rs485Status || 'WAITING'}</span></div>
+                                      <div><strong>GPRS Cell Modem:</strong> <span style={{ color: record.gprsStatus === 'OK' ? '#00ff66' : record.gprsStatus === 'ERROR' ? '#ff3366' : record.gprsStatus === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.gprsStatus || 'WAITING'}</span></div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '15px' }}>
+                                  <div>
+                                    <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>RS232 Log</div>
+                                    <pre style={{ margin: 0, padding: '8px', background: '#040209', borderRadius: '4px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', color: '#00ffcc', textAlign: 'left' }}>
+                                      {record.rs232Log || 'No RS232 transmission log stored.'}
+                                    </pre>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>RS485 Log</div>
+                                    <pre style={{ margin: 0, padding: '8px', background: '#040209', borderRadius: '4px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', color: '#00ffcc', textAlign: 'left' }}>
+                                      {record.rs485Log || 'No RS485 transmission log stored.'}
+                                    </pre>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>GPRS Modem Log</div>
+                                    <pre style={{ margin: 0, padding: '8px', background: '#040209', borderRadius: '4px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', color: '#00ffcc', textAlign: 'left' }}>
+                                      {record.gprsLog || 'No GPRS AT-command log stored.'}
+                                    </pre>
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -5395,6 +5578,38 @@ Overall Status : ${overallStatus}
                 >
                   🔒 Log Out Admin Session
                 </button>
+              </div>
+
+              {/* GitHub OAuth Credentials Card */}
+              <div className="glass-card">
+                <h3><span className="icon">🐙</span> GitHub OAuth Integration</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                  Register a GitHub OAuth Application and configure credentials to enable secure administrator sign-in.
+                </p>
+                <div className="input-group">
+                  <label>GitHub Client ID</label>
+                  <input
+                    type="text"
+                    value={githubClientIdInput}
+                    onChange={(e) => setGithubClientIdInput(e.target.value)}
+                    placeholder="Enter Client ID"
+                  />
+                </div>
+                <div className="input-group">
+                  <label>GitHub Client Secret</label>
+                  <input
+                    type="password"
+                    value={githubClientSecretInput}
+                    onChange={(e) => setGithubClientSecretInput(e.target.value)}
+                    placeholder="Enter Client Secret"
+                  />
+                </div>
+                <button className="btn btn-primary" onClick={saveAppConfigSettings} style={{ marginTop: '15px', width: '100%' }}>
+                  Save GitHub Credentials
+                </button>
+                <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--text-dim)', textAlign: 'left', lineHeight: '1.4' }}>
+                  💡 Need help? View the configuration instructions in the <a href="#" onClick={(e) => { e.preventDefault(); alert("Please refer to Documentation/SIGN_WITH_GITHUB.md for step-by-step setup details."); }} style={{ color: 'var(--accent-pink)', textDecoration: 'underline' }}>GitHub OAuth Setup Guide</a>.
+                </div>
               </div>
 
               {/* System Info Specifications Card */}

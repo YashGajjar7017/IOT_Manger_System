@@ -36,7 +36,7 @@ try {
   db = require(path.join(__dirname, 'database.js'));
   const mongoUri = workerData && workerData.mongoUri
     ? workerData.mongoUri
-    : 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB';
+    : 'mongodb://192.168.1.26:27017/IOT_System_Manager/IOT_System_Manager';
 
   db.connectDatabase(mongoUri)
     .then(() => {

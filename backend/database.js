@@ -3,16 +3,21 @@ const mongoose = require('mongoose');
 // Schema Definition
 const TelemetrySchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now },
-  count: Number,
-  devices: [
-    {
-      id: Number,
-      temp: Number,
-      rssi: Number,
-      bat: Number,
-      status: String
-    }
-  ]
+  pcbNumber: { type: String, default: '' },
+  connectionType: { type: String, default: '' },
+  target: { type: String, default: '' },
+  imei: { type: String, default: '' },
+  mac: { type: String, default: '' },
+  password: { type: String, default: '' },
+  routerSSID: { type: String, default: '' },
+  routerPassword: { type: String, default: '' },
+  telemetryInterval: { type: Number, default: 1500 },
+  rs232Status: { type: String, default: 'WAITING' },
+  rs485Status: { type: String, default: 'WAITING' },
+  gprsStatus: { type: String, default: 'WAITING' },
+  rs232Log: { type: String, default: '' },
+  rs485Log: { type: String, default: '' },
+  gprsLog: { type: String, default: '' }
 });
 
 const TelemetryModel = mongoose.model('Telemetry', TelemetrySchema);
@@ -23,8 +28,9 @@ let memoryHistoryBuffer = [];
 // Initialize Database Connection
 /*
 function connectDatabase() {
-  const mongoURI = 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB';
+  const mongoURI = 'mongodb://192.168.1.26:27017/IOT_System_Manager/IOT_System_Manager'; // 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB';
   console.log(`[DATABASE] Connecting to MongoDB at ${mongoURI}...`);
+
 
   mongoose.connect(mongoURI, {
     serverSelectionTimeoutMS: 3000
@@ -66,7 +72,7 @@ function sanitizeMongoURI(uri) {
 }
 
 function connectDatabase(customURI) {
-  const rawURI = customURI || 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB';
+  const rawURI = customURI || 'mongodb://192.168.1.26:27017/IOT_System_Manager/IOT_System_Manager'; // 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB';
   const mongoURI = sanitizeMongoURI(rawURI);
   console.log(`[DATABASE] Connecting to MongoDB at ${mongoURI}...`);
 
@@ -92,10 +98,38 @@ function connectDatabase(customURI) {
 
 // Save Telemetry snapshot helper
 async function saveTelemetrySnapshot(data) {
+  let device = null;
+  try {
+    if (data.imei) {
+      device = await DeviceIdentificationModel.findOne({ imei: data.imei });
+    }
+    if (!device && data.pcbNumber) {
+      device = await DeviceIdentificationModel.findOne({ pcbNumber: data.pcbNumber });
+    }
+    if (!device) {
+      device = await DeviceIdentificationModel.findOne().sort({ timestamp: -1 });
+    }
+  } catch (err) {
+    console.error('[DATABASE] Error looking up device for telemetry log:', err);
+  }
+
   const snapshot = {
     timestamp: new Date(),
-    count: data.count,
-    devices: data.devices
+    pcbNumber: (device && device.pcbNumber) || data.pcbNumber || '',
+    connectionType: (device && device.connectionType) || data.connectionType || 'tcp',
+    target: (device && device.target) || data.target || '0.0.0.0:9000 (Listening)',
+    imei: (device && device.imei) || data.imei || '',
+    mac: (device && device.mac) || data.mac || '',
+    password: (device && device.password) || data.password || 'admin_secure_gate',
+    routerSSID: (device && device.routerSSID) || data.routerSSID || '',
+    routerPassword: (device && device.routerPassword) || data.routerPassword || '',
+    telemetryInterval: (device && device.telemetryInterval) || data.telemetryInterval || 1500,
+    rs232Status: (device && device.rs232Status) || data.rs232Status || 'WAITING',
+    rs485Status: (device && device.rs485Status) || data.rs485Status || 'WAITING',
+    gprsStatus: (device && device.gprsStatus) || data.gprsStatus || 'WAITING',
+    rs232Log: (device && device.rs232Log) || data.rs232Log || '',
+    rs485Log: (device && device.rs485Log) || data.rs485Log || '',
+    gprsLog: (device && device.gprsLog) || data.gprsLog || ''
   };
 
   if (mongodbConnected) {

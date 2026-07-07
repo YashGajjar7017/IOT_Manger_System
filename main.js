@@ -4,10 +4,25 @@ const fs = require('fs');
 const http = require('http');
 const net = require('net');
 const express = require('express');
-const db = require('./database');
+const db = require('./backend/database');
 const { SerialPort } = require('serialport');
 const dgram = require('dgram');
 const { Worker } = require('worker_threads');
+
+// ── Auto copy generated logo image ──────────────────────────────────────────
+const sourcePath = 'C:\\Users\\Admin\\.gemini\\antigravity-ide\\brain\\c5591f27-1aa6-4b08-8885-b4f916706020\\logo_1783427356532.png';
+const destPath = path.join(__dirname, 'icon', 'logo.png');
+if (fs.existsSync(sourcePath)) {
+  try {
+    if (!fs.existsSync(path.dirname(destPath))) {
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    }
+    fs.copyFileSync(sourcePath, destPath);
+    console.log('[LOGO-AUTO-COPY] Logo updated successfully!');
+  } catch (err) {
+    console.error('[LOGO-AUTO-COPY] Error:', err);
+  }
+}
 
 let mainWindow;
 let activeSerialPort = null;
@@ -33,12 +48,14 @@ let cacheSaveTimer = null; // debounce timer for cache writes
 const CONFIG_PATH = path.join(app.getPath('userData'), 'app-config.json');
 
 let appConfig = {
-  mongoUri: 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB',
+  mongoUri: 'mongodb://192.168.1.26:27017/IOT_System_Manager/IOT_System_Manager', // 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB',
   expressPort: 8000,
   telemetryPort: 9000,
   otaPort: 500,
   udpPort: 5002,
-  defaultBaudRate: 115200
+  defaultBaudRate: 115200,
+  githubClientId: '',
+  githubClientSecret: ''
 };
 
 function loadConfig() {
@@ -48,10 +65,10 @@ function loadConfig() {
       appConfig = { ...appConfig, ...JSON.parse(data) };
       console.log('[CONFIG] Settings loaded from:', CONFIG_PATH);
       
-      // Auto-migrate local MongoDB URI to remote MongoDB Atlas URI
-      if (!appConfig.mongoUri || appConfig.mongoUri.includes('localhost:27017') || appConfig.mongoUri.includes('127.0.0.1:27017')) {
-        console.log('[CONFIG] Migrating local MongoDB URI to remote MongoDB Atlas URI...');
-        appConfig.mongoUri = 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB';
+      // Auto-migrate remote Atlas MongoDB URI to local IP MongoDB URI (Requirement 4)
+      if (!appConfig.mongoUri || appConfig.mongoUri.includes('reactdb.d04du.mongodb.net') || appConfig.mongoUri.includes('yashacker')) {
+        console.log('[CONFIG] Migrating remote MongoDB Atlas URI to local IP MongoDB URI...');
+        appConfig.mongoUri = 'mongodb://192.168.1.26:27017/IOT_System_Manager/IOT_System_Manager';
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(appConfig, null, 2), 'utf8');
       }
     } else {
@@ -1160,9 +1177,14 @@ app.whenReady().then(async () => {
     return;
   }
 
+  // Connect to database on the main thread as well (Requirement 6)
+  db.connectDatabase(appConfig.mongoUri).catch((err) => {
+    console.error('[DATABASE] Main-thread connection failed on startup:', err.message);
+  });
+
   // ── Start data worker thread (JSON parsing + DB writes off main thread) ────
   try {
-    dataWorker = new Worker(path.join(__dirname, 'data-worker.js'), {
+    dataWorker = new Worker(path.join(__dirname, 'backend', 'data-worker.js'), {
       workerData: { mongoUri: appConfig.mongoUri }
     });
 
@@ -1298,7 +1320,7 @@ app.whenReady().then(async () => {
       setTimeout(() => {
         if (!app.isReady() || !mainWindow || mainWindow.isDestroyed()) return;
         try {
-          dataWorker = new Worker(path.join(__dirname, 'data-worker.js'), {
+          dataWorker = new Worker(path.join(__dirname, 'backend', 'data-worker.js'), {
             workerData: { mongoUri: appConfig.mongoUri }
           });
           console.log('[WORKER] Data worker restarted successfully.');
@@ -3519,4 +3541,143 @@ ipcMain.handle('db-manual-insert', async (event, record) => {
   } catch (err) {
     return { success: false, error: err.message };
   }
+});
+
+// GitHub OAuth Sign-In Flow IPC Handler
+ipcMain.handle('github-oauth-sign-in', async (event) => {
+  const clientId = appConfig.githubClientId || process.env.GITHUB_CLIENT_ID;
+  const clientSecret = appConfig.githubClientSecret || process.env.GITHUB_CLIENT_SECRET;
+
+  if (!clientId) {
+    throw new Error('GitHub Client ID is not configured. Please set it in Settings.');
+  }
+
+  return new Promise((resolve, reject) => {
+    const authWindow = new BrowserWindow({
+      width: 600,
+      height: 800,
+      show: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true
+      },
+      title: 'Sign in with GitHub'
+    });
+
+    const redirectUri = `http://127.0.0.1:${appConfig.expressPort}/github/callback`;
+    const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=read:user`;
+
+    authWindow.loadURL(authUrl);
+
+    const handleCallback = async (url) => {
+      if (url.includes('?code=') || url.includes('&code=')) {
+        const urlObj = new URL(url);
+        const code = urlObj.searchParams.get('code');
+        try { authWindow.destroy(); } catch (e) {}
+
+        if (!code) {
+          reject(new Error('GitHub auth code was not returned.'));
+          return;
+        }
+
+        try {
+          // Exchange code for access token
+          const tokenRes = await new Promise((resToken, rejToken) => {
+            const postData = JSON.stringify({
+              client_id: clientId,
+              client_secret: clientSecret || '',
+              code: code,
+              redirect_uri: redirectUri
+            });
+
+            const reqOpts = {
+              hostname: 'github.com',
+              port: 443,
+              path: '/login/oauth/access_token',
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'Content-Length': Buffer.byteLength(postData),
+                'User-Agent': 'Electron-IoT-Monitor'
+              }
+            };
+
+            const tokenReq = require('https').request(reqOpts, (res) => {
+              let body = '';
+              res.on('data', chunk => body += chunk.toString());
+              res.on('end', () => {
+                try {
+                  const tokenJson = JSON.parse(body);
+                  resToken(tokenJson);
+                } catch (e) {
+                  rejToken(new Error('Failed to parse access token response.'));
+                }
+              });
+            });
+
+            tokenReq.on('error', err => rejToken(err));
+            tokenReq.write(postData);
+            tokenReq.end();
+          });
+
+          const accessToken = tokenRes.access_token;
+          if (!accessToken) {
+            reject(new Error(tokenRes.error_description || 'Access token request rejected. Verify Client Secret.'));
+            return;
+          }
+
+          // Fetch GitHub user details
+          const userProfile = await new Promise((resUser, rejUser) => {
+            const userOpts = {
+              hostname: 'api.github.com',
+              port: 443,
+              path: '/user',
+              method: 'GET',
+              headers: {
+                'Authorization': `token ${accessToken}`,
+                'User-Agent': 'Electron-IoT-Monitor'
+              }
+            };
+
+            const userReq = require('https').request(userOpts, (res) => {
+              let body = '';
+              res.on('data', chunk => body += chunk.toString());
+              res.on('end', () => {
+                try {
+                  const userJson = JSON.parse(body);
+                  resUser(userJson);
+                } catch (e) {
+                  rejUser(new Error('Failed to parse user profile response.'));
+                }
+              });
+            });
+
+            userReq.on('error', err => rejUser(err));
+            userReq.end();
+          });
+
+          resolve({
+            username: userProfile.login,
+            avatarUrl: userProfile.avatar_url,
+            name: userProfile.name || userProfile.login
+          });
+        } catch (error) {
+          reject(error);
+        }
+      }
+    };
+
+    authWindow.webContents.on('will-navigate', (e, url) => {
+      handleCallback(url);
+    });
+
+    authWindow.webContents.on('will-redirect', (e, url) => {
+      handleCallback(url);
+    });
+
+    authWindow.on('closed', () => {
+      reject(new Error('Login window closed by user.'));
+    });
+  });
 });

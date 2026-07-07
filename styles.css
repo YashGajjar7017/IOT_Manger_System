@@ -233,6 +233,7 @@ select {
 /* Base structural layout */
 .app-container {
   display: flex;
+  flex-direction: column; /* Stack top header and main content vertically */
   flex: 1;
   overflow: hidden;
   height: calc(100vh - 38px);
@@ -462,6 +463,232 @@ select {
   border-bottom: 1px solid var(--glass-border);
   padding-bottom: 16px;
   margin-bottom: 4px;
+}
+
+.view-header.glass-header {
+  background: rgba(12, 23, 44, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 16px 22px;
+  box-shadow: 0 22px 68px rgba(0, 0, 0, 0.28);
+  position: relative;
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  overflow: hidden;
+}
+
+.view-header.glass-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.14), rgba(46, 223, 255, 0.08), rgba(255, 255, 255, 0.04));
+  opacity: 0.9;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: liquid-slide 12s ease-in-out infinite;
+}
+
+.view-header.glass-header::after {
+  content: '';
+  position: absolute;
+  left: -20%;
+  top: 30%;
+  width: 140%;
+  height: 140%;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.16), transparent 45%);
+  transform: rotate(22deg);
+  opacity: 0.35;
+  pointer-events: none;
+  animation: float-glow 10s ease-in-out infinite;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 260px;
+}
+
+.brand-shield {
+  width: 46px;
+  height: 46px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 0.12em;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 10px 28px rgba(28, 167, 255, 0.18);
+}
+
+.header-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.header-quick-actions,
+.header-right-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+.header-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.header-right-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.header-status-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-white);
+  box-shadow: inset 0 0 16px rgba(255, 255, 255, 0.08);
+}
+
+.header-status-pill .ping-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+}
+
+.header-status-pill .ping-result {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.auth-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-dropdown {
+  position: relative;
+}
+
+.settings-btn {
+  min-width: 110px;
+}
+
+.settings-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  min-width: 180px;
+  background: rgba(6, 12, 24, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  padding: 10px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(22px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-menu button {
+  border: none;
+  background: transparent;
+  color: #f8fafc;
+  text-align: left;
+  padding: 10px 14px;
+  border-radius: 14px;
+  transition: background 0.2s ease, transform 0.2s ease;
+  cursor: pointer;
+}
+
+.settings-menu button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateX(3px);
+}
+
+.header-btn {
+  height: 36px;
+  padding: 0 14px;
+  font-size: 12px;
+}
+
+/* Force header buttons to be compact and horizontal (override global full-width rules) */
+.view-header .btn {
+  width: auto !important;
+  min-width: 110px;
+  padding: 8px 14px;
+}
+
+/* Liquid sheen animation for header buttons to give an Apple-like glass effect */
+.header-quick-actions .btn,
+.header-right-group .btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.header-quick-actions .btn::after,
+.header-right-group .btn::after {
+  content: '';
+  position: absolute;
+  left: -120%;
+  top: -40%;
+  width: 260%;
+  height: 180%;
+  background: linear-gradient(120deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.02) 100%);
+  transform: translateX(0) rotate(-12deg);
+  opacity: 0.8;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  animation: liquid-sheen 6s linear infinite;
+}
+
+@keyframes liquid-sheen {
+  0% { transform: translateX(-100%) rotate(-12deg); opacity: 0.25; }
+  50% { transform: translateX(0%) rotate(-12deg); opacity: 0.45; }
+  100% { transform: translateX(100%) rotate(-12deg); opacity: 0.25; }
+}
+
+@keyframes liquid-slide {
+  0%, 100% {
+    transform: translateX(-12%) translateY(0);
+  }
+  50% {
+    transform: translateX(12%) translateY(5px);
+  }
+}
+
+@keyframes float-glow {
+  0%, 100% {
+    transform: translateY(0) rotate(22deg);
+    opacity: 0.28;
+  }
+  50% {
+    transform: translateY(-12px) rotate(22deg);
+    opacity: 0.48;
+  }
 }
 
 .view-header h1 {
@@ -5057,4 +5284,303 @@ html.theme-slide-in-active .app-container {
     transform: translateX(0);
     opacity: 1;
   }
+}
+
+/* ==========================================================================
+   HORIZONTAL APPLE LIQUID GLASS HEADER BAR
+   ========================================================================== */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 24px;
+  height: 60px;
+  background: rgba(10, 5, 28, 0.45);
+  backdrop-filter: blur(25px) saturate(180%);
+  -webkit-backdrop-filter: blur(25px) saturate(180%);
+  border-bottom: 1px solid var(--glass-border);
+  z-index: 1000;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-title-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.header-title {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--text-white);
+  text-shadow: 0 0 10px rgba(157, 0, 255, 0.4);
+  line-height: 1.2;
+}
+
+.header-subtitle {
+  font-size: 9px;
+  color: var(--accent-blue);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: 1;
+  padding: 0 20px;
+  max-width: 1100px;
+}
+
+.header-nav-item {
+  background: none;
+  border: 1px solid transparent;
+  outline: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  color: var(--text-dim);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+  white-space: nowrap;
+}
+
+.header-nav-item svg {
+  color: var(--text-dim);
+  transition: all 0.3s ease;
+  width: 14px;
+  height: 14px;
+}
+
+.header-nav-item:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-white);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px) scale(1.02);
+}
+
+.header-nav-item:hover svg {
+  color: var(--accent-pink);
+  transform: scale(1.1);
+}
+
+.header-nav-item.active {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.06) 100%);
+  border-color: rgba(0, 240, 255, 0.25);
+  color: var(--text-white);
+  box-shadow: 0 6px 15px rgba(0, 240, 255, 0.15), inset 0 1px 1.5px rgba(255, 255, 255, 0.2), 0 0 10px rgba(0, 240, 255, 0.1);
+  transform: scale(1.03);
+}
+
+.header-nav-item.active svg {
+  color: #fff;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-status-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.header-account-container {
+  position: relative;
+}
+
+.header-account-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  outline: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  color: var(--text-cyan);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.header-account-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent-blue);
+  color: var(--text-white);
+  box-shadow: var(--glow-blue);
+}
+
+.header-dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 180px;
+  background: rgba(10, 5, 28, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  padding: 8px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  z-index: 9999 !important; /* Critical: Ensure it sits on top of all cards */
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.header-dropdown-item {
+  border: none;
+  background: transparent;
+  color: var(--text-cyan);
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.header-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-white);
+  transform: translateX(3px);
+}
+
+.header-dropdown-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 0;
+}
+
+.iot-star-logo {
+  filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.6));
+  animation: star-glow-pulse 4s infinite alternate;
+}
+
+@keyframes star-glow-pulse {
+  0% {
+    filter: drop-shadow(0 0 4px rgba(0, 240, 255, 0.4));
+    transform: scale(1);
+  }
+  100% {
+    filter: drop-shadow(0 0 10px rgba(0, 240, 255, 0.8));
+    transform: scale(1.02);
+  }
+}
+
+/* ==========================================================================
+   UNIFIED DASHBOARD ACTIONS & LIVE STATUSES
+   ========================================================================== */
+.unified-color-bar {
+  background: #111827 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25) !important;
+  animation: none !important;
+}
+
+.unified-color-bar::before {
+  display: none !important;
+}
+
+.live-status-container {
+  display: flex;
+  gap: 15px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 6px 14px;
+  border-radius: 8px;
+}
+
+.live-status-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.live-status-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.live-status-value {
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: #ffffff;
+}
+
+/* History logs tag components */
+.status-tag {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+
+.status-tag.ok {
+  background: rgba(0, 255, 102, 0.1);
+  color: #00ff66;
+  border: 1px solid rgba(0, 255, 102, 0.2);
+}
+
+.status-tag.err {
+  background: rgba(255, 51, 51, 0.1);
+  color: #ff3366;
+  border: 1px solid rgba(255, 51, 51, 0.2);
+}
+
+.status-tag.wait {
+  background: rgba(255, 153, 0, 0.1);
+  color: #ff9900;
+  border: 1px solid rgba(255, 153, 0, 0.2);
+}
+
+/* Database retro log box */
+.db-log-terminal {
+  margin: 0;
+  padding: 10px;
+  background: #030107;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+  color: #00ffcc;
+  text-align: left;
 }

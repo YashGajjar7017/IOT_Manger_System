@@ -43,8 +43,7 @@
     "files": [
       "frontend-build/**/*",
       "main.js",
-      "database.js",
-      "data-worker.js",
+      "backend/**/*",
       "package.json",
       "icon/**/*"
     ],
