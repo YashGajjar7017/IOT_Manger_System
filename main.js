@@ -2113,112 +2113,140 @@ ipcMain.on('start-ota', (event, { fileBuffer, filename, ip, port, target }) => {
 });
 */
 
-// Optimized chunk-by-chunk stream writer with backpressure control (Requirement 2)
+// Optimized chunk-by-chunk stream writer with backpressure control and OTA fallback transport
 const streamFirmwareToESP32 = (buffer, options, filename, event, targetName) => {
   return new Promise((resolve, reject) => {
-    const boundary = '----WebKitFormBoundaryIoT' + Math.random().toString(36).substring(2);
-    const header =
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="update"; filename="${filename || 'firmware.bin'}"\r\n` +
-      `Content-Type: application/octet-stream\r\n\r\n`;
-    const footer = `\r\n--${boundary}--\r\n`;
-
     const fileSize = buffer.length;
-    const totalLength = header.length + fileSize + footer.length;
-
-    const requestOptions = {
-      ...options,
-      headers: {
-        'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        'Content-Length': totalLength,
-        'Connection': 'close'
-      }
-    };
-
-    // Fix Issue 2: Track upload completion to distinguish ECONNRESET after full write (ESP32 reboot) vs real errors
-    let uploadedBytes = 0;
-    let uploadCompleted = false;
+    const chunkSize = 16384;
     const isAddressMode = options.path && options.path.includes('address=');
-
-    let responseReceived = false;
-    let responseFailed = false;
-    let responseStatus = 200;
-    let responseBody = '';
-
-    const req = http.request(requestOptions, (res) => {
-      responseReceived = true;
-      responseStatus = res.statusCode;
-      if (res.statusCode !== 200) {
-        responseFailed = true;
-      }
-      res.on('data', (chunk) => { responseBody += chunk.toString(); });
-      res.on('end', () => {
-        // Standard OTA returns OK text; address-mode flash may not return a body if ESP32 already rebooted
-        if (res.statusCode === 200 && (responseBody.toUpperCase().includes('OK') || isAddressMode)) {
-          resolve(responseBody || 'OK');
-        } else {
-          reject(new Error(`Flashing failed. Code ${res.statusCode}: ${responseBody}`));
+    const attempts = [
+      {
+        name: 'multipart',
+        makeRequestOptions: () => {
+          const boundary = '----WebKitFormBoundaryIoT' + Math.random().toString(36).substring(2);
+          const header =
+            `--${boundary}\r\n` +
+            `Content-Disposition: form-data; name="update"; filename="${filename || 'firmware.bin'}"\r\n` +
+            `Content-Type: application/octet-stream\r\n\r\n`;
+          const footer = `\r\n--${boundary}--\r\n`;
+          const totalLength = header.length + fileSize + footer.length;
+          return {
+            requestOptions: {
+              ...options,
+              headers: {
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                'Content-Length': totalLength,
+                'Connection': 'close'
+              }
+            },
+            header,
+            footer
+          };
         }
-      });
-    });
+      },
+      {
+        name: 'raw-binary',
+        makeRequestOptions: () => ({
+          requestOptions: {
+            ...options,
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'Content-Length': fileSize,
+              'Connection': 'close'
+            }
+          }
+        })
+      }
+    ];
 
-    req.on('error', (err) => {
-      if (responseFailed) {
-        reject(new Error(`Flashing failed. Code ${responseStatus}: ${responseBody || err.message}`));
+    let attemptIndex = 0;
+
+    const sendAttempt = (attemptNumber) => {
+      const attempt = attempts[attemptNumber];
+      if (!attempt) {
+        reject(new Error('OTA upload failed for all supported transports.'));
         return;
       }
-      if (responseReceived && !isAddressMode) {
-        const isOk = responseStatus === 200 && responseBody.toUpperCase().includes('OK');
-        if (!isOk) {
-          reject(new Error(`Flashing failed. Code ${responseStatus}: ${responseBody || 'Server rejected the binary'}`));
+
+      const { requestOptions, header, footer } = attempt.makeRequestOptions();
+      let uploadCompleted = false;
+      let responseReceived = false;
+      let responseStatus = 200;
+      let responseBody = '';
+      let offset = 0;
+
+      event.reply('console-log', `[OTA] Trying ${attempt.name} upload to ${options.hostname}:${options.port}${options.path}`);
+
+      const req = http.request(requestOptions, (res) => {
+        responseReceived = true;
+        responseStatus = res.statusCode;
+        res.on('data', (chunk) => { responseBody += chunk.toString(); });
+        res.on('end', () => {
+          const normalizedBody = (responseBody || '').trim();
+          const isSuccess = res.statusCode === 200 && (normalizedBody.toUpperCase().includes('OK') || isAddressMode || normalizedBody.length === 0);
+
+          if (isSuccess) {
+            resolve(normalizedBody || 'OK');
+            return;
+          }
+
+          const shouldTryFallback = attemptNumber < attempts.length - 1 && /flash read failed|update failed|server rejected|bad request|error/i.test(normalizedBody || '');
+          if (shouldTryFallback) {
+            event.reply('console-log', `[OTA] ${attempt.name} upload failed with ${res.statusCode}: ${normalizedBody || 'empty response'}. Trying fallback transport...`);
+            sendAttempt(attemptNumber + 1);
+            return;
+          }
+
+          reject(new Error(`Flashing failed. Code ${res.statusCode}: ${normalizedBody || 'Server rejected the binary'}`));
+        });
+      });
+
+      req.on('error', (err) => {
+        const isResetError = err.code === 'ECONNRESET' || err.code === 'EPIPE' || (err.message && /ECONNRESET|EPIPE/.test(err.message));
+        const percentSent = fileSize > 0 ? (offset / fileSize) : 0;
+        if (isResetError && (uploadCompleted || percentSent >= 0.95)) {
+          resolve('OK (ESP32 rebooted after successful write)');
           return;
         }
-      }
 
-      const isResetError = err.code === 'ECONNRESET' ||
-        err.code === 'EPIPE' ||
-        (err.message && err.message.includes('ECONNRESET')) ||
-        (err.message && err.message.includes('EPIPE'));
+        if (attemptNumber < attempts.length - 1) {
+          event.reply('console-log', `[OTA] ${attempt.name} upload hit transport error (${err.message}). Trying fallback transport...`);
+          sendAttempt(attemptNumber + 1);
+          return;
+        }
 
-      const percentSent = fileSize > 0 ? (offset / fileSize) : 0;
-      // If we got a connection reset/broken pipe after sending at least 95% of the firmware,
-      // it is a success (ESP32 finished flashing and instantly rebooted, closing the SoftAP/socket).
-      if (isResetError && (uploadCompleted || percentSent >= 0.95)) {
-        resolve('OK (ESP32 rebooted after successful write)');
-      } else {
         reject(err);
+      });
+
+      const writeNextChunk = () => {
+        let canWrite = true;
+        while (offset < fileSize && canWrite) {
+          const nextOffset = Math.min(offset + chunkSize, fileSize);
+          const chunk = buffer.subarray(offset, nextOffset);
+          offset = nextOffset;
+          canWrite = req.write(chunk);
+          event.reply('ota-progress', { status: 'uploading', progress: Math.round((offset / fileSize) * 100) });
+        }
+
+        if (offset >= fileSize) {
+          if (attempt.name === 'multipart' && header && footer) {
+            req.write(footer);
+          }
+          uploadCompleted = true;
+          req.end();
+        } else if (!canWrite) {
+          req.once('drain', writeNextChunk);
+        }
+      };
+
+      if (attempt.name === 'multipart') {
+        req.write(header);
       }
-    });
 
-    req.write(header);
-
-    const chunkSize = 16384; // 16KB chunk size (optimized for ESP32 receive buffer)
-    let offset = 0;
-
-    const writeNextChunk = () => {
-      let canWrite = true;
-      while (offset < fileSize && canWrite) {
-        const nextOffset = Math.min(offset + chunkSize, fileSize);
-        const chunk = buffer.subarray(offset, nextOffset);
-        offset = nextOffset;
-
-        canWrite = req.write(chunk);
-
-        const progress = Math.round((offset / fileSize) * 100);
-        event.reply('ota-progress', { status: 'uploading', progress: progress });
-      }
-
-      if (offset >= fileSize) {
-        req.write(footer);
-        uploadCompleted = true; // Mark that all bytes have been sent before calling end()
-        req.end();
-      } else if (!canWrite) {
-        // Wait for drain before writing more to prevent packet overflow on the ESP32
-        req.once('drain', writeNextChunk);
-      }
+      writeNextChunk();
     };
 
-    writeNextChunk();
+    sendAttempt(0);
   });
 };
 
@@ -2293,25 +2321,43 @@ ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, 
       return;
     }
     event.reply('console-log', `[OTA] Read successfully. Size: ${buffer.length} bytes.`);
-    const options = {
-      hostname: gatewayIP,
-      port: gatewayPort,
-      path: otaPath,
-      method: 'POST'
-    };
 
-    await streamFirmwareToESP32(buffer, options, filename, event, targetName);
+    const attemptTargets = [
+      { port: gatewayPort, path: otaPath },
+      { port: gatewayPort === 500 ? 8000 : 500, path: '/update' }
+    ].filter((candidate, index, arr) => arr.findIndex(other => other.port === candidate.port && other.path === candidate.path) === index);
 
-    event.reply('ota-progress', { status: 'success', progress: 100, target: targetName });
-    if (targetName === 'esp32') {
-      if (reboot !== false) {
-        event.reply('console-log', '[OTA] Upgrade completed! Router reboot triggered.');
-      } else {
-        event.reply('console-log', '[OTA] Partition flashed successfully! Reboot bypassed.');
+    let lastError = null;
+    for (const attempt of attemptTargets) {
+      const options = {
+        hostname: gatewayIP,
+        port: attempt.port,
+        path: attempt.path,
+        method: 'POST'
+      };
+
+      try {
+        event.reply('console-log', `[OTA] Attempting flash target: http://${gatewayIP}:${attempt.port}${attempt.path}`);
+        await streamFirmwareToESP32(buffer, options, filename, event, targetName);
+
+        event.reply('ota-progress', { status: 'success', progress: 100, target: targetName });
+        if (targetName === 'esp32') {
+          if (reboot !== false) {
+            event.reply('console-log', '[OTA] Upgrade completed! Router reboot triggered.');
+          } else {
+            event.reply('console-log', '[OTA] Partition flashed successfully! Reboot bypassed.');
+          }
+        } else {
+          event.reply('console-log', '[OTA] QCOM Co-processor flash update completed successfully!');
+        }
+        return;
+      } catch (err) {
+        lastError = err;
+        event.reply('console-log', `[OTA ERROR] Flashing attempt failed on http://${gatewayIP}:${attempt.port}${attempt.path}: ${err.message}`);
       }
-    } else {
-      event.reply('console-log', '[OTA] QCOM Co-processor flash update completed successfully!');
     }
+
+    throw lastError || new Error('OTA upload failed for all fallback targets');
   } catch (err) {
     event.reply('ota-progress', { status: 'error', message: err.message });
     event.reply('console-log', `[OTA EXCEPTION] ${err.message}`);
@@ -3246,45 +3292,70 @@ ipcMain.on('save-app-config', (event, newConfig) => {
 // IPC Handler: Retrieve ESP32 SPIFFS Storage data (Requirement 4 & 5)
 ipcMain.on('get-spiffs-storage', (event, { ip, port }) => {
   const gatewayIP = ip || '192.168.0.1';
-  // Fix Issue 1: Safely parse port - ensure it is a valid integer between 1-65535
   const parsedPort = parseInt(port);
-  const gatewayPort = (!isNaN(parsedPort) && parsedPort > 0 && parsedPort < 65536) ? parsedPort : 8000;
+  const primaryPort = (!isNaN(parsedPort) && parsedPort > 0 && parsedPort < 65536) ? parsedPort : 8000;
+  const fallbackPort = primaryPort === 500 ? 8000 : 500;
+  const endpointCandidates = [
+    { port: primaryPort, path: '/api/storage' },
+    { port: primaryPort, path: '/storage' },
+    { port: fallbackPort, path: '/api/storage' },
+    { port: fallbackPort, path: '/storage' }
+  ].filter((candidate, index, arr) => arr.findIndex(other => other.port === candidate.port && other.path === candidate.path) === index);
 
-  event.reply('console-log', `[SPIFFS] Querying storage details from http://${gatewayIP}:${gatewayPort}/api/storage...`);
+  let attemptIndex = 0;
 
-  const options = {
-    hostname: gatewayIP,
-    port: gatewayPort,
-    path: '/api/storage',
-    method: 'GET',
-    timeout: 3000
-  };
+  const tryNextEndpoint = () => {
+    if (attemptIndex >= endpointCandidates.length) {
+      event.reply('spiffs-storage-info', { success: false, error: 'Gateway storage endpoint not available on the configured ports.' });
+      event.reply('console-log', '[SPIFFS ERROR] No compatible storage endpoint responded from the gateway.');
+      return;
+    }
 
-  const req = http.request(options, (res) => {
-    let data = '';
-    res.on('data', chunk => data += chunk.toString());
-    res.on('end', () => {
-      if (res.statusCode === 200) {
-        try {
-          const storageInfo = JSON.parse(data);
-          event.reply('spiffs-storage-info', { success: true, ...storageInfo });
-        } catch (e) {
-          event.reply('spiffs-storage-info', { success: false, error: 'Invalid JSON response from gateway' });
-          event.reply('console-log', `[SPIFFS ERROR] Failed to parse JSON storage response.`);
+    const { port: candidatePort, path: candidatePath } = endpointCandidates[attemptIndex++];
+    event.reply('console-log', `[SPIFFS] Querying storage details from http://${gatewayIP}:${candidatePort}${candidatePath}...`);
+
+    const options = {
+      hostname: gatewayIP,
+      port: candidatePort,
+      path: candidatePath,
+      method: 'GET',
+      timeout: 3000
+    };
+
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk.toString());
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            const storageInfo = JSON.parse(data);
+            event.reply('spiffs-storage-info', { success: true, ...storageInfo });
+          } catch (e) {
+            event.reply('spiffs-storage-info', { success: false, error: 'Invalid JSON response from gateway' });
+            event.reply('console-log', '[SPIFFS ERROR] Failed to parse JSON storage response.');
+          }
+        } else if (res.statusCode === 404) {
+          tryNextEndpoint();
+        } else {
+          event.reply('spiffs-storage-info', { success: false, error: `HTTP status ${res.statusCode}` });
+          event.reply('console-log', `[SPIFFS ERROR] HTTP query failed with status code ${res.statusCode}`);
         }
+      });
+    });
+
+    req.on('error', () => {
+      if (attemptIndex < endpointCandidates.length) {
+        tryNextEndpoint();
       } else {
-        event.reply('spiffs-storage-info', { success: false, error: `HTTP status ${res.statusCode}` });
-        event.reply('console-log', `[SPIFFS ERROR] HTTP query failed with status code ${res.statusCode}`);
+        event.reply('spiffs-storage-info', { success: false, error: 'Gateway storage endpoint request failed.' });
+        event.reply('console-log', '[SPIFFS ERROR] Gateway storage endpoint request failed.');
       }
     });
-  });
 
-  req.on('error', (err) => {
-    event.reply('spiffs-storage-info', { success: false, error: err.message });
-    event.reply('console-log', `[SPIFFS ERROR] HTTP request failed: ${err.message}`);
-  });
+    req.end();
+  };
 
-  req.end();
+  tryNextEndpoint();
 });
 
 // IPC Handler: Delete file from ESP32 SPIFFS Storage (Requirement 4 & 5)

@@ -186,6 +186,22 @@ export default function App() {
   // Default to the 1st theme 'quantum-indigo' on startup
   const [currentTheme, setCurrentTheme] = useState(() => localStorage.getItem('theme') || 'quantum-indigo');
   const [currentFont, setCurrentFont] = useState(() => localStorage.getItem('font') || 'outfit');
+  const starNovaStars = useMemo(() => Array.from({ length: 24 }, (_, index) => ({
+    id: index,
+    left: `${Math.random() * 100}%`,
+    top: `${-10 - Math.random() * 25}%`,
+    size: `${6 + Math.random() * 10}px`,
+    duration: `${2.8 + Math.random() * 3.8}s`,
+    delay: `${Math.random() * 4}s`,
+    opacity: 0.35 + Math.random() * 0.65
+  })), []);
+  const starNovaComets = useMemo(() => Array.from({ length: 3 }, (_, index) => ({
+    id: index,
+    left: `${-20 + Math.random() * 40}%`,
+    top: `${20 + Math.random() * 45}%`,
+    duration: `${5 + Math.random() * 3}s`,
+    delay: `${Math.random() * 3}s`
+  })), []);
   const [gitHubUser, setGitHubUser] = useState(() => {
     const saved = localStorage.getItem('github_user');
     return saved ? JSON.parse(saved) : null;
@@ -1182,6 +1198,42 @@ Overall Status : ${overallStatus}
       alert(`Registration error: ${err.message}`);
     } finally {
       setIsRegisteringDevice(false);
+    }
+  };
+
+  const handleRegisterDetectedDevice = async (device) => {
+    if (!device?.imei) {
+      alert('Detected device is missing IMEI information.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/devices/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imei: device.imei,
+          pcbNumber: device.pcbNumber || device.pcb || '',
+          password: device.password || 'admin_secure_gate',
+          routerSSID: '',
+          routerPassword: '',
+          telemetryInterval: 1500,
+          connectionType: 'tcp',
+          target: device.ip || '',
+          mac: device.mac || ''
+        })
+      });
+
+      if (res.ok) {
+        addLogLine(`[DB] Registered detected device ${device.ip} (${device.imei}) successfully.`, 'success');
+        fetchRegisteredDevices();
+      } else {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Unknown registration error');
+      }
+    } catch (err) {
+      addLogLine(`[DB ERROR] Failed to save detected device ${device.ip}: ${err.message}`, 'error');
+      alert(`Registration error: ${err.message}`);
     }
   };
 
@@ -2269,12 +2321,32 @@ Overall Status : ${overallStatus}
           {/* ================= VIEW 1: DASHBOARD ================= */}
           <section id="page-dashboard" className={`page-view ${activeTab === 'page-dashboard' ? 'active' : ''}`}>
             <header className="view-header">
-              <div>
+              {/* <div>
                 <h1>Gateway Dashboard</h1>
-                <p>Monitor peripherals, adjust pacing telemetry speed, and toggle relays</p>
-              </div>
-              <div className={`connection-pill ${connection.type === 'failed' ? 'failed' : connection.type ? 'connected' : ''}`}>
-                {connection.type === 'failed' ? 'CONNECTION FAILED' : connection.type ? `${connection.type.toUpperCase()} ACTIVE` : 'DISCONNECTED'}
+                <p>Monitor peripherals, adjust pacing telemetry speed, and manage gateway actions</p>
+              </div> */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <button className="btn btn-primary" style={{ padding: '8px 12px', fontSize: '11px', height: '34px' }} onClick={triggerSelfCheckReRun} disabled={controlsDisabled || !connection.type}>
+                    Run All Tests
+                  </button>
+                  <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '11px', height: '34px' }} onClick={triggerSelfCheckReRun} disabled={controlsDisabled || !connection.type}>
+                    Recheck Hardware
+                  </button>
+                  <button className="btn btn-accent" style={{ padding: '8px 12px', fontSize: '11px', height: '34px' }} onClick={() => sendControlCommand('SHIFT_TO_QCOM')} disabled={!connection.type}>
+                    Shift to QCOM
+                  </button>
+                  <button className="btn btn-danger" style={{ padding: '8px 12px', fontSize: '11px', height: '34px' }} onClick={() => sendControlCommand('REBOOT')} disabled={!connection.type}>
+                    Reboot Gateway
+                  </button>
+                </div>
+                <div className="ping-widget" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: '140px', padding: '6px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: '6px' }}>
+                  <span className="ping-label" style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-dim)', fontWeight: 'bold' }}>Socket Ping</span>
+                  <span className={`ping-result ${pingLatency.status}`} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px' }}>{pingLatency.value}</span>
+                </div>
+                <div className={`connection-pill ${connection.type === 'failed' ? 'failed' : connection.type ? 'connected' : ''}`}>
+                  {connection.type === 'failed' ? 'CONNECTION FAILED' : connection.type ? `${connection.type.toUpperCase()} ACTIVE` : 'DISCONNECTED'}
+                </div>
               </div>
             </header>
 
@@ -2621,64 +2693,55 @@ Overall Status : ${overallStatus}
                 </div>
               </div>
 
-              {/* Switchboard Controller Panel */}
-              <div className="glass-card switchboard-panel">
-                <h3><span className="icon">&#9903;</span> Controls Switchboard</h3>
-
-                <div className="control-row">
-                  <span className="control-title">System Relays</span>
-                  <div className="relays-grid">
-                    <div className="relay-switch-container">
-                      <span className="relay-name">Relay 1</span>
-                      <label className="switch-toggle">
-                        <input type="checkbox" checked={relay1} onChange={handleRelay1Toggle} disabled={controlsDisabled} />
-                        <span className="switch-slider"></span>
-                      </label>
-                    </div>
-                    <div className="relay-switch-container">
-                      <span className="relay-name">Relay 2</span>
-                      <label className="switch-toggle">
-                        <input type="checkbox" checked={relay2} onChange={handleRelay2Toggle} disabled={controlsDisabled} />
-                        <span className="switch-slider"></span>
-                      </label>
-                    </div>
-                  </div>
+              {/* Detected Devices Panel */}
+              <div className="glass-card detected-devices-panel">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                  <h3><span className="icon">📡</span> Detected Devices</h3>
+                  <button className="btn btn-secondary small" onClick={scanNetworkForGateway} disabled={isScanningNetwork}>
+                    {isScanningNetwork ? 'Scanning...' : 'Scan'}
+                  </button>
                 </div>
+                <p className="section-desc" style={{ fontSize: '12px', marginTop: '-4px', marginBottom: '12px' }}>
+                  Discovered gateways appear here so you can connect, register them to the database, or disconnect the active link.
+                </p>
 
-                <div className="control-row">
-                  <div className="slider-header">
-                    <span className="control-title">Interval Rate</span>
-                    <span className="slider-value">{telemetryRate} ms</span>
+                {discoveredGateways.length === 0 ? (
+                  <div className="detected-device-empty">
+                    No devices detected yet. Start a scan to populate this panel.
                   </div>
-                  <input type="range" min="200" max="5000" step="100" value={telemetryRate} onChange={handleIntervalChange} onMouseUp={commitIntervalChange} disabled={controlsDisabled} />
-                  <div className="slider-labels">
-                    <span>Fast (200ms)</span>
-                    <span>Slow (5s)</span>
+                ) : (
+                  <div className="detected-device-list">
+                    {discoveredGateways.map((gw, index) => {
+                      const isConnected = connection.type === 'tcp' && connection.target && connection.target.startsWith(gw.ip);
+                      const isRegistered = registeredDevices.some((device) => device.imei === gw.imei || device.pcbNumber === gw.pcbNumber || device.imei === gw.id);
+                      return (
+                        <div key={`${gw.ip}-${index}`} className="detected-device-card">
+                          <div className="detected-device-meta">
+                            <span className="detected-device-ip">{gw.ip}</span>
+                            <span className="detected-device-imei">{gw.imei || 'Unknown IMEI'}</span>
+                          </div>
+                          <div className="detected-device-actions">
+                            <button
+                              className="btn btn-secondary"
+                              style={{ padding: '6px 10px', fontSize: '10px', height: '28px', margin: 0 }}
+                              onClick={() => (isConnected ? disconnectGateway() : connectDiscoveredGateway(gw))}
+                            >
+                              {isConnected ? 'Disconnect' : 'Connect'}
+                            </button>
+                            <button
+                              className={`btn ${isRegistered ? 'btn-secondary' : 'btn-accent'}`}
+                              style={{ padding: '6px 10px', fontSize: '10px', height: '28px', margin: 0 }}
+                              onClick={() => !isRegistered && handleRegisterDetectedDevice(gw)}
+                              disabled={isRegistered}
+                            >
+                              {isRegistered ? 'Registered' : 'Register'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
-
-                <div className="control-row bottom-actions" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    <button className="btn btn-primary" onClick={triggerSelfCheckReRun} disabled={controlsDisabled} style={{ padding: '8px 12px', fontSize: '12px' }}>
-                      <span className="btn-icon">&#9654;</span> Run All Tests
-                    </button>
-                    <button className="btn btn-secondary" onClick={triggerSelfCheckReRun} disabled={controlsDisabled} style={{ padding: '8px 12px', fontSize: '12px' }}>
-                      <span className="btn-icon">&#10227;</span> Recheck Hardware
-                    </button>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    <button className="btn btn-accent" onClick={() => sendControlCommand('SHIFT_TO_QCOM')} disabled={!connection.type} style={{ padding: '8px 12px', fontSize: '12px' }}>
-                      <span className="btn-icon">&#10145;</span> Shift to QCOM
-                    </button>
-                    <button className="btn btn-danger" onClick={() => sendControlCommand('REBOOT')} disabled={!connection.type} style={{ padding: '8px 12px', fontSize: '12px' }}>
-                      <span className="btn-icon">&#10227;</span> Reboot Gateway
-                    </button>
-                  </div>
-                  <div className="ping-widget" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '6px 12px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--glass-border)', borderRadius: '6px', marginTop: '4px' }}>
-                    <span className="ping-label" style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-dim)', fontWeight: 'bold' }}>Socket RTT Ping:</span>
-                    <span className={`ping-result ${pingLatency.status}`} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px' }}>{pingLatency.value}</span>
-                  </div>
-                </div>
+                )}
               </div>
 
             </div>
@@ -5235,6 +5298,15 @@ Overall Status : ${overallStatus}
                       <div className="theme-preview-bar"></div>
                       <span className="theme-preset-name">Mojang Studios</span>
                     </div>
+
+                    <div
+                      className={`theme-preset-card ${currentTheme === 'star-nova' ? 'active' : ''}`}
+                      onClick={() => changeThemeWithTransition('star-nova')}
+                      style={{ '--theme-card-border': '#fef3c7', '--theme-card-bg-rgb': '254, 243, 199', '--theme-preview-grad': 'linear-gradient(135deg, #0f172a 0%, #fef3c7 100%)' }}
+                    >
+                      <div className="theme-preview-bar"></div>
+                      <span className="theme-preset-name">Star Nova</span>
+                    </div>
                   </div>
                 </div>
 
@@ -5513,6 +5585,38 @@ Overall Status : ${overallStatus}
       )}
 
       {/* Cinematic Hacking Transition Animation Overlay */}
+      {currentTheme === 'star-nova' && (
+        <div className="star-nova-overlay" aria-hidden="true">
+          {starNovaComets.map((comet) => (
+            <span
+              key={`comet-${comet.id}`}
+              className="star-nova-comet"
+              style={{
+                left: comet.left,
+                top: comet.top,
+                animationDuration: comet.duration,
+                animationDelay: comet.delay
+              }}
+            />
+          ))}
+          {starNovaStars.map((star) => (
+            <span
+              key={star.id}
+              className="star-nova-star"
+              style={{
+                left: star.left,
+                top: star.top,
+                width: star.size,
+                height: star.size,
+                animationDuration: star.duration,
+                animationDelay: star.delay,
+                opacity: star.opacity
+              }}
+            />
+          ))}
+        </div>
+      )}
+
       {showHackingAnim && (
         <div className={`hacking-anim-overlay stage-${hackingAnimStage}`}>
           {/* Falling matrix code rain background */}
