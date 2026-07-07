@@ -33,7 +33,7 @@ let cacheSaveTimer = null; // debounce timer for cache writes
 const CONFIG_PATH = path.join(app.getPath('userData'), 'app-config.json');
 
 let appConfig = {
-  mongoUri: 'mongodb://localhost:27017/IOT_System_Manager',
+  mongoUri: 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB',
   expressPort: 8000,
   telemetryPort: 9000,
   otaPort: 500,
@@ -47,6 +47,13 @@ function loadConfig() {
       const data = fs.readFileSync(CONFIG_PATH, 'utf8');
       appConfig = { ...appConfig, ...JSON.parse(data) };
       console.log('[CONFIG] Settings loaded from:', CONFIG_PATH);
+      
+      // Auto-migrate local MongoDB URI to remote MongoDB Atlas URI
+      if (!appConfig.mongoUri || appConfig.mongoUri.includes('localhost:27017') || appConfig.mongoUri.includes('127.0.0.1:27017')) {
+        console.log('[CONFIG] Migrating local MongoDB URI to remote MongoDB Atlas URI...');
+        appConfig.mongoUri = 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB';
+        fs.writeFileSync(CONFIG_PATH, JSON.stringify(appConfig, null, 2), 'utf8');
+      }
     } else {
       fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
       fs.writeFileSync(CONFIG_PATH, JSON.stringify(appConfig, null, 2), 'utf8');
@@ -1170,7 +1177,7 @@ app.whenReady().then(async () => {
           break;
         case 'HARDWARE':
           wc.send('hardware-payload', msg.payload);
-          
+
           if (msg.payload && (msg.payload.status === 'BOOT_SUCCESS' || msg.payload.diagnostics)) {
             const diag = msg.payload.diagnostics || {};
             const updateFields = {
@@ -1179,7 +1186,7 @@ app.whenReady().then(async () => {
               connectionType: activeTcpSocket ? 'tcp' : (activeSerialPort ? 'serial' : 'unknown'),
               target: activeTcpSocket ? `${activeTcpSocket.remoteAddress}:${activeTcpSocket.remotePort}` : (activeSerialPort ? activeSerialPort.path : '')
             };
-            
+
             if (diag.rs232) {
               updateFields.rs232Status = diag.rs232.status || diag.rs232;
               updateFields.rs232Log = diag.rs232.detail || '';
@@ -1218,7 +1225,7 @@ app.whenReady().then(async () => {
               if (syncResult && syncResult.action === 'sync') {
                 const config = syncResult.config;
                 console.log(`[DB-SYNC] Checking configuration sync for IMEI ${msg.payload.imei}...`);
-                
+
                 const sendCommand = (cmd) => {
                   if (activeTcpSocket && !activeTcpSocket.destroyed) {
                     activeTcpSocket.write(cmd + '\n');
@@ -1394,7 +1401,7 @@ app.on('window-all-closed', () => {
     expressServer.close();
   }
   if (tcpTelemetryServer) {
-    try { tcpTelemetryServer.close(); } catch (e) {}
+    try { tcpTelemetryServer.close(); } catch (e) { }
   }
   // Terminate the worker thread gracefully
   if (dataWorker) {
@@ -1749,7 +1756,7 @@ function reconnectTcp(event) {
 
 function startTcpTelemetryServer() {
   if (tcpTelemetryServer) {
-    try { tcpTelemetryServer.close(); } catch(e) {}
+    try { tcpTelemetryServer.close(); } catch (e) { }
   }
 
   tcpTelemetryServer = net.createServer((socket) => {
@@ -2273,13 +2280,19 @@ ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, 
   event.reply('console-log', `[OTA] Target Flashing Destination: http://${gatewayIP}:${gatewayPort}${otaPath}`);
   event.reply('console-log', `[OTA] Starting optimized chunked buffer upload to ESP32...`);
 
-  if (!fileBuffer) {
-    event.reply('ota-progress', { status: 'error', message: 'Binary file buffer is empty.' });
-    return;
-  }
-
+  let buffer;
   try {
-    const buffer = Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer);
+    if (filePath && fs.existsSync(filePath)) {
+      event.reply('console-log', `[OTA] Reading file directly from local disk path: ${filePath}`);
+      buffer = fs.readFileSync(filePath);
+    } else if (fileBuffer) {
+      event.reply('console-log', `[OTA] Using binary buffer transmitted via IPC`);
+      buffer = Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer);
+    } else {
+      event.reply('ota-progress', { status: 'error', message: 'No firmware file path or buffer provided.' });
+      return;
+    }
+    event.reply('console-log', `[OTA] Read successfully. Size: ${buffer.length} bytes.`);
     const options = {
       hostname: gatewayIP,
       port: gatewayPort,
@@ -2726,7 +2739,7 @@ function parseCertDetails(content, filename) {
 
     const { X509Certificate } = require('crypto');
     const cert = new X509Certificate(content);
-    
+
     const parseCN = (dn) => {
       const match = dn.match(/CN=([^,]+)/);
       return match ? match[1] : dn;

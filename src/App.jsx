@@ -436,7 +436,7 @@ export default function App() {
   const [isUploadingUuid, setIsUploadingUuid] = useState(false);
 
   // App Config Settings State (Requirement 6)
-  const [dbUriInput, setDbUriInput] = useState('mongodb://localhost:27017/IOT_System_Manager');
+  const [dbUriInput, setDbUriInput] = useState('mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB');
   const [dbReconnectStatus, setDbReconnectStatus] = useState('');
   const [isReconnectingDb, setIsReconnectingDb] = useState(false);
 
@@ -640,11 +640,23 @@ export default function App() {
         setWifiRouterSsid(payload.ssid);
         addLogLine(`[SYS] WiFi credentials updated on gateway. SSID is now: ${payload.ssid}`, 'success');
       } else if (payload.status === 'ok' && payload.msg && payload.msg.includes('Modem baud rate')) {
-        addLogLine(`[GPRS Speed Update] ${payload.msg}. Response: ${payload.modem_resp}`, 'success');
-        alert(`GPRS Speed Update:\n${payload.msg}\nModem Response: ${payload.modem_resp}`);
+        addLogLine(`[GPRS Speed Update] ${payload.msg}`, 'success');
+        if (payload.modem_resp) {
+          const lines = payload.modem_resp.split(/\\n|\n/);
+          lines.forEach(l => {
+            if (l.trim()) addLogLine(`  ${l.trim()}`, 'system');
+          });
+        }
+        alert(`GPRS Speed Update:\n${payload.msg}\n\nModem Response:\n${payload.modem_resp ? payload.modem_resp.replace(/\\n/g, '\n') : ''}`);
       } else if (payload.status === 'warn' && payload.msg && payload.msg.includes('modem')) {
-        addLogLine(`[GPRS Speed Update Warning] ${payload.msg}. Response: ${payload.modem_resp}`, 'warning');
-        alert(`GPRS Speed Update Warning:\n${payload.msg}\nModem Response: ${payload.modem_resp}`);
+        addLogLine(`[GPRS Speed Update Warning] ${payload.msg}`, 'warning');
+        if (payload.modem_resp) {
+          const lines = payload.modem_resp.split(/\\n|\n/);
+          lines.forEach(l => {
+            if (l.trim()) addLogLine(`  ${l.trim()}`, 'warning');
+          });
+        }
+        alert(`GPRS Speed Update Warning:\n${payload.msg}\n\nModem Response:\n${payload.modem_resp ? payload.modem_resp.replace(/\\n/g, '\n') : ''}`);
       } else if (payload.status === 'CERT_ADDED') {
         if (payload.certificates) {
           setCertificates(payload.certificates);
@@ -885,7 +897,7 @@ export default function App() {
     // Fetch initial app configuration (Requirement 6)
     ipcRenderer.invoke('get-app-config').then((config) => {
       if (config) {
-        setDbUriInput(config.mongoUri || 'mongodb://localhost:27017/IOT_System_Manager');
+        setDbUriInput(config.mongoUri || 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB');
         setExpressPortInput(String(config.expressPort || '8000'));
         setTelemetryPortInput(String(config.telemetryPort || '9000'));
         setOtaPortInput(String(config.otaPort || '500'));
@@ -2672,116 +2684,118 @@ Overall Status : ${overallStatus}
             </div>
 
             {/* Direct Wireless AP & Manual Connection Manager */}
-            <div className="dashboard-middle-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px', marginBottom: '20px' }}>
+            {connectionMode !== 'ap' && (
+              <div className="dashboard-middle-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px', marginBottom: '20px' }}>
 
-              {/* Direct AP Diagnostics & Manual Socket Link */}
-              <div className="glass-card direct-ap-panel">
-                <h3><span className="icon">📶</span> Direct Wireless AP & Manual Link</h3>
-                <p className="section-desc" style={{ fontSize: '12px', color: '#8080a0', marginTop: '-15px', marginBottom: '15px' }}>
-                  Query diagnostics or establish links manually if Serial Auto-Scan fails.
-                </p>
-
-                <div className="form-row-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '15px' }}>
-                  <div className="input-group">
-                    <label>Gateway IP Address</label>
-                    <input type="text" value={directConnectIp} onChange={(e) => setDirectConnectIp(e.target.value)} placeholder="192.168.0.1" />
-                  </div>
-                  <div className="input-group">
-                    <label>HTTP Port (Info/Config)</label>
-                    <input type="text" value={directHttpPort} onChange={(e) => setDirectHttpPort(e.target.value)} placeholder="8000" />
-                  </div>
-                  <div className="input-group">
-                    <label>Socket Port (Telemetry)</label>
-                    <input type="text" value={directSocketPort} onChange={(e) => setDirectSocketPort(e.target.value)} placeholder="9000" />
-                  </div>
-                  <div className="input-group">
-                    <label>PCB Serial Number</label>
-                    <input type="text" value={pcbNumber} onChange={(e) => setPcbNumber(e.target.value)} placeholder="PCB-ESP32-v3-987" />
-                  </div>
-                </div>
-
-                <div className="button-row" style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-                  <button className="btn btn-primary" style={{ flex: 1 }} onClick={queryDeviceDiagnostics} disabled={isQuerying}>
-                    {isQuerying ? 'Querying...' : 'Query Device Info'}
-                  </button>
-                  <button className="btn btn-accent" style={{ flex: 1 }} onClick={connectDirectWifi}>
-                    Open Telemetry Socket
-                  </button>
-                </div>
-
-                {queryError && (
-                  <div className="query-error-box" style={{ background: 'rgba(255, 0, 80, 0.08)', border: '1px solid rgba(255, 0, 80, 0.25)', color: '#ff4d6a', padding: '10px', borderRadius: '8px', fontSize: '11.5px', fontFamily: 'monospace', marginBottom: '15px' }}>
-                    ⚠️ {queryError}
-                  </div>
-                )}
-
-                {queriedInfo && (
-                  <div className="queried-info-hud" style={{ background: 'rgba(0, 255, 200, 0.04)', border: '1px solid rgba(0, 255, 200, 0.15)', padding: '12px', borderRadius: '8px', fontSize: '12px' }}>
-                    <div style={{ fontWeight: 'bold', color: '#00ffcc', marginBottom: '8px', borderBottom: '1px solid rgba(0,255,200,0.1)', paddingBottom: '4px' }}>
-                      🛰️ Gateway Connected: ESP32 Gateway Active
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontFamily: 'monospace' }}>
-                      <div><span style={{ color: '#8080a0' }}>SSID:</span> {queriedInfo.ssid || '(None)'}</div>
-                      <div><span style={{ color: '#8080a0' }}>AP SSID:</span> {queriedInfo.ap_ssid}</div>
-                      <div><span style={{ color: '#8080a0' }}>MAC:</span> {queriedInfo.mac}</div>
-                      <div><span style={{ color: '#8080a0' }}>IMEI:</span> {queriedInfo.imei}</div>
-                      <div><span style={{ color: '#8080a0' }}>WiFi IP:</span> {queriedInfo.wifi_ip}</div>
-                      <div><span style={{ color: '#8080a0' }}>SoftAP IP:</span> {queriedInfo.ap_ip}</div>
-                      <div><span style={{ color: '#8080a0' }}>WiFi Status:</span> <span style={{ color: queriedInfo.wifi_status === 'CONNECTED' ? '#00e676' : '#ff3366', fontWeight: 'bold' }}>{queriedInfo.wifi_status}</span></div>
-                      <div><span style={{ color: '#8080a0' }}>AP Clients:</span> {queriedInfo.ap_clients}</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Direct HTTP Configurator & Tech Specs */}
-              <div className="glass-card direct-config-panel" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <h3><span className="icon">⚙️</span> HTTP WiFi Settings & Admin Control</h3>
+                {/* Direct AP Diagnostics & Manual Socket Link */}
+                <div className="glass-card direct-ap-panel">
+                  <h3><span className="icon">📶</span> Direct Wireless AP & Manual Link</h3>
                   <p className="section-desc" style={{ fontSize: '12px', color: '#8080a0', marginTop: '-15px', marginBottom: '15px' }}>
-                    Update Wi-Fi credentials on the gateway and trigger reboots via HTTP API.
+                    Query diagnostics or establish links manually if Serial Auto-Scan fails.
                   </p>
 
                   <div className="form-row-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '15px' }}>
                     <div className="input-group">
-                      <label>Router Wi-Fi SSID</label>
-                      <input type="text" value={wifiRouterSsid} onChange={(e) => setWifiRouterSsid(e.target.value)} placeholder="Enter Router SSID" />
+                      <label>Gateway IP Address</label>
+                      <input type="text" value={directConnectIp} onChange={(e) => setDirectConnectIp(e.target.value)} placeholder="192.168.0.1" />
                     </div>
                     <div className="input-group">
-                      <label>Router Wi-Fi Password</label>
-                      <input type="password" value={wifiRouterPass} onChange={(e) => setWifiRouterPass(e.target.value)} placeholder="Enter Password" />
+                      <label>HTTP Port (Info/Config)</label>
+                      <input type="text" value={directHttpPort} onChange={(e) => setDirectHttpPort(e.target.value)} placeholder="8000" />
+                    </div>
+                    <div className="input-group">
+                      <label>Socket Port (Telemetry)</label>
+                      <input type="text" value={directSocketPort} onChange={(e) => setDirectSocketPort(e.target.value)} placeholder="9000" />
+                    </div>
+                    <div className="input-group">
+                      <label>PCB Serial Number</label>
+                      <input type="text" value={pcbNumber} onChange={(e) => setPcbNumber(e.target.value)} placeholder="PCB-ESP32-v3-987" />
                     </div>
                   </div>
 
-                  <div className="button-row" style={{ display: 'flex', gap: '10px' }}>
-                    <button className="btn btn-accent" style={{ flex: 1 }} onClick={saveWiFiRouterSettingsHTTP}>
-                      Save Credentials (HTTP)
+                  <div className="button-row" style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                    <button className="btn btn-primary" style={{ flex: 1 }} onClick={queryDeviceDiagnostics} disabled={isQuerying}>
+                      {isQuerying ? 'Querying...' : 'Query Device Info'}
                     </button>
-                    <button className="btn btn-danger" style={{ flex: 1 }} onClick={rebootDeviceHTTP}>
-                      Reboot Gateway (HTTP)
+                    <button className="btn btn-accent" style={{ flex: 1 }} onClick={connectDirectWifi}>
+                      Open Telemetry Socket
                     </button>
+                  </div>
+
+                  {queryError && (
+                    <div className="query-error-box" style={{ background: 'rgba(255, 0, 80, 0.08)', border: '1px solid rgba(255, 0, 80, 0.25)', color: '#ff4d6a', padding: '10px', borderRadius: '8px', fontSize: '11.5px', fontFamily: 'monospace', marginBottom: '15px' }}>
+                      ⚠️ {queryError}
+                    </div>
+                  )}
+
+                  {queriedInfo && (
+                    <div className="queried-info-hud" style={{ background: 'rgba(0, 255, 200, 0.04)', border: '1px solid rgba(0, 255, 200, 0.15)', padding: '12px', borderRadius: '8px', fontSize: '12px' }}>
+                      <div style={{ fontWeight: 'bold', color: '#00ffcc', marginBottom: '8px', borderBottom: '1px solid rgba(0,255,200,0.1)', paddingBottom: '4px' }}>
+                        🛰️ Gateway Connected: ESP32 Gateway Active
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontFamily: 'monospace' }}>
+                        <div><span style={{ color: '#8080a0' }}>SSID:</span> {queriedInfo.ssid || '(None)'}</div>
+                        <div><span style={{ color: '#8080a0' }}>AP SSID:</span> {queriedInfo.ap_ssid}</div>
+                        <div><span style={{ color: '#8080a0' }}>MAC:</span> {queriedInfo.mac}</div>
+                        <div><span style={{ color: '#8080a0' }}>IMEI:</span> {queriedInfo.imei}</div>
+                        <div><span style={{ color: '#8080a0' }}>WiFi IP:</span> {queriedInfo.wifi_ip}</div>
+                        <div><span style={{ color: '#8080a0' }}>SoftAP IP:</span> {queriedInfo.ap_ip}</div>
+                        <div><span style={{ color: '#8080a0' }}>WiFi Status:</span> <span style={{ color: queriedInfo.wifi_status === 'CONNECTED' ? '#00e676' : '#ff3366', fontWeight: 'bold' }}>{queriedInfo.wifi_status}</span></div>
+                        <div><span style={{ color: '#8080a0' }}>AP Clients:</span> {queriedInfo.ap_clients}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Direct HTTP Configurator & Tech Specs */}
+                <div className="glass-card direct-config-panel" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <h3><span className="icon">⚙️</span> HTTP WiFi Settings & Admin Control</h3>
+                    <p className="section-desc" style={{ fontSize: '12px', color: '#8080a0', marginTop: '-15px', marginBottom: '15px' }}>
+                      Update Wi-Fi credentials on the gateway and trigger reboots via HTTP API.
+                    </p>
+
+                    <div className="form-row-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '15px' }}>
+                      <div className="input-group">
+                        <label>Router Wi-Fi SSID</label>
+                        <input type="text" value={wifiRouterSsid} onChange={(e) => setWifiRouterSsid(e.target.value)} placeholder="Enter Router SSID" />
+                      </div>
+                      <div className="input-group">
+                        <label>Router Wi-Fi Password</label>
+                        <input type="password" value={wifiRouterPass} onChange={(e) => setWifiRouterPass(e.target.value)} placeholder="Enter Password" />
+                      </div>
+                    </div>
+
+                    <div className="button-row" style={{ display: 'flex', gap: '10px' }}>
+                      <button className="btn btn-accent" style={{ flex: 1 }} onClick={saveWiFiRouterSettingsHTTP}>
+                        Save Credentials (HTTP)
+                      </button>
+                      <button className="btn btn-danger" style={{ flex: 1 }} onClick={rebootDeviceHTTP}>
+                        Reboot Gateway (HTTP)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Micro-controller Firmware Tech Specifications */}
+                  <div className="firmware-tech-spec" style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid var(--glass-border)' }}>
+                    <div style={{ fontSize: '12.5px', fontWeight: 'bold', color: 'var(--accent-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      🛠️ Firmware Architecture & Stack (ESP32 Gateway)
+                    </div>
+                    <div className="specs-list-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontSize: '11px', fontFamily: 'monospace' }}>
+                      <div><span style={{ color: '#8080a0' }}>Processor:</span> Dual-Core Tensilica LX6</div>
+                      <div><span style={{ color: '#8080a0' }}>Firmware OS:</span> FreeRTOS Kernel</div>
+                      <div><span style={{ color: '#8080a0' }}>Framework:</span> Arduino v2.0.6 & ESP-IDF</div>
+                      <div><span style={{ color: '#8080a0' }}>Filesystem:</span> SPIFFS (credential storage)</div>
+                      <div><span style={{ color: '#8080a0' }}>Active Fw:</span> v{queriedInfo?.fw_version || '3.2.0'} (Updated)</div>
+                      <div><span style={{ color: '#8080a0' }}>Free Heap:</span> {queriedInfo?.free_heap ? `${(queriedInfo.free_heap / 1024).toFixed(1)} KB` : '182.4 KB (Estimated)'}</div>
+                      <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#8080a0' }}>Telemetry Ports:</span> TCP/9000 (Data), UDP/5002 (Discovery)</div>
+                      <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#8080a0' }}>HTTP API Services:</span> TCP/8000 (Diagnostics, OTA, Files)</div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Micro-controller Firmware Tech Specifications */}
-                <div className="firmware-tech-spec" style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid var(--glass-border)' }}>
-                  <div style={{ fontSize: '12.5px', fontWeight: 'bold', color: 'var(--accent-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    🛠️ Firmware Architecture & Stack (ESP32 Gateway)
-                  </div>
-                  <div className="specs-list-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontSize: '11px', fontFamily: 'monospace' }}>
-                    <div><span style={{ color: '#8080a0' }}>Processor:</span> Dual-Core Tensilica LX6</div>
-                    <div><span style={{ color: '#8080a0' }}>Firmware OS:</span> FreeRTOS Kernel</div>
-                    <div><span style={{ color: '#8080a0' }}>Framework:</span> Arduino v2.0.6 & ESP-IDF</div>
-                    <div><span style={{ color: '#8080a0' }}>Filesystem:</span> SPIFFS (credential storage)</div>
-                    <div><span style={{ color: '#8080a0' }}>Active Fw:</span> v{queriedInfo?.fw_version || '3.2.0'} (Updated)</div>
-                    <div><span style={{ color: '#8080a0' }}>Free Heap:</span> {queriedInfo?.free_heap ? `${(queriedInfo.free_heap / 1024).toFixed(1)} KB` : '182.4 KB (Estimated)'}</div>
-                    <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#8080a0' }}>Telemetry Ports:</span> TCP/9000 (Data), UDP/5002 (Discovery)</div>
-                    <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#8080a0' }}>HTTP API Services:</span> TCP/8000 (Diagnostics, OTA, Files)</div>
-                  </div>
-                </div>
               </div>
-
-            </div>
+            )}
 
             {/* Wireless Gateway Client Devices (SoftAP Stations) */}
             <div className="glass-card ap-clients-panel" style={{ marginBottom: '20px' }}>
@@ -5115,7 +5129,7 @@ Overall Status : ${overallStatus}
                     type="text"
                     value={dbUriInput}
                     onChange={(e) => setDbUriInput(e.target.value)}
-                    placeholder="mongodb://localhost:27017/IOT_System_Manager"
+                    placeholder="mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB"
                   />
                 </div>
                 <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>

@@ -140,7 +140,10 @@ enum TestID : int {
   T_WINBOND = 6,
   T_FR = 7,
   T_SWITCH = 8,
-  T_COUNT = 9
+  T_AP = 9,
+  T_BUS = 10,
+  T_DRIVER = 11,
+  T_COUNT = 12
 };
 
 enum TestStatus : uint8_t { S_PENDING, S_PASS, S_WARN, S_FAIL, S_SKIP };
@@ -169,8 +172,16 @@ TestResult results[T_COUNT] = {
     {"GPRS", S_PENDING, "Not tested"},    {"DI", S_PENDING, "Not tested"},
     {"PSRAM", S_PENDING, "Not tested"},   {"RTC", S_PENDING, "Not tested"},
     {"Winbond", S_PENDING, "Not tested"}, {"FR", S_PENDING, "Not tested"},
-    {"Switch", S_PENDING, "Not tested"},
+    {"Switch", S_PENDING, "Not tested"},  {"AP", S_PENDING, "Not tested"},
+    {"Bus", S_PENDING, "Not tested"},     {"Driver", S_PENDING, "Not tested"},
 };
+
+void resetDiagnosticsResults() {
+  for (int i = 0; i < T_COUNT; i++) {
+    results[i].status = S_PENDING;
+    results[i].detail = "Not tested";
+  }
+}
 
 volatile bool testRunning = false;
 volatile bool pendingAll = false;
@@ -1019,6 +1030,73 @@ void testWinbond() {
 }
 
 // ============================================================
+//  TEST — Access Point (AP) Status
+// ============================================================
+void testAP() {
+  testRunning = true;
+  setResult(T_AP, S_PENDING, "Running…");
+  logLine();
+  logLn("ACCESS POINT STATUS CHECK");
+  IPAddress apIP = WiFi.softAPIP();
+  if (apIP[0] != 0) {
+    String msg = "AP Active | SSID: " + String(AP_SSID) + " | IP: " + apIP.toString();
+    logLn("[SUCCESS] " + msg);
+    setResult(T_AP, S_PASS, msg);
+  } else {
+    logLn("[ERROR] SoftAP is inactive or has invalid IP");
+    setResult(T_AP, S_FAIL, "SoftAP Inactive");
+  }
+  testRunning = false;
+}
+
+// ============================================================
+//  TEST — System Bus
+// ============================================================
+void testBus() {
+  testRunning = true;
+  setResult(T_BUS, S_PENDING, "Running…");
+  logLine();
+  logLn("SYSTEM BUS (I2C/SPI) VERIFICATION");
+  
+  bool i2cOk = rtc.isrunning();
+  winbondInit();
+  bool spiOk = runWinbondTest();
+  
+  if (i2cOk && spiOk) {
+    logLn("[SUCCESS] I2C and SPI buses are operational.");
+    setResult(T_BUS, S_PASS, "I2C (RTC) & SPI (Winbond) OK");
+  } else {
+    String error = "Bus Fault:";
+    if (!i2cOk) error += " I2C RTC Fault;";
+    if (!spiOk) error += " SPI Flash Fault;";
+    logLn("[ERROR] " + error);
+    setResult(T_BUS, S_FAIL, error);
+  }
+  testRunning = false;
+}
+
+// ============================================================
+//  TEST — Peripheral Drivers
+// ============================================================
+void testDriver() {
+  testRunning = true;
+  setResult(T_DRIVER, S_PENDING, "Running…");
+  logLine();
+  logLn("PERIPHERAL DRIVERS LOAD CHECK");
+  
+  bool spiffsOk = SPIFFS.begin(false);
+  
+  if (spiffsOk) {
+    logLn("[SUCCESS] Drivers initialized: SPIFFS mounted, Serial active.");
+    setResult(T_DRIVER, S_PASS, "SPIFFS & UART Drivers OK");
+  } else {
+    logLn("[ERROR] Driver failed to load: SPIFFS mount error.");
+    setResult(T_DRIVER, S_FAIL, "SPIFFS Driver Mount Fault");
+  }
+  testRunning = false;
+}
+
+// ============================================================
 //  RUN ALL / DISPATCH
 // ============================================================
 void runAllTests() {
@@ -1035,6 +1113,9 @@ void runAllTests() {
   testRTC();
   testWinbond();
   testFR();
+  testAP();
+  testBus();
+  testDriver();
   logLine();
   logLn("=== ALL TESTS COMPLETE ===");
   logLine();
@@ -1068,6 +1149,15 @@ void dispatchTest(int id) {
     break;
   case T_SWITCH:
     testSwitch();
+    break;
+  case T_AP:
+    testAP();
+    break;
+  case T_BUS:
+    testBus();
+    break;
+  case T_DRIVER:
+    testDriver();
     break;
   default:
     break;
@@ -1284,6 +1374,12 @@ void onRun() {
     pendingTestID = T_FR;
   else if (t == "switch")
     pendingTestID = T_SWITCH;
+  else if (t == "ap")
+    pendingTestID = T_AP;
+  else if (t == "bus")
+    pendingTestID = T_BUS;
+  else if (t == "driver")
+    pendingTestID = T_DRIVER;
   else {
     server.send(400, "application/json", "{\"error\":\"unknown test\"}");
     return;
@@ -1461,7 +1557,9 @@ void sendBootSuccessPayload() {
   diagJson += "\"psram\":" + testStatusJson(T_PSRAM) + ",";
   diagJson += "\"switch\":" + testStatusJson(T_SWITCH) + ",";
   diagJson += "\"fr\":" + testStatusJson(T_FR) + ",";
-  diagJson += "\"ap\":true,\"bus\":true,\"driver\":true,";
+  diagJson += "\"ap\":" + testStatusJson(T_AP) + ",";
+  diagJson += "\"bus\":" + testStatusJson(T_BUS) + ",";
+  diagJson += "\"driver\":" + testStatusJson(T_DRIVER) + ",";
   diagJson += "\"di_pins\":[";
   for (int i = 0; i < DI_COUNT; i++) {
     if (i)
@@ -2190,6 +2288,12 @@ void processCommand(String cmd) {
       pendingTestID = T_FR;
     } else if (module == "PSRAM") {
       pendingTestID = T_PSRAM;
+    } else if (module == "AP") {
+      pendingTestID = T_AP;
+    } else if (module == "BUS") {
+      pendingTestID = T_BUS;
+    } else if (module == "DRIVER") {
+      pendingTestID = T_DRIVER;
     }
     diagRunning = false;
     sendBootSuccessPayload();
@@ -2399,6 +2503,7 @@ void handleHaltState() {
                electronServerIP.toString().c_str());
         if (tcpClient.connect(electronServerIP, 9000)) {
           logLn("[TCP] Connected to Electron in HALT mode!");
+          resetDiagnosticsResults();
           sendBootSuccessPayload(); // Sync diagnostics with MERN app on connect
           sendControlStatus();
           lastFail = 0;
@@ -2474,6 +2579,7 @@ void handleRunningState() {
              electronServerIP.toString().c_str());
       if (tcpClient.connect(electronServerIP, 9000)) {
         logLn("[TCP] Connected to Electron in RUNNING mode!");
+        resetDiagnosticsResults();
         sendBootSuccessPayload(); // Sync diagnostics with MERN app on connect
         sendControlStatus();
       }

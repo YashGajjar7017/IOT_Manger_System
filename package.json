@@ -1,6 +1,6 @@
 {
   "name": "iot-monitor-system",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "description": "IoT Monitor Gateway MERN Desktop Dashboard",
   "main": "main.js",
   "scripts": {

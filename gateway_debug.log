@@ -15037,3 +15037,46 @@
 [7/7/2026, 11:45:46 AM] [TX TCP] Send: PING
 [7/7/2026, 11:45:49 AM] [TX TCP] Send: PING
 [7/7/2026, 11:45:52 AM] [TX TCP] Send: PING
+[7/7/2026, 12:24:26 PM] [CACHE] ⚡ Loaded 2 device(s) from disk cache — dashboard ready instantly.
+[7/7/2026, 12:25:02 PM] [DATABASE] Reconnect request received for: mongodb://localhost:27017/IOT_System_Manager/IOT_System_Manager
+[7/7/2026, 12:25:02 PM] [WORKER] Database reconnected successfully.
+[7/7/2026, 12:25:06 PM] [DATABASE] MongoDB reconnected successfully.
+[7/7/2026, 12:25:10 PM] [DATABASE] Reconnect request received for: mongodb://localhost:27017/IOT_System_Manager/IOT_System_Manager
+[7/7/2026, 12:25:10 PM] [WORKER] Database reconnected successfully.
+[7/7/2026, 12:25:13 PM] [DATABASE] MongoDB reconnected successfully.
+[7/7/2026, 12:25:28 PM] [OTA] Selected firmware binary: PM_SURYAGHAR_V59.ino.bin (1392 KB)
+[7/7/2026, 12:25:34 PM] [AUTO CONNECT] Auto-connecting to discovered gateway at 192.168.0.1:9000...
+[7/7/2026, 12:25:34 PM] [TCP SERVER] Server is already running and listening on port 9000. Awaiting ESP32 connection...
+[7/7/2026, 12:25:34 PM] Gateway interface online: TCP -> 192.168.0.1:63752
+[7/7/2026, 12:25:34 PM] [GUI] Dynamically updated WiFi/OTA target IP address to: 192.168.0.1
+[7/7/2026, 12:25:34 PM] [TCP SERVER] ESP32 client connected from 192.168.0.1:63752
+[7/7/2026, 12:25:34 PM] [SPIFFS] Querying storage details from http://192.168.0.1:500/api/storage...
+[7/7/2026, 12:25:34 PM] [SPIFFS ERROR] Failed to fetch storage: HTTP status 404
+[7/7/2026, 12:25:34 PM] [SPIFFS ERROR] HTTP query failed with status code 404
+[7/7/2026, 12:25:34 PM] [SYS] Boot diagnostics report sync complete.
+[7/7/2026, 12:25:34 PM] [SYS] Synced board: Rate: 1500ms, R1: OFF, R2: OFF
+[7/7/2026, 12:25:35 PM] [TX TCP] Send: GET_INFO
+[7/7/2026, 12:25:37 PM] [TX TCP] Send: PING
+[7/7/2026, 12:25:40 PM] Connection error: TCP Socket Error: read ECONNRESET
+[7/7/2026, 12:25:40 PM] Gateway interface closed.
+[7/7/2026, 12:25:40 PM] [TCP SERVER ERROR] read ECONNRESET
+[7/7/2026, 12:25:40 PM] [TCP SERVER] ESP32 client socket closed.
+[7/7/2026, 12:25:43 PM] [OTA] Reading local binary file: PM_SURYAGHAR_V59.ino.bin...
+[7/7/2026, 12:25:43 PM] [OTA] Target Flashing Partition: ESP32 App Partition (Target app0/app1 dynamic switch)
+[7/7/2026, 12:25:43 PM] [OTA] Source File (Where bin is loaded from): A:\Coding\IOT_Build\PM_SURYAGHAR_V59.ino.bin
+[7/7/2026, 12:25:43 PM] [OTA] Target Flashing Destination: http://192.168.0.1:500/update?target=esp32
+[7/7/2026, 12:25:43 PM] [OTA] Starting optimized chunked buffer upload to ESP32...
+[7/7/2026, 12:25:43 PM] [OTA] Source File (Where bin is loaded from): A:\Coding\IOT_Build\PM_SURYAGHAR_V59.ino.bin
+[7/7/2026, 12:25:50 PM] [OTA] SUCCESS: Firmware flash verification succeeded.
+[7/7/2026, 12:25:53 PM] [OTA] Upgrade completed! Router reboot triggered.
+[7/7/2026, 12:27:11 PM] [GUI] Successfully exported diagnostics check report to: C:\Users\Admin\Documents\gateway_debug_console.txt
+[7/7/2026, 12:40:06 PM] [WORKER] Database connection initialised inside worker thread.
+[7/7/2026, 12:40:06 PM] [CACHE] ⚡ Loaded 2 device(s) from disk cache — dashboard ready instantly.
+[7/7/2026, 12:40:30 PM] [WORKER] Data processing worker thread started.
+[7/7/2026, 12:40:30 PM] [CACHE] ⚡ Loaded 2 device(s) from disk cache — dashboard ready instantly.
+[7/7/2026, 12:40:30 PM] [WORKER] Database connection initialised inside worker thread.
+[7/7/2026, 12:50:11 PM] [DATABASE] Reconnect request received for: mongodb://localhost:27017/IOT_System_Manager/IOT_System_Manager
+[7/7/2026, 12:50:11 PM] [WORKER] Database reconnected successfully.
+[7/7/2026, 12:50:14 PM] [DATABASE] MongoDB reconnected successfully.
+[7/7/2026, 1:20:32 PM] [CACHE] ⚡ Loaded 2 device(s) from disk cache — dashboard ready instantly.
+[7/7/2026, 1:20:35 PM] [WORKER] DB connect failed (using memory fallback): Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-whitelist/

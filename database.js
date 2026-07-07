@@ -23,7 +23,7 @@ let memoryHistoryBuffer = [];
 // Initialize Database Connection
 /*
 function connectDatabase() {
-  const mongoURI = 'mongodb://localhost:27017/IOT_System_Manager';
+  const mongoURI = 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB';
   console.log(`[DATABASE] Connecting to MongoDB at ${mongoURI}...`);
 
   mongoose.connect(mongoURI, {
@@ -66,7 +66,7 @@ function sanitizeMongoURI(uri) {
 }
 
 function connectDatabase(customURI) {
-  const rawURI = customURI || 'mongodb://localhost:27017/IOT_System_Manager';
+  const rawURI = customURI || 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB';
   const mongoURI = sanitizeMongoURI(rawURI);
   console.log(`[DATABASE] Connecting to MongoDB at ${mongoURI}...`);
 
