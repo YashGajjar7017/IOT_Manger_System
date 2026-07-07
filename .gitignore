@@ -6,3 +6,4 @@ node_modules
 /installer-release
 /frontend-build
 /iot-monitor-release
+/firmware/firmware/build

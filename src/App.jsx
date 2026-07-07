@@ -137,7 +137,7 @@ export default function App() {
 
   // OTA Updates State
   const [otaIp, setOtaIp] = useState('192.168.0.1');
-  const [otaPort, setOtaPort] = useState('8000');
+  const [otaPort, setOtaPort] = useState('500');
   const [otaAddress, setOtaAddress] = useState(''); // Optional: flash to specific address offset (standard mode)
   const [firmwareUrl, setFirmwareUrl] = useState('');
   const [otaFile, setOtaFile] = useState(null);
@@ -155,6 +155,14 @@ export default function App() {
   const [isScanningNetwork, setIsScanningNetwork] = useState(false);
   const [discoveredGateways, setDiscoveredGateways] = useState([]);
   const [nearbyHotspots, setNearbyHotspots] = useState([]);
+  const [connectionMode, setConnectionMode] = useState('ap'); // 'ap' or 'router'
+  const [isBatchTesting, setIsBatchTesting] = useState(false);
+
+  // Refs to allow reading latest state inside async loop without closure issues
+  const connectionRef = useRef(connection);
+  const diagnosticsRef = useRef(diagnostics);
+  useEffect(() => { connectionRef.current = connection; }, [connection]);
+  useEffect(() => { diagnosticsRef.current = diagnostics; }, [diagnostics]);
 
   // Phase 3 Certificate Provisioning States
   const [imeiProvisionInput, setImeiProvisionInput] = useState('');
@@ -175,8 +183,8 @@ export default function App() {
   const [isFlashingAdvanced, setIsFlashingAdvanced] = useState(false);
 
   // Dynamic Theme, Font, and GitHub Integration States
-  // Default to the 1st theme 'mojang-studios' on startup
-  const [currentTheme, setCurrentTheme] = useState(() => localStorage.getItem('theme') || 'mojang-studios');
+  // Default to the 1st theme 'quantum-indigo' on startup
+  const [currentTheme, setCurrentTheme] = useState(() => localStorage.getItem('theme') || 'quantum-indigo');
   const [currentFont, setCurrentFont] = useState(() => localStorage.getItem('font') || 'outfit');
   const [gitHubUser, setGitHubUser] = useState(() => {
     const saved = localStorage.getItem('github_user');
@@ -358,7 +366,7 @@ export default function App() {
 
       if (target) {
         // Prevent the titlebar drag-region from absorbing this mousedown
-        e.stopPropagation();
+        // e.stopPropagation(); // Disabled to allow standard React event delegation and focus.
 
         // Tell Electron main process to grant OS keyboard focus to the window
         if (ipcRenderer) {
@@ -631,6 +639,12 @@ export default function App() {
       } else if (payload.status === 'WIFI_UPDATED') {
         setWifiRouterSsid(payload.ssid);
         addLogLine(`[SYS] WiFi credentials updated on gateway. SSID is now: ${payload.ssid}`, 'success');
+      } else if (payload.status === 'ok' && payload.msg && payload.msg.includes('Modem baud rate')) {
+        addLogLine(`[GPRS Speed Update] ${payload.msg}. Response: ${payload.modem_resp}`, 'success');
+        alert(`GPRS Speed Update:\n${payload.msg}\nModem Response: ${payload.modem_resp}`);
+      } else if (payload.status === 'warn' && payload.msg && payload.msg.includes('modem')) {
+        addLogLine(`[GPRS Speed Update Warning] ${payload.msg}. Response: ${payload.modem_resp}`, 'warning');
+        alert(`GPRS Speed Update Warning:\n${payload.msg}\nModem Response: ${payload.modem_resp}`);
       } else if (payload.status === 'CERT_ADDED') {
         if (payload.certificates) {
           setCertificates(payload.certificates);
@@ -1402,6 +1416,73 @@ Overall Status : ${overallStatus}
     ipcRenderer.send('connect-tcp', { ip: gateway.ip, port: '9000', pcbNumber });
   };
 
+  const runBatchTesting = async () => {
+    if (discoveredGateways.length === 0) {
+      alert('No discovered devices to batch test. Scan network first.');
+      return;
+    }
+
+    setIsBatchTesting(true);
+    addLogLine(`[BATCH] Starting sequential test on ${discoveredGateways.length} discovered device(s)...`, 'system');
+
+    for (let i = 0; i < discoveredGateways.length; i++) {
+      const gw = discoveredGateways[i];
+      addLogLine(`[BATCH] Connecting to Device ${i + 1}/${discoveredGateways.length} at ${gw.ip}:9000...`, 'info');
+
+      // Clear diagnostics for this run so we can detect completion
+      resetDiagnostics();
+
+      // Connect to the device
+      ipcRenderer.send('connect-tcp', { ip: gw.ip, port: '9000', pcbNumber });
+
+      // Wait for connection to be active (timeout after 5 seconds)
+      let connected = false;
+      for (let attempt = 0; attempt < 50; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (connectionRef.current.type === 'tcp' && connectionRef.current.target && connectionRef.current.target.startsWith(gw.ip)) {
+          connected = true;
+          break;
+        }
+      }
+
+      if (!connected) {
+        addLogLine(`[BATCH ERROR] Failed to connect to device ${gw.ip}. Skipping...`, 'error');
+        continue;
+      }
+
+      // Connection succeeded! Trigger diagnostics.
+      addLogLine(`[BATCH] Device connected. Triggering selfcheck...`, 'info');
+      ipcRenderer.send('send-tcp-command', 'RE_DIAGNOSE');
+
+      // Wait for diagnostics results (BOOT_SUCCESS payload) or timeout after 15 seconds
+      let testComplete = false;
+      for (let sec = 0; sec < 150; sec++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const diags = diagnosticsRef.current;
+        if (diags.rs232 !== 'WAITING' && diags.rs232 !== 'TESTING' &&
+            diags.rs485 !== 'WAITING' && diags.rs485 !== 'TESTING' &&
+            diags.gprs !== 'WAITING' && diags.gprs !== 'TESTING') {
+          testComplete = true;
+          break;
+        }
+      }
+
+      if (testComplete) {
+        addLogLine(`[BATCH] Device at ${gw.ip} tested successfully!`, 'success');
+      } else {
+        addLogLine(`[BATCH WARNING] Device at ${gw.ip} test timed out. Proceeding anyway.`, 'warning');
+      }
+
+      // Disconnect before going to next device
+      ipcRenderer.send('disconnect-active');
+      await new Promise(resolve => setTimeout(resolve, 1000)); // wait for socket cleanup
+    }
+
+    setIsBatchTesting(false);
+    addLogLine('[BATCH] Sequential batch testing completed!', 'success');
+    alert('Batch testing complete! Diagnostic logs have been synced to the database.');
+  };
+
   const queryDeviceDiagnostics = async () => {
     setIsQuerying(true);
     setQueryError('');
@@ -1563,6 +1644,7 @@ Overall Status : ${overallStatus}
       defaultBaudRate: parseInt(defaultBaudRateInput) || 115200
     };
     ipcRenderer.send('save-app-config', config);
+    setOtaPort(String(config.otaPort));
     alert('Settings saved successfully. Restart the application for port updates to take effect.');
   };
 
@@ -2123,6 +2205,16 @@ Overall Status : ${overallStatus}
               <span>Debug Console</span>
             </button>
 
+            <button className={`nav-item ${activeTab === 'page-circuit' ? 'active' : ''}`} onClick={() => setActiveTab('page-circuit')}>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="2" y="2" width="20" height="20" rx="2" ry="2" />
+                <line x1="6" y1="6" x2="6" y2="18" />
+                <line x1="18" y1="6" x2="18" y2="18" />
+                <line x1="6" y1="12" x2="18" y2="12" />
+              </svg>
+              <span>Circuit & Support</span>
+            </button>
+
             <button className={`nav-item ${activeTab === 'page-hardware' ? 'active' : ''}`} onClick={() => setActiveTab('page-hardware')}>
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
@@ -2199,20 +2291,52 @@ Overall Status : ${overallStatus}
 
                     {activeConnTab === 'tab-wifi' ? (
                       <div className="tab-content active">
-                        <div className="input-group">
-                          <label>Gateway IP Address</label>
-                          <input type="text" value={wifiIp} onChange={(e) => setWifiIp(e.target.value)} />
+                        {/* Scope Toggle Switch */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', padding: '8px 12px', background: 'rgba(255, 0, 127, 0.04)', border: '1px solid rgba(255, 0, 127, 0.12)', borderRadius: '6px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--accent-pink)', textTransform: 'uppercase' }}>
+                            {connectionMode === 'ap' ? '📶 Direct ESP32 AP Mode' : '🌐 Router / WiFi Scope'}
+                          </span>
+                          <label className="switch-toggle" style={{ margin: 0 }}>
+                            <input 
+                              type="checkbox" 
+                              checked={connectionMode === 'router'} 
+                              onChange={(e) => {
+                                const mode = e.target.checked ? 'router' : 'ap';
+                                setConnectionMode(mode);
+                                if (mode === 'ap') {
+                                  setWifiIp('192.168.0.1'); // Fixed default SoftAP IP
+                                } else {
+                                  setWifiIp(''); // Clear for router scan
+                                }
+                              }} 
+                            />
+                            <span className="switch-slider"></span>
+                          </label>
                         </div>
-                        <div className="input-group">
-                          <label>Telemetry Socket Port</label>
-                          <input type="text" value={wifiPort} onChange={(e) => setWifiPort(e.target.value)} />
-                        </div>
-                        <div className="button-row" style={{ display: 'flex', gap: '10px' }}>
-                          <button className="btn btn-primary" style={{ flex: 1 }} onClick={connectWifi}>Open Socket (9000)</button>
-                          <button className="btn btn-accent" style={{ flex: 1 }} onClick={scanNetworkForGateway} disabled={isScanningNetwork}>
-                            {isScanningNetwork ? 'Scanning...' : 'Auto-Detect'}
-                          </button>
-                        </div>
+
+                        {connectionMode === 'ap' ? (
+                          <>
+                            <div className="input-group">
+                              <label>Gateway IP Address</label>
+                              <input type="text" value={wifiIp} onChange={(e) => setWifiIp(e.target.value)} />
+                            </div>
+                            <div className="input-group">
+                              <label>Telemetry Socket Port</label>
+                              <input type="text" value={wifiPort} onChange={(e) => setWifiPort(e.target.value)} />
+                            </div>
+                            <div className="button-row" style={{ display: 'flex', gap: '10px' }}>
+                              <button className="btn btn-primary" style={{ flex: 1 }} onClick={connectWifi}>Open Socket (9000)</button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="button-row" style={{ display: 'flex', gap: '10px' }}>
+                              <button className="btn btn-accent" style={{ flex: 1 }} onClick={scanNetworkForGateway} disabled={isScanningNetwork}>
+                                {isScanningNetwork ? 'Scanning...' : '🔍 Scan network gateways'}
+                              </button>
+                            </div>
+                          </>
+                        )}
 
                         {nearbyHotspots.length > 0 && (
                           <div className="nearby-hotspots-list" style={{ marginTop: '15px', padding: '10px', background: 'rgba(0,255,200,0.03)', borderRadius: '8px', border: '1px solid rgba(0,255,200,0.1)' }}>
@@ -2228,7 +2352,7 @@ Overall Status : ${overallStatus}
                           </div>
                         )}
 
-                        {discoveredGateways.length > 0 && (
+                        {connectionMode === 'router' && discoveredGateways.length > 0 && (
                           <div className="discovered-gateways-list" style={{ marginTop: '15px', padding: '10px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
                             <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--accent-pink)', display: 'block', marginBottom: '5px' }}>Discovered Devices:</span>
                             {discoveredGateways.map((gw, index) => (
@@ -2237,6 +2361,9 @@ Overall Status : ${overallStatus}
                                 <button className="btn btn-secondary small" style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px' }} onClick={() => connectDiscoveredGateway(gw)}>Connect</button>
                               </div>
                             ))}
+                            <button className="btn btn-accent" style={{ width: '100%', marginTop: '10px', padding: '6px 0', fontSize: '11px', height: '30px' }} onClick={runBatchTesting} disabled={isBatchTesting}>
+                              {isBatchTesting ? 'Testing Batch...' : '🧪 Run Batch Test All'}
+                            </button>
                           </div>
                         )}
                       </div>
@@ -4265,6 +4392,180 @@ Overall Status : ${overallStatus}
                 ))}
                 <div ref={consoleEndRef}></div>
               </div>
+            </div>
+          </section>
+
+          {/* ================= VIEW: CIRCUIT SCHEMATICS & SUPPORT ================= */}
+          <section id="page-circuit" className={`page-view ${activeTab === 'page-circuit' ? 'active' : ''}`}>
+            <header className="view-header">
+              <div>
+                <h1>Circuit Schematics & Support Help Desk</h1>
+                <p>Verify physical pinouts, debugger connections, and access common troubleshooting guides</p>
+              </div>
+            </header>
+
+            <div className="hardware-spec-grid" style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '20px' }}>
+              
+              {/* Wiring schematic layout visualizer */}
+              <div className="glass-card" style={{ padding: '20px' }}>
+                <h3><span className="icon">🔌</span> ESP32 & Debugger Wiring Interface</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                  Live visual flow of the ESP32 Gateway connecting to the serial programmer / debugger module.
+                </p>
+                
+                {/* Visual block diagram */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#030107', padding: '25px', borderRadius: '8px', border: '1px solid var(--glass-border)', position: 'relative' }}>
+                  
+                  {/* Debugger Block */}
+                  <div style={{ width: '130px', padding: '15px', background: 'linear-gradient(135deg, rgba(112, 0, 255, 0.1) 0%, rgba(0, 198, 255, 0.1) 100%)', border: '1px solid #00c6ff', borderRadius: '8px', textAlign: 'center', boxShadow: '0 0 15px rgba(0, 198, 255, 0.15)' }}>
+                    <div style={{ fontSize: '11px', color: '#00c6ff', fontWeight: 'bold', textTransform: 'uppercase' }}>Debugger / Programmer</div>
+                    <div style={{ fontSize: '18px', margin: '8px 0' }}>🖲️</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'monospace' }}>CH340 / CP2102</div>
+                    <div style={{ borderTop: '1px dashed rgba(255, 255, 255, 0.1)', marginTop: '8px', paddingTop: '8px', fontSize: '9px', textAlign: 'left', fontFamily: 'monospace', lineHeight: '1.4' }}>
+                      • TXD (OUT)<br/>
+                      • RXD (IN)<br/>
+                      • DTR (RST)<br/>
+                      • RTS (BOOT)<br/>
+                      • 3V3 / GND
+                    </div>
+                  </div>
+
+                  {/* Wiring Lines */}
+                  <div style={{ flex: 1, height: '140px', position: 'relative', margin: '0 15px' }}>
+                    {/* Line TX -> RX */}
+                    <div style={{ position: 'absolute', top: '15px', left: 0, right: 0, height: '2px', background: 'linear-gradient(to right, #00c6ff, #00ff88)', boxShadow: '0 0 6px #00ff88' }}>
+                      <span style={{ position: 'absolute', top: '-10px', left: '40%', fontSize: '8px', color: '#00ff88', fontFamily: 'monospace' }}>TXD ➔ RX0 (GPIO3)</span>
+                    </div>
+                    {/* Line RX -> TX */}
+                    <div style={{ position: 'absolute', top: '40px', left: 0, right: 0, height: '2px', background: 'linear-gradient(to left, #ff007f, #00c6ff)', boxShadow: '0 0 6px #ff007f' }}>
+                      <span style={{ position: 'absolute', top: '-10px', left: '40%', fontSize: '8px', color: '#ff007f', fontFamily: 'monospace' }}>RXD ⮠ TX0 (GPIO1)</span>
+                    </div>
+                    {/* Line DTR -> RST (EN) */}
+                    <div style={{ position: 'absolute', top: '65px', left: 0, right: 0, height: '2px', background: 'linear-gradient(to right, #7000ff, #fff)', opacity: 0.8 }}>
+                      <span style={{ position: 'absolute', top: '-10px', left: '40%', fontSize: '8px', color: '#b070ff', fontFamily: 'monospace' }}>DTR ➔ EN (CHIP_PU)</span>
+                    </div>
+                    {/* Line RTS -> BOOT */}
+                    <div style={{ position: 'absolute', top: '90px', left: 0, right: 0, height: '2px', background: 'linear-gradient(to right, #7000ff, #fff)', opacity: 0.8 }}>
+                      <span style={{ position: 'absolute', top: '-10px', left: '40%', fontSize: '8px', color: '#b070ff', fontFamily: 'monospace' }}>RTS ➔ BOOT (GPIO0)</span>
+                    </div>
+                    {/* Line Power */}
+                    <div style={{ position: 'absolute', top: '115px', left: 0, right: 0, height: '2px', background: '#e11d48', opacity: 0.5 }}>
+                      <span style={{ position: 'absolute', top: '-10px', left: '45%', fontSize: '8px', color: '#ff4d6a', fontFamily: 'monospace' }}>3V3 & GND Links</span>
+                    </div>
+                  </div>
+
+                  {/* ESP32 Block */}
+                  <div style={{ width: '130px', padding: '15px', background: 'linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(0, 198, 255, 0.1) 100%)', border: '1px solid #00ff88', borderRadius: '8px', textAlign: 'center', boxShadow: '0 0 15px rgba(0, 255, 136, 0.15)' }}>
+                    <div style={{ fontSize: '11px', color: '#00ff88', fontWeight: 'bold', textTransform: 'uppercase' }}>ESP32-S3 Board</div>
+                    <div style={{ fontSize: '18px', margin: '8px 0' }}>📟</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'monospace' }}>Dual-Core LX7</div>
+                    <div style={{ borderTop: '1px dashed rgba(255, 255, 255, 0.1)', marginTop: '8px', paddingTop: '8px', fontSize: '9px', textAlign: 'left', fontFamily: 'monospace', lineHeight: '1.4' }}>
+                      • RX0 (GPIO3)<br/>
+                      • TX0 (GPIO1)<br/>
+                      • EN Pin (Reset)<br/>
+                      • IO0 (Boot Select)<br/>
+                      • 3.3V / GND
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Pin configurations table */}
+                <h4 style={{ marginTop: '25px', color: '#fff', fontSize: '13px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '8px' }}>📌 ESP32 Peripheral GPIO Reference Table</h4>
+                <div style={{ overflowX: 'auto', marginTop: '10px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left', fontFamily: 'monospace' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--glass-border)', color: '#8080a0' }}>
+                        <th style={{ padding: '6px' }}>Interface / Peripheral</th>
+                        <th style={{ padding: '6px' }}>GPIO Pin</th>
+                        <th style={{ padding: '6px' }}>Logic State / Mode Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.02)' }}>
+                        <td style={{ padding: '6px', color: '#00ffcc', fontWeight: 'bold' }}>Mode Select A0_1</td>
+                        <td style={{ padding: '6px' }}>GPIO 36</td>
+                        <td style={{ padding: '6px' }}>HIGH: RS232 Mode, LOW: RS485 Mode</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.02)' }}>
+                        <td style={{ padding: '6px', color: '#00ffcc', fontWeight: 'bold' }}>Mode Select A1_1</td>
+                        <td style={{ padding: '6px' }}>GPIO 37</td>
+                        <td style={{ padding: '6px' }}>HIGH: RS232 Mode, LOW: RS485 Mode</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.02)' }}>
+                        <td style={{ padding: '6px', color: '#00ffcc', fontWeight: 'bold' }}>Tester Switch (SW)</td>
+                        <td style={{ padding: '6px' }}>GPIO 38</td>
+                        <td style={{ padding: '6px' }}>Input Pull-Up (Active LOW) self-diagnostics button</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.02)' }}>
+                        <td style={{ padding: '6px', color: '#ffb03b', fontWeight: 'bold' }}>GSM Enable / PWRKEY</td>
+                        <td style={{ padding: '6px' }}>GPIO 21 / 5</td>
+                        <td style={{ padding: '6px' }}>GSM power supply enable (EN) and pulse trigger key</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.02)' }}>
+                        <td style={{ padding: '6px', color: '#9d4edd', fontWeight: 'bold' }}>SPI Flash Winbond CS</td>
+                        <td style={{ padding: '6px' }}>GPIO 10</td>
+                        <td style={{ padding: '6px' }}>Winbond SPI Flash Chip Select line</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.02)' }}>
+                        <td style={{ padding: '6px', color: '#b070ff', fontWeight: 'bold' }}>I2C RTC SDA / SCL</td>
+                        <td style={{ padding: '6px' }}>GPIO 33 / 32</td>
+                        <td style={{ padding: '6px' }}>DS3231 RTC Module channels (Fallback: 22 / 23)</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.02)' }}>
+                        <td style={{ padding: '6px', color: '#00e676', fontWeight: 'bold' }}>Digital Inputs (1-4)</td>
+                        <td style={{ padding: '6px' }}>GPIO 39-42</td>
+                        <td style={{ padding: '6px' }}>Active-HIGH Optocoupler inputs (DI1, DI2, DI3, DI4)</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Help Desk troubleshooting area */}
+              <div className="glass-card" style={{ padding: '20px' }}>
+                <h3><span className="icon">🙋</span> Help Desk Support & FAQs</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                  Resolve common MERN system configuration issues and firmware diagnostics errors.
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  
+                  <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: '6px', textAlign: 'left' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#ff7300' }}>⚠️ MongoDB Invalid Namespace Error</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '5px', lineHeight: '1.4' }}>
+                      <strong>Cause:</strong> Specifying duplicate segments in the URI (e.g. `/dbname/dbname`).<br/>
+                      <strong>Solution:</strong> The system automatically sanitizes namespaces to a single segment (e.g. `/dbname`). Check the MongoDB URL configuration inside Settings.
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: '6px', textAlign: 'left' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#ff7300' }}>🔌 COM Port Not Listing or Offline</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '5px', lineHeight: '1.4' }}>
+                      <strong>Cause:</strong> Missing CH340 / CP210x serial drivers on the PC, or loose USB-C connections.<br/>
+                      <strong>Solution:</strong> Double-check the cable, verify standard serial drivers are installed, and click the refresh (↺) button to re-scan hardware ports.
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: '6px', textAlign: 'left' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#ff7300' }}>⚡ GPRS speed set 1 Mbps Mismatch</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '5px', lineHeight: '1.4' }}>
+                      <strong>Cause:</strong> Cellular modem failed to store `AT+IPR=1000000` or returned an error response.<br/>
+                      <strong>Solution:</strong> Send `GPRS_SPEED` via the dashboard to view detailed TX/RX command logs and verify cellular connection signals.
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: '6px', textAlign: 'left' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#ff7300' }}>🌐 Wireless OTA Port 500 Failure</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '5px', lineHeight: '1.4' }}>
+                      <strong>Cause:</strong> OS restricted ports below 1024 to Administrator processes.<br/>
+                      <strong>Solution:</strong> The desktop app fails over to local port 5000 automatically. The ESP32 listens on port 500, and is triggered by the dashboard. Ensure the firewall is open for local UDP/TCP traffic.
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
             </div>
           </section>
 

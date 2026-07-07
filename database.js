@@ -41,25 +41,52 @@ function connectDatabase() {
 }
 */
 
+function sanitizeMongoURI(uri) {
+  if (!uri) return uri;
+  const protocolMatch = uri.match(/^mongodb(?:\+srv)?:\/\//i);
+  if (!protocolMatch) return uri;
+  
+  const protocol = protocolMatch[0];
+  const rest = uri.slice(protocol.length);
+  const firstSlashIdx = rest.indexOf('/');
+  if (firstSlashIdx === -1) return uri;
+  
+  const hostPart = rest.slice(0, firstSlashIdx);
+  const pathPart = rest.slice(firstSlashIdx);
+  const queryIdx = pathPart.indexOf('?');
+  let pathOnly = queryIdx !== -1 ? pathPart.slice(0, queryIdx) : pathPart;
+  const queryPart = queryIdx !== -1 ? pathPart.slice(queryIdx) : '';
+  
+  const segments = pathOnly.split('/').filter(s => s.length > 0);
+  if (segments.length > 1) {
+    pathOnly = '/' + segments[0];
+  }
+  
+  return protocol + hostPart + pathOnly + queryPart;
+}
+
 function connectDatabase(customURI) {
-  const mongoURI = customURI || 'mongodb://localhost:27017/IOT_System_Manager';
+  const rawURI = customURI || 'mongodb://localhost:27017/IOT_System_Manager';
+  const mongoURI = sanitizeMongoURI(rawURI);
   console.log(`[DATABASE] Connecting to MongoDB at ${mongoURI}...`);
 
   if (mongoose.connection.readyState !== 0) {
     mongoose.disconnect();
   }
 
-  mongoose.connect(mongoURI, {
+  return mongoose.connect(mongoURI, {
     serverSelectionTimeoutMS: 3000
   })
     .then(() => {
       mongodbConnected = true;
       console.log('[DATABASE] MongoDB connection established successfully.');
+      return mongoose.connection;
     })
     .catch((err) => {
       mongodbConnected = false;
       console.warn('[DATABASE] MongoDB connection failed. Falling back to In-Memory Logging.');
       console.warn(`[DATABASE] Error details: ${err.message}`);
+      throw err;
     });
 }
 
@@ -118,7 +145,13 @@ const DeviceIdentificationSchema = new mongoose.Schema({
   password: { type: String, default: '' },
   routerSSID: { type: String, default: '' },
   routerPassword: { type: String, default: '' },
-  telemetryInterval: { type: Number, default: 1500 }
+  telemetryInterval: { type: Number, default: 1500 },
+  rs232Status: { type: String, default: 'WAITING' },
+  rs485Status: { type: String, default: 'WAITING' },
+  gprsStatus: { type: String, default: 'WAITING' },
+  rs232Log: { type: String, default: '' },
+  rs485Log: { type: String, default: '' },
+  gprsLog: { type: String, default: '' }
 });
 
 const DeviceIdentificationModel = mongoose.model('DeviceIdentification', DeviceIdentificationSchema);
@@ -234,6 +267,14 @@ async function registerOrUpdateDevice(data) {
         doc.routerSSID = data.routerSSID !== undefined ? data.routerSSID : doc.routerSSID;
         doc.routerPassword = data.routerPassword !== undefined ? data.routerPassword : doc.routerPassword;
         doc.telemetryInterval = data.telemetryInterval !== undefined ? data.telemetryInterval : doc.telemetryInterval;
+        
+        doc.rs232Status = data.rs232Status !== undefined ? data.rs232Status : doc.rs232Status;
+        doc.rs485Status = data.rs485Status !== undefined ? data.rs485Status : doc.rs485Status;
+        doc.gprsStatus = data.gprsStatus !== undefined ? data.gprsStatus : doc.gprsStatus;
+        doc.rs232Log = data.rs232Log !== undefined ? data.rs232Log : doc.rs232Log;
+        doc.rs485Log = data.rs485Log !== undefined ? data.rs485Log : doc.rs485Log;
+        doc.gprsLog = data.gprsLog !== undefined ? data.gprsLog : doc.gprsLog;
+        
         await doc.save();
         console.log(`[DATABASE] Device updated for IMEI: ${data.imei}`);
         return doc;
@@ -247,7 +288,13 @@ async function registerOrUpdateDevice(data) {
           password: data.password || 'admin_secure_gate',
           routerSSID: data.routerSSID || '',
           routerPassword: data.routerPassword || '',
-          telemetryInterval: data.telemetryInterval || 1500
+          telemetryInterval: data.telemetryInterval || 1500,
+          rs232Status: data.rs232Status || 'WAITING',
+          rs485Status: data.rs485Status || 'WAITING',
+          gprsStatus: data.gprsStatus || 'WAITING',
+          rs232Log: data.rs232Log || '',
+          rs485Log: data.rs485Log || '',
+          gprsLog: data.gprsLog || ''
         });
         console.log(`[DATABASE] Device registered for IMEI: ${data.imei}`);
         return doc;

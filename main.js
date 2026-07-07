@@ -1170,7 +1170,39 @@ app.whenReady().then(async () => {
           break;
         case 'HARDWARE':
           wc.send('hardware-payload', msg.payload);
-          if (currentDeviceDbId && (msg.payload.imei || msg.payload.mac)) {
+          
+          if (msg.payload && (msg.payload.status === 'BOOT_SUCCESS' || msg.payload.diagnostics)) {
+            const diag = msg.payload.diagnostics || {};
+            const updateFields = {
+              imei: msg.payload.imei || '',
+              mac: msg.payload.mac || '',
+              connectionType: activeTcpSocket ? 'tcp' : (activeSerialPort ? 'serial' : 'unknown'),
+              target: activeTcpSocket ? `${activeTcpSocket.remoteAddress}:${activeTcpSocket.remotePort}` : (activeSerialPort ? activeSerialPort.path : '')
+            };
+            
+            if (diag.rs232) {
+              updateFields.rs232Status = diag.rs232.status || diag.rs232;
+              updateFields.rs232Log = diag.rs232.detail || '';
+            }
+            if (diag.rs485) {
+              updateFields.rs485Status = diag.rs485.status || diag.rs485;
+              updateFields.rs485Log = diag.rs485.detail || '';
+            }
+            if (diag.gprs) {
+              updateFields.gprsStatus = diag.gprs.status || diag.gprs;
+              updateFields.gprsLog = diag.gprs.detail || '';
+            }
+
+            db.registerOrUpdateDevice(updateFields)
+              .then(doc => {
+                if (doc) {
+                  currentDeviceDbId = doc._id;
+                }
+              })
+              .catch(err => {
+                console.error('[DATABASE] Error auto-saving device connection details:', err);
+              });
+          } else if (currentDeviceDbId && (msg.payload.imei || msg.payload.mac)) {
             db.updateDeviceIdentification(currentDeviceDbId, {
               imei: msg.payload.imei || '',
               mac: msg.payload.mac || ''
@@ -2225,7 +2257,7 @@ ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, 
 
 ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, filePath, address, reboot }) => {
   const gatewayIP = ip || '192.168.0.1';
-  const gatewayPort = parseInt(port) || 8000;
+  const gatewayPort = parseInt(port) || 500;
   const targetName = target || 'esp32';
   const localSourcePath = filePath || filename || 'firmware.bin';
 
@@ -2276,8 +2308,8 @@ ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, 
 // IPC Handler: upload-certificate to ESP32 WebServer via HTTP POST with dynamic fallback
 ipcMain.on('upload-certificate', async (event, { filePath, ip, port }) => {
   const gatewayIP = ip || '192.168.0.1';
-  const targetPort1 = parseInt(port) || 8000;
-  const targetPort2 = targetPort1 === 8000 ? (appConfig.otaPort || 500) : 8000;
+  const targetPort1 = parseInt(port) || 500;
+  const targetPort2 = targetPort1 === 500 ? 8000 : 500;
 
   event.reply('console-log', `[SPIFFS] Uploading certificate ${path.basename(filePath)} to http://${gatewayIP}:${targetPort1}/upload_cert...`);
 

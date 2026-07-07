@@ -1144,24 +1144,50 @@ String executeGPRSSpeed() {
   uint32_t bauds[] = {115200, 1000000};
   bool ok = false;
   String r2 = "";
+  String gprsDetailsLog = "";
+
+  gprsDetailsLog += "[GPRS SPEED LOG START]\\n";
   for (int i = 0; i < 2; i++) {
     uint32_t b = bauds[i];
+    gprsDetailsLog += "--- STEP " + String(i + 1) + ": Trying baud " + String(b) + " ---\\n";
     logFmt("Trying GPRS contact at %u baud...\n", b);
+    
     Serial1.end();
     delay(20);
     Serial1.begin(b, SERIAL_8N1, GPRS_RX, GPRS_TX);
     delay(300);
     drain(Serial1);
+    
+    gprsDetailsLog += "TX: AT\\\\r\\\\n\\n";
     Serial1.print("AT\r\n");
     String r1 = atRead(1000);
+    
+    String r1Sanitized = r1;
+    r1Sanitized.replace("\"", "\\\"");
+    r1Sanitized.replace("\r", "\\r");
+    r1Sanitized.replace("\n", "\\n");
+    gprsDetailsLog += "RX: " + r1Sanitized + "\\n";
+    
     if (r1.indexOf("OK") >= 0) {
+      gprsDetailsLog += "-> Modem responsive at " + String(b) + ". Setting baud to 1 Mbps...\\n";
       logFmt("Modem responsive at %u. Sending AT+IPR=1000000;&W...\n", b);
       drain(Serial1);
+      
+      gprsDetailsLog += "TX: AT+IPR=1000000;&W\\\\r\\\\n\\n";
       Serial1.print("AT+IPR=1000000;&W\r\n");
       r2 = atRead(1500);
+      
+      String r2Sanitized = r2;
+      r2Sanitized.replace("\"", "\\\"");
+      r2Sanitized.replace("\r", "\\r");
+      r2Sanitized.replace("\n", "\\n");
+      gprsDetailsLog += "RX: " + r2Sanitized + "\\n";
+      
       logFmt("Response: %s\n", r2.c_str());
       ok = r2.indexOf("OK") >= 0 || r2.length() > 0;
       break;
+    } else {
+      gprsDetailsLog += "-> Timeout or error: no OK received at " + String(b) + "\\n";
     }
   }
 
@@ -1170,15 +1196,14 @@ String executeGPRSSpeed() {
   delay(20);
   Serial1.begin(1000000, SERIAL_8N1, GPRS_RX, GPRS_TX);
   delay(100);
+  
+  gprsDetailsLog += "--- STEP 3: Restoring local Serial1 to 1000000 baud ---\\n";
+  gprsDetailsLog += "[GPRS SPEED LOG END]";
 
   if (ok) {
-    return "{\"status\":\"ok\",\"msg\":\"Modem baud rate configured to 1 "
-           "Mbps\",\"modem_resp\":\"" +
-           r2 + "\"}";
+    return "{\"status\":\"ok\",\"msg\":\"Modem baud rate configured to 1 Mbps\",\"modem_resp\":\"" + gprsDetailsLog + "\"}";
   } else {
-    return "{\"status\":\"warn\",\"msg\":\"No OK response received from modem "
-           "at either baud\",\"modem_resp\":\"" +
-           r2 + "\"}";
+    return "{\"status\":\"warn\",\"msg\":\"No OK response received from modem at either baud\",\"modem_resp\":\"" + gprsDetailsLog + "\"}";
   }
 }
 
@@ -2169,7 +2194,7 @@ void processCommand(String cmd) {
     diagRunning = false;
     sendBootSuccessPayload();
   } else if (cmd == "RE_DIAGNOSE") {
-    currentState = STATE_DIAGNOSTICS;
+    pendingAll = true;
   } else if (cmd == "RELAY_1_ON") {
     relay1State = true;
     digitalWrite(RELAY_1_PIN, HIGH);
@@ -2335,21 +2360,10 @@ void runDiagnostics() {
   delay(800);
   logLn("[BOOT] Main firmware v4.0 verified.");
 
-  // Stage 4: Run all hardware tests
+  // Stage 4: Run all hardware tests (Bypassed on boot, run manually from GUI)
   sendProgressPayload("DIAGNOSTICS", 80,
-                      "Initiating hardware peripheral self-check...");
-  logLine();
-  logLn("=== BOOT HARDWARE SELF-CHECK ===");
-  testSwitch();
-  testDI();
-  testPSRAM();
-  testRTC();
-  testWinbond();
-  testGPRS();
-  testRS485();
-  testFR();
-  logLn("=== BOOT SELF-CHECK COMPLETE ===");
-  logLine();
+                      "Boot hardware self-check bypassed by default. Awaiting user demand...");
+  delay(100);
 
   diagRunning = false;
   currentState = STATE_RUNNING;
