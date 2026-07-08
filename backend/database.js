@@ -1,4 +1,38 @@
 const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
+
+let localRegistryPath = '';
+try {
+  const { app } = require('electron');
+  localRegistryPath = path.join(app.getPath('userData'), 'devices_registry.json');
+} catch (e) {
+  localRegistryPath = path.join(__dirname, 'devices_registry.json');
+}
+
+function loadLocalDevices() {
+  try {
+    if (fs.existsSync(localRegistryPath)) {
+      const data = fs.readFileSync(localRegistryPath, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error('[DATABASE] Failed to read local devices registry:', e);
+  }
+  return [];
+}
+
+function saveLocalDevices(devices) {
+  try {
+    const dir = path.dirname(localRegistryPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(localRegistryPath, JSON.stringify(devices, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[DATABASE] Failed to write local devices registry:', e);
+  }
+}
 
 // Schema Definition
 const TelemetrySchema = new mongoose.Schema({
@@ -51,23 +85,23 @@ function sanitizeMongoURI(uri) {
   if (!uri) return uri;
   const protocolMatch = uri.match(/^mongodb(?:\+srv)?:\/\//i);
   if (!protocolMatch) return uri;
-  
+
   const protocol = protocolMatch[0];
   const rest = uri.slice(protocol.length);
   const firstSlashIdx = rest.indexOf('/');
   if (firstSlashIdx === -1) return uri;
-  
+
   const hostPart = rest.slice(0, firstSlashIdx);
   const pathPart = rest.slice(firstSlashIdx);
   const queryIdx = pathPart.indexOf('?');
   let pathOnly = queryIdx !== -1 ? pathPart.slice(0, queryIdx) : pathPart;
   const queryPart = queryIdx !== -1 ? pathPart.slice(queryIdx) : '';
-  
+
   const segments = pathOnly.split('/').filter(s => s.length > 0);
   if (segments.length > 1) {
     pathOnly = '/' + segments[0];
   }
-  
+
   return protocol + hostPart + pathOnly + queryPart;
 }
 
@@ -180,6 +214,7 @@ const DeviceIdentificationSchema = new mongoose.Schema({
   routerSSID: { type: String, default: '' },
   routerPassword: { type: String, default: '' },
   telemetryInterval: { type: Number, default: 1500 },
+  deviceNumber: { type: Number, default: 1 },
   rs232Status: { type: String, default: 'WAITING' },
   rs485Status: { type: String, default: 'WAITING' },
   gprsStatus: { type: String, default: 'WAITING' },
@@ -266,13 +301,15 @@ async function updateDeviceIdentification(id, updateData) {
 async function getRegisteredDevices() {
   if (mongodbConnected) {
     try {
-      return await DeviceIdentificationModel.find().sort({ timestamp: -1 });
+      const mongoDevs = await DeviceIdentificationModel.find().sort({ timestamp: -1 });
+      saveLocalDevices(mongoDevs);
+      return mongoDevs;
     } catch (err) {
       console.error('[DATABASE] Failed to fetch registered devices from MongoDB:', err);
-      return [];
+      return loadLocalDevices();
     }
   } else {
-    return [];
+    return loadLocalDevices();
   }
 }
 
@@ -282,13 +319,70 @@ async function getDeviceByImei(imei) {
       return await DeviceIdentificationModel.findOne({ imei });
     } catch (err) {
       console.error('[DATABASE] Failed to find device by IMEI in MongoDB:', err);
-      return null;
     }
+  }
+  if (imei) {
+    const localDevices = loadLocalDevices();
+    return localDevices.find(d => d.imei === imei) || null;
   }
   return null;
 }
 
 async function registerOrUpdateDevice(data) {
+  let savedDoc = null;
+
+  try {
+    const localDevices = loadLocalDevices();
+    let foundIdx = localDevices.findIndex(d => d.imei === data.imei);
+    let updatedObj = {};
+    if (foundIdx !== -1) {
+      updatedObj = {
+        ...localDevices[foundIdx],
+        pcbNumber: data.pcbNumber || localDevices[foundIdx].pcbNumber,
+        connectionType: data.connectionType || localDevices[foundIdx].connectionType,
+        target: data.target || localDevices[foundIdx].target,
+        mac: data.mac || localDevices[foundIdx].mac,
+        password: data.password !== undefined ? data.password : localDevices[foundIdx].password,
+        routerSSID: data.routerSSID !== undefined ? data.routerSSID : localDevices[foundIdx].routerSSID,
+        routerPassword: data.routerPassword !== undefined ? data.routerPassword : localDevices[foundIdx].routerPassword,
+        telemetryInterval: data.telemetryInterval !== undefined ? data.telemetryInterval : localDevices[foundIdx].telemetryInterval,
+        deviceNumber: data.deviceNumber !== undefined ? data.deviceNumber : localDevices[foundIdx].deviceNumber,
+        rs232Status: data.rs232Status !== undefined ? data.rs232Status : localDevices[foundIdx].rs232Status,
+        rs485Status: data.rs485Status !== undefined ? data.rs485Status : localDevices[foundIdx].rs485Status,
+        gprsStatus: data.gprsStatus !== undefined ? data.gprsStatus : localDevices[foundIdx].gprsStatus,
+        rs232Log: data.rs232Log !== undefined ? data.rs232Log : localDevices[foundIdx].rs232Log,
+        rs485Log: data.rs485Log !== undefined ? data.rs485Log : localDevices[foundIdx].rs485Log,
+        gprsLog: data.gprsLog !== undefined ? data.gprsLog : localDevices[foundIdx].gprsLog
+      };
+      localDevices[foundIdx] = updatedObj;
+    } else {
+      updatedObj = {
+        imei: data.imei,
+        pcbNumber: data.pcbNumber || '',
+        connectionType: data.connectionType || 'unknown',
+        target: data.target || '',
+        mac: data.mac || '',
+        password: data.password || 'admin_secure_gate',
+        routerSSID: data.routerSSID || '',
+        routerPassword: data.routerPassword || '',
+        telemetryInterval: data.telemetryInterval || 1500,
+        deviceNumber: data.deviceNumber || 1,
+        rs232Status: data.rs232Status || 'WAITING',
+        rs485Status: data.rs485Status || 'WAITING',
+        gprsStatus: data.gprsStatus || 'WAITING',
+        rs232Log: data.rs232Log || '',
+        rs485Log: data.rs485Log || '',
+        gprsLog: data.gprsLog || '',
+        timestamp: new Date().toISOString()
+      };
+      localDevices.push(updatedObj);
+    }
+    saveLocalDevices(localDevices);
+    savedDoc = updatedObj;
+  } catch (e) {
+    console.error('[DATABASE] Failed to update local devices registry:', e);
+  }
+
   if (mongodbConnected && data.imei) {
     try {
       let doc = await DeviceIdentificationModel.findOne({ imei: data.imei });
@@ -301,16 +395,17 @@ async function registerOrUpdateDevice(data) {
         doc.routerSSID = data.routerSSID !== undefined ? data.routerSSID : doc.routerSSID;
         doc.routerPassword = data.routerPassword !== undefined ? data.routerPassword : doc.routerPassword;
         doc.telemetryInterval = data.telemetryInterval !== undefined ? data.telemetryInterval : doc.telemetryInterval;
-        
+        doc.deviceNumber = data.deviceNumber !== undefined ? data.deviceNumber : doc.deviceNumber;
+
         doc.rs232Status = data.rs232Status !== undefined ? data.rs232Status : doc.rs232Status;
         doc.rs485Status = data.rs485Status !== undefined ? data.rs485Status : doc.rs485Status;
         doc.gprsStatus = data.gprsStatus !== undefined ? data.gprsStatus : doc.gprsStatus;
         doc.rs232Log = data.rs232Log !== undefined ? data.rs232Log : doc.rs232Log;
         doc.rs485Log = data.rs485Log !== undefined ? data.rs485Log : doc.rs485Log;
         doc.gprsLog = data.gprsLog !== undefined ? data.gprsLog : doc.gprsLog;
-        
+
         await doc.save();
-        console.log(`[DATABASE] Device updated for IMEI: ${data.imei}`);
+        console.log(`[DATABASE] Device updated in MongoDB for IMEI: ${data.imei}`);
         return doc;
       } else {
         doc = await DeviceIdentificationModel.create({
@@ -323,6 +418,7 @@ async function registerOrUpdateDevice(data) {
           routerSSID: data.routerSSID || '',
           routerPassword: data.routerPassword || '',
           telemetryInterval: data.telemetryInterval || 1500,
+          deviceNumber: data.deviceNumber || 1,
           rs232Status: data.rs232Status || 'WAITING',
           rs485Status: data.rs485Status || 'WAITING',
           gprsStatus: data.gprsStatus || 'WAITING',
@@ -330,29 +426,41 @@ async function registerOrUpdateDevice(data) {
           rs485Log: data.rs485Log || '',
           gprsLog: data.gprsLog || ''
         });
-        console.log(`[DATABASE] Device registered for IMEI: ${data.imei}`);
+        console.log(`[DATABASE] Device registered in MongoDB for IMEI: ${data.imei}`);
         return doc;
       }
     } catch (err) {
       console.error('[DATABASE] Failed to register/update device in MongoDB:', err);
-      return null;
+      return savedDoc;
     }
   }
-  return null;
+  return savedDoc;
 }
 
 async function deleteDeviceByImei(imei) {
+  let deletedFromLocal = false;
+  try {
+    const localDevices = loadLocalDevices();
+    const filtered = localDevices.filter(d => d.imei !== imei);
+    if (filtered.length !== localDevices.length) {
+      saveLocalDevices(filtered);
+      deletedFromLocal = true;
+    }
+  } catch (e) {
+    console.error('[DATABASE] Failed to delete local device registry:', e);
+  }
+
   if (mongodbConnected && imei) {
     try {
       await DeviceIdentificationModel.deleteOne({ imei });
-      console.log(`[DATABASE] Device deleted for IMEI: ${imei}`);
+      console.log(`[DATABASE] Device deleted in MongoDB for IMEI: ${imei}`);
       return true;
     } catch (err) {
       console.error('[DATABASE] Failed to delete device in MongoDB:', err);
-      return false;
+      return deletedFromLocal;
     }
   }
-  return false;
+  return deletedFromLocal;
 }
 
 async function syncDeviceConfig(imei, bootData) {
@@ -406,15 +514,20 @@ module.exports = {
 
 
 // Admin User Schema
-const AdminSchema = new mongoose.Schema({ 
-  username: { type: String, required: true, unique: true }, 
-  password: { type: String, required: true } 
+const AdminSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  email: { type: String, required: true },
+  password: { type: String, required: true }
 });
 const AdminModel = mongoose.model('AdminUser', AdminSchema);
 
-const fs = require('fs');
-const path = require('path');
-const OFFLINE_CREDENTIALS_PATH = path.join(__dirname, 'scratch', 'admin_credentials.json');
+let OFFLINE_CREDENTIALS_PATH = '';
+try {
+  const { app } = require('electron');
+  OFFLINE_CREDENTIALS_PATH = path.join(app.getPath('userData'), 'scratch', 'admin_credentials.json');
+} catch (e) {
+  OFFLINE_CREDENTIALS_PATH = path.join(__dirname, 'scratch', 'admin_credentials.json');
+}
 
 function getOfflineCredentials() {
   try {
@@ -424,7 +537,7 @@ function getOfflineCredentials() {
   } catch (e) {
     console.error('[DATABASE] Failed to read offline credentials:', e);
   }
-  return [{ username: 'admin', password: 'admin_secure_gate' }];
+  return [{ username: 'admin', email: 'admin@iot-monitor.local', password: 'admin_secure_gate' }];
 }
 
 function saveOfflineCredentials(users) {
@@ -439,30 +552,30 @@ function saveOfflineCredentials(users) {
   }
 }
 
-async function createAdminUser(username, password) { 
+async function createAdminUser(username, email, password) {
   if (!mongodbConnected) {
     try {
       const users = getOfflineCredentials();
       const existing = users.find(u => u.username === username);
       if (existing) return { success: false, message: 'User exists' };
-      users.push({ username, password });
+      users.push({ username, email, password });
       saveOfflineCredentials(users);
       return { success: true, message: 'Signup successful (Offline Mode)' };
     } catch (e) {
       return { success: false, message: e.message };
     }
   }
-  try { 
-    const existing = await AdminModel.findOne({ username }); 
-    if (existing) return { success: false, message: 'User exists' }; 
-    await AdminModel.create({ username, password }); 
-    return { success: true, message: 'Signup successful' }; 
-  } catch (e) { 
-    return { success: false, message: e.message }; 
-  } 
+  try {
+    const existing = await AdminModel.findOne({ username });
+    if (existing) return { success: false, message: 'User exists' };
+    await AdminModel.create({ username, email, password });
+    return { success: true, message: 'Signup successful' };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
-async function verifyAdminUser(username, password) { 
+async function verifyAdminUser(username, password) {
   if (!mongodbConnected) {
     try {
       const users = getOfflineCredentials();
@@ -473,13 +586,13 @@ async function verifyAdminUser(username, password) {
       return { success: false, message: e.message };
     }
   }
-  try { 
-    const user = await AdminModel.findOne({ username, password }); 
-    if (user) return { success: true, message: 'Login successful' }; 
-    return { success: false, message: 'Invalid credentials' }; 
-  } catch (e) { 
-    return { success: false, message: e.message }; 
-  } 
+  try {
+    const user = await AdminModel.findOne({ username, password });
+    if (user) return { success: true, message: 'Login successful' };
+    return { success: false, message: 'Invalid credentials' };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 module.exports.createAdminUser = createAdminUser;

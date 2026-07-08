@@ -7,7 +7,14 @@ export default defineConfig({
   base: './', // Configures relative asset paths so Electron loads files correctly from the filesystem
   server: {
     port: 4000,
-    strictPort: true
+    strictPort: true,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        secure: false
+      }
+    }
   },
   build: {
     outDir: 'frontend-build',

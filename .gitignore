@@ -7,3 +7,4 @@ node_modules
 /frontend-build
 /iot-monitor-release
 /firmware/firmware/build
+.env

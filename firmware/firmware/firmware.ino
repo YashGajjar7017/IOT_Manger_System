@@ -186,6 +186,7 @@ void resetDiagnosticsResults() {
 volatile bool testRunning = false;
 volatile bool pendingAll = false;
 volatile int pendingTestID = -1;
+volatile bool serialBridgeActive = false;
 
 // Circular log buffer
 #define LOG_MAX_BYTES 4096
@@ -1308,6 +1309,85 @@ void onGPRSSpeed() {
   server.send(200, "application/json", resp);
 }
 
+String executeGPRSSpeed115200() {
+  logFmt("Executing GPRS auto-baud configuration (set to 115200)...\n");
+  uint32_t bauds[] = {115200, 1000000};
+  bool ok = false;
+  String r2 = "";
+  String gprsDetailsLog = "";
+
+  gprsDetailsLog += "[GPRS SPEED LOG START]\\n";
+  for (int i = 0; i < 2; i++) {
+    uint32_t b = bauds[i];
+    gprsDetailsLog += "--- STEP " + String(i + 1) + ": Trying baud " + String(b) + " ---\\n";
+    logFmt("Trying GPRS contact at %u baud...\n", b);
+    
+    Serial1.end();
+    delay(20);
+    Serial1.begin(b, SERIAL_8N1, GPRS_RX, GPRS_TX);
+    delay(300);
+    drain(Serial1);
+    
+    gprsDetailsLog += "TX: AT\\\\r\\\\n\\n";
+    Serial1.print("AT\r\n");
+    String r1 = atRead(1000);
+    
+    String r1Sanitized = r1;
+    r1Sanitized.replace("\"", "\\\"");
+    r1Sanitized.replace("\r", "\\r");
+    r1Sanitized.replace("\n", "\\n");
+    gprsDetailsLog += "RX: " + r1Sanitized + "\\n";
+    
+    if (r1.indexOf("OK") >= 0) {
+      gprsDetailsLog += "-> Modem responsive at " + String(b) + ". Setting baud to 115200...\\n";
+      logFmt("Modem responsive at %u. Sending AT+IPR=115200;&W...\n", b);
+      drain(Serial1);
+      
+      gprsDetailsLog += "TX: AT+IPR=115200;&W\\\\r\\\\n\\n";
+      Serial1.print("AT+IPR=115200;&W\r\n");
+      r2 = atRead(1500);
+      
+      String r2Sanitized = r2;
+      r2Sanitized.replace("\"", "\\\"");
+      r2Sanitized.replace("\r", "\\r");
+      r2Sanitized.replace("\n", "\\n");
+      gprsDetailsLog += "RX: " + r2Sanitized + "\\n";
+      
+      logFmt("Response: %s\n", r2.c_str());
+      ok = r2.indexOf("OK") >= 0 || r2.length() > 0;
+      break;
+    } else {
+      gprsDetailsLog += "-> Timeout or error: no OK received at " + String(b) + "\\n";
+    }
+  }
+
+  // Restore Serial1 to GPRS 115200 locally
+  Serial1.end();
+  delay(20);
+  Serial1.begin(115200, SERIAL_8N1, GPRS_RX, GPRS_TX);
+  delay(100);
+  
+  gprsDetailsLog += "--- STEP 3: Restoring local Serial1 to 115200 baud ---\\n";
+  gprsDetailsLog += "[GPRS SPEED LOG END]";
+
+  if (ok) {
+    return "{\"status\":\"ok\",\"msg\":\"Modem baud rate configured to 115200 bps\",\"modem_resp\":\"" + gprsDetailsLog + "\"}";
+  } else {
+    return "{\"status\":\"warn\",\"msg\":\"No OK response received from modem at either baud\",\"modem_resp\":\"" + gprsDetailsLog + "\"}";
+  }
+}
+
+void onGPRSSpeed115200() {
+  if (testRunning) {
+    server.send(429, "application/json", "{\"error\":\"busy\"}");
+    return;
+  }
+  logLine();
+  logLn("GPRS SPEED → Setting baud rate to 115200 bps (AT+IPR=115200;&W)");
+  String resp = executeGPRSSpeed115200();
+  server.send(200, "application/json", resp);
+}
+
 void onGPRSReset() {
   if (testRunning) {
     server.send(429, "application/json", "{\"error\":\"busy\"}");
@@ -1840,6 +1920,64 @@ void setupServer() {
 }
 
 // ============================================================
+//  PRODUCTION: QCOM STORAGE QUERY FILE LIST
+// ============================================================
+String queryQcomFiles() {
+  String qcomFilesJson = "";
+  String resp = AT("AT+QFLST=\"*\"", 1000);
+  
+  if (resp.indexOf("ERROR") != -1 || resp.length() == 0) {
+    resp = AT("AT+FLT", 1000);
+  }
+  
+  int idx = 0;
+  bool first = true;
+  while ((idx = resp.indexOf("+QFLST:", idx)) != -1) {
+    int startQuote = resp.indexOf('"', idx);
+    if (startQuote != -1) {
+      int endQuote = resp.indexOf('"', startQuote + 1);
+      if (endQuote != -1) {
+        String filepath = resp.substring(startQuote + 1, endQuote);
+        int colonIdx = filepath.indexOf(':');
+        String filename = (colonIdx != -1) ? filepath.substring(colonIdx + 1) : filepath;
+        
+        int commaIdx = resp.indexOf(',', endQuote);
+        int nextLine = resp.indexOf('\n', endQuote);
+        if (nextLine == -1) nextLine = resp.length();
+        
+        String sizeStr = "0";
+        if (commaIdx != -1 && commaIdx < nextLine) {
+          sizeStr = resp.substring(commaIdx + 1, nextLine);
+          sizeStr.trim();
+        }
+        
+        if (!first) qcomFilesJson += ",";
+        first = false;
+        qcomFilesJson += "{\"name\":\"[QCOM] " + filename + "\",\"size\":" + sizeStr + "}";
+      }
+    }
+    idx += 7;
+  }
+  
+  if (first) {
+    String certs[] = {"aws_root_ca.pem", "device_cert.crt", "private_key.key"};
+    for (int i = 0; i < 3; i++) {
+      if (SPIFFS.exists("/" + certs[i])) {
+        File f = SPIFFS.open("/" + certs[i], "r");
+        if (f) {
+          if (!first) qcomFilesJson += ",";
+          first = false;
+          qcomFilesJson += "{\"name\":\"[QCOM] " + certs[i] + "\",\"size\":" + String(f.size()) + "}";
+          f.close();
+        }
+      }
+    }
+  }
+  
+  return qcomFilesJson;
+}
+
+// ============================================================
 //  PRODUCTION: PORT-8000 SERVER SETUP
 // ============================================================
 void setupHTTPServer() {
@@ -2012,10 +2150,21 @@ void setupHTTPServer() {
       if (!first)
         json += ",";
       first = false;
-      json += "{\"name\":\"" + String(file.name()) +
+      String fn = file.name();
+      if (fn.startsWith("/")) {
+        fn = fn.substring(1);
+      }
+      json += "{\"name\":\"" + fn +
               "\",\"size\":" + String(file.size()) + "}";
       file = root.openNextFile();
     }
+    
+    String qcomJson = queryQcomFiles();
+    if (qcomJson.length() > 0) {
+      if (!first) json += ",";
+      json += qcomJson;
+    }
+    
     json += "]}";
     httpServer.send(200, "application/json", json);
   });
@@ -2421,6 +2570,53 @@ void processCommand(String cmd) {
     Serial.println(reply);
     if (tcpClient && tcpClient.connected())
       tcpClient.println(reply);
+  } else if (cmd == "GPRS_SPEED_115200") {
+    logLn("[CMD] Setting GPRS speed to 115200 bps...");
+    String reply = executeGPRSSpeed115200();
+    Serial.print("JSON_PAYLOAD:");
+    Serial.println(reply);
+    if (tcpClient && tcpClient.connected())
+      tcpClient.println(reply);
+  } else if (cmd == "FETCH_IMEI") {
+    logLn("[CMD] Fetching IMEI from GPRS modem using AT+CGSN...");
+    drain(Serial1);
+    Serial1.print("AT+CGSN\r\n");
+    String resp = atRead(2000);
+    logFmt("[GPRS] AT+CGSN Response: %s\n", resp.c_str());
+    
+    // Parse the 15-digit numeric IMEI from the response
+    String imeiVal = "";
+    for (size_t i = 0; i < resp.length(); i++) {
+      char c = resp.charAt(i);
+      if (isDigit(c)) {
+        imeiVal += c;
+      } else if (imeiVal.length() >= 15) {
+        break; // Stop once we have a complete IMEI
+      } else {
+        imeiVal = ""; // Reset if interrupted before 15 digits
+      }
+    }
+    
+    if (imeiVal.length() >= 15) {
+      deviceIMEI = imeiVal.substring(0, 15);
+      logFmt("[GPRS] Extracted IMEI: %s\n", deviceIMEI.c_str());
+      String reply = "{\"status\":\"IMEI_UPDATED\",\"imei\":\"" + deviceIMEI + "\"}";
+      Serial.print("JSON_PAYLOAD:");
+      Serial.println(reply);
+      if (tcpClient && tcpClient.connected())
+        tcpClient.println(reply);
+    } else {
+      logLn("[GPRS ERROR] Failed to extract a valid 15-digit IMEI from modem response.");
+      String reply = "{\"status\":\"IMEI_FETCH_FAILED\",\"msg\":\"Failed to parse IMEI from AT+CGSN\"}";
+      Serial.print("JSON_PAYLOAD:");
+      Serial.println(reply);
+      if (tcpClient && tcpClient.connected())
+        tcpClient.println(reply);
+    }
+  } else if (cmd == "SERIAL_BRIDGE") {
+    logLn("[SYSTEM] Starting Serial-to-Serial GPRS passthrough bridge.");
+    logLn("[SYSTEM] Enter '+++' or reboot device to exit bridge mode.");
+    serialBridgeActive = true;
   }
 }
 
@@ -2704,6 +2900,7 @@ void setup() {
   server.on("/info", HTTP_GET, onInfo);
   server.on("/switch-state", HTTP_GET, onSwitchState);
   server.on("/gprs-speed", HTTP_POST, onGPRSSpeed);
+  server.on("/gprs-speed-115200", HTTP_POST, onGPRSSpeed115200);
   server.on("/gprs-reset", HTTP_POST, onGPRSReset);
   server.on("/gprs-echo-off", HTTP_POST, onGPRSEchoOff);
   server.on("/ota", HTTP_POST, onOTADone, onOTAUpload);
@@ -2735,6 +2932,30 @@ void setup() {
 //  LOOP
 // ============================================================
 void loop() {
+  if (serialBridgeActive) {
+    int escapeCount = 0;
+    while (serialBridgeActive) {
+      if (Serial.available()) {
+        char c = Serial.read();
+        if (c == '+') {
+          escapeCount++;
+          if (escapeCount >= 3) {
+            serialBridgeActive = false;
+            logLn("\n[SYSTEM] Exited Serial bridge mode.");
+            break;
+          }
+        } else {
+          escapeCount = 0;
+        }
+        Serial1.write(c);
+      }
+      if (Serial1.available()) {
+        Serial.write(Serial1.read());
+      }
+      delay(1);
+    }
+  }
+
   // Port-80 diagnostic dashboard (main loop, Core 0 only)
   server.handleClient();
 

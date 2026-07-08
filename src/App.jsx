@@ -44,6 +44,90 @@ function IoTStarLogo({ size = 28 }) {
 }
 
 export default function App() {
+  const renderPipelineStep = (title, subtitle, status) => {
+    let iconColor = 'var(--text-dim)';
+    let statusText = 'PENDING';
+    let badgeBg = 'rgba(255,255,255,0.03)';
+    let badgeColor = 'var(--text-dim)';
+    let borderColor = 'rgba(255,255,255,0.04)';
+    let background = 'rgba(255,255,255,0.01)';
+    let iconElement = '○';
+
+    if (status === 'success') {
+      iconColor = '#00ff66';
+      statusText = 'SUCCESS';
+      badgeBg = 'rgba(0, 255, 102, 0.1)';
+      badgeColor = '#00ff66';
+      borderColor = 'rgba(0, 255, 102, 0.15)';
+      background = 'rgba(0, 255, 102, 0.02)';
+      iconElement = '✓';
+    } else if (status === 'running') {
+      iconColor = '#00f0ff';
+      statusText = 'RUNNING';
+      badgeBg = 'rgba(0, 240, 255, 0.1)';
+      badgeColor = '#00f0ff';
+      borderColor = 'rgba(0, 240, 255, 0.2)';
+      background = 'rgba(0, 240, 255, 0.02)';
+      iconElement = '⌛';
+    } else if (status === 'failed') {
+      iconColor = '#ff0055';
+      statusText = 'FAILED';
+      badgeBg = 'rgba(255, 0, 85, 0.1)';
+      badgeColor = '#ff0055';
+      borderColor = 'rgba(255, 0, 85, 0.2)';
+      background = 'rgba(255, 0, 85, 0.02)';
+      iconElement = '✕';
+    }
+
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 16px',
+        background,
+        border: `1px solid ${borderColor}`,
+        borderRadius: '10px',
+        gap: '12px',
+        transition: 'all 0.3s ease'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+          <div style={{
+            width: '24px',
+            height: '24px',
+            borderRadius: '50%',
+            border: `2px solid ${iconColor}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: iconColor,
+            fontWeight: 'bold',
+            fontSize: status === 'success' ? '14px' : '11px',
+            flexShrink: 0
+          }}>
+            {iconElement}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontWeight: 'bold', color: status === 'pending' ? 'var(--text-dim)' : 'white', fontSize: '13px' }}>{title}</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{subtitle}</span>
+          </div>
+        </div>
+        <div style={{
+          padding: '4px 8px',
+          background: badgeBg,
+          color: badgeColor,
+          borderRadius: '4px',
+          fontSize: '9px',
+          fontWeight: '800',
+          border: `1px solid ${borderColor}`,
+          letterSpacing: '0.05em'
+        }}>
+          {statusText}
+        </div>
+      </div>
+    );
+  };
+
   // Navigation State
   const [activeTab, setActiveTab] = useState('page-dashboard');
   const [activeConnTab, setActiveConnTab] = useState('tab-wifi');
@@ -142,20 +226,50 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('isLoggedIn') === 'true');
   const [authMode, setAuthMode] = useState('login');
   const [authUsername, setAuthUsername] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [showGprsConsole, setShowGprsConsole] = useState(false);
+  const [gprsCommandInput, setGprsCommandInput] = useState('');
 
   const handleAuth = async () => {
     setAuthError('');
     try {
-      const result = await ipcRenderer.invoke(authMode === 'login' ? 'admin-login' : 'admin-signup', { username: authUsername, password: authPassword });
+      if (authMode === 'signup') {
+        if (!authUsername || !authEmail || !authPassword || !authConfirmPassword) {
+          setAuthError('All fields are required.');
+          return;
+        }
+        if (!authEmail.includes('@')) {
+          setAuthError('Please enter a valid email address.');
+          return;
+        }
+        if (authPassword !== authConfirmPassword) {
+          setAuthError('Passwords do not match.');
+          return;
+        }
+      } else {
+        if (!authUsername || !authPassword) {
+          setAuthError('Username and password are required.');
+          return;
+        }
+      }
+
+      const payload = authMode === 'login'
+        ? { username: authUsername, password: authPassword }
+        : { username: authUsername, email: authEmail, password: authPassword };
+
+      const result = await ipcRenderer.invoke(authMode === 'login' ? 'admin-login' : 'admin-signup', payload);
       if (result.success) {
         if (authMode === 'login') {
           localStorage.setItem('isLoggedIn', 'true');
           setIsLoggedIn(true);
         } else {
           setAuthMode('login'); // switch to login after signup
+          setAuthEmail('');
+          setAuthConfirmPassword('');
           alert('Signup successful! Please log in with your new credentials.');
         }
       } else {
@@ -182,7 +296,10 @@ export default function App() {
   const [regSsid, setRegSsid] = useState('');
   const [regWifiPass, setRegWifiPass] = useState('');
   const [regInterval, setRegInterval] = useState('1500');
+  const [regDeviceNumber, setRegDeviceNumber] = useState('1');
+  const [selectedRegDeviceImei, setSelectedRegDeviceImei] = useState('');
   const [isRegisteringDevice, setIsRegisteringDevice] = useState(false);
+  const [provisioningLogs, setProvisioningLogs] = useState([]);
 
   // OTA Updates State
   const [otaIp, setOtaIp] = useState('192.168.0.1');
@@ -482,9 +599,11 @@ export default function App() {
       alert('IMEI, Password, and Gateway IP are required.');
       return;
     }
+    setProvisioningLogs([]);
     setIsProvisioning(true);
     setProvisioningStatus('Starting secure provisioning...');
     addLogLine(`[PROVISION] Starting certificate provisioning for IMEI: ${imeiProvisionInput}...`);
+    setProvisioningLogs(prev => [...prev, `[PROVISION] Starting certificate provisioning for IMEI: ${imeiProvisionInput}...`]);
 
     // Call the step-by-step IPC provisioner
     startCertProvisioning();
@@ -618,6 +737,9 @@ export default function App() {
     // 3. Subscribe to console logs
     const onConsoleLog = (event, message) => {
       addLogLine(message);
+      if (message.includes('[CERTS]') || message.includes('[PROVISION]') || message.includes('[WIFI]') || message.includes('aws_root_ca.pem') || message.includes('device_cert.crt') || message.includes('private_key.key')) {
+        setProvisioningLogs(prev => [...prev, message]);
+      }
     };
     ipcRenderer.on('console-log', onConsoleLog);
 
@@ -699,6 +821,8 @@ export default function App() {
       } else if (payload.status === 'IMEI_UPDATED') {
         setImei(payload.imei);
         setImeiInput(payload.imei);
+        setImeiProvisionInput(payload.imei);
+        setRegImei(payload.imei);
         addLogLine(`[SYS] Dynamic IMEI update completed successfully: ${payload.imei}`, 'success');
       } else if (payload.status === 'PASSWORD_UPDATED') {
         setPassword(payload.password);
@@ -865,13 +989,16 @@ export default function App() {
 
     const onProvisionCertsStatus = (event, result) => {
       setIsDownloadingCerts(false);
+      setIsProvisioning(false);
       if (result.status === 'success') {
         setCertDownloadStatus('Success! Certificates provisioned to ESP32.');
+        setProvisioningLogs(prev => [...prev, '[PROVISION] SUCCESS: All certificates successfully written & synced! All certificates inserted.']);
         // Auto-trigger QCOM storage sync from GUI after cert upload finishes (Requirement 3)
         sendControlCommand('SYNC_CERTS_TO_QCOM');
         alert('Certificates downloaded & provisioned successfully!');
       } else {
         setCertDownloadStatus(`Failed: ${result.message}`);
+        setProvisioningLogs(prev => [...prev, `[PROVISION ERROR] Failed: ${result.message}`]);
         alert(`Certificate Provisioning Failed:\n${result.message}`);
       }
     };
@@ -1232,7 +1359,8 @@ Overall Status : ${overallStatus}
           password: regPass,
           routerSSID: regSsid,
           routerPassword: regWifiPass,
-          telemetryInterval: parseInt(regInterval) || 1500
+          telemetryInterval: parseInt(regInterval) || 1500,
+          deviceNumber: parseInt(regDeviceNumber) || 1
         })
       });
       if (res.ok) {
@@ -1243,6 +1371,7 @@ Overall Status : ${overallStatus}
         setRegSsid('');
         setRegWifiPass('');
         setRegInterval('1500');
+        setRegDeviceNumber('1');
         fetchRegisteredDevices();
       } else {
         const errData = await res.json();
@@ -1293,6 +1422,10 @@ Overall Status : ${overallStatus}
 
   // REST API: Delete a device configuration
   const handleDeleteDevice = async (imei) => {
+    if (!imei) {
+      alert('Cannot delete: Device IMEI is empty or undefined.');
+      return;
+    }
     if (!confirm(`Are you sure you want to unregister device IMEI ${imei}?`)) return;
     try {
       const res = await fetch(`/api/devices/${imei}`, { method: 'DELETE' });
@@ -1581,8 +1714,8 @@ Overall Status : ${overallStatus}
         await new Promise(resolve => setTimeout(resolve, 100));
         const diags = diagnosticsRef.current;
         if (diags.rs232 !== 'WAITING' && diags.rs232 !== 'TESTING' &&
-            diags.rs485 !== 'WAITING' && diags.rs485 !== 'TESTING' &&
-            diags.gprs !== 'WAITING' && diags.gprs !== 'TESTING') {
+          diags.rs485 !== 'WAITING' && diags.rs485 !== 'TESTING' &&
+          diags.gprs !== 'WAITING' && diags.gprs !== 'TESTING') {
           testComplete = true;
           break;
         }
@@ -2153,6 +2286,30 @@ Overall Status : ${overallStatus}
               {authMode === 'login' ? 'Enter credentials to manage IoT Monitor Systems.' : 'Set up a new master password and login.'}
             </p>
 
+            {authMode === 'signup' && (
+              <div className="input-group" style={{ textAlign: 'left', marginBottom: '16px' }}>
+                <label style={{ color: '#a5b4fc', fontSize: '10.5px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Email</label>
+                <input
+                  type="email"
+                  placeholder="Enter email address"
+                  value={authEmail}
+                  onChange={e => setAuthEmail(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    background: 'rgba(255,255,255,0.03)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '10px',
+                    outline: 'none',
+                    fontSize: '13.5px',
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)',
+                    transition: 'all 0.3s'
+                  }}
+                />
+              </div>
+            )}
+
             <div className="input-group" style={{ textAlign: 'left', marginBottom: '16px' }}>
               <label style={{ color: '#a5b4fc', fontSize: '10.5px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Username</label>
               <input
@@ -2197,6 +2354,30 @@ Overall Status : ${overallStatus}
               />
             </div>
 
+            {authMode === 'signup' && (
+              <div className="input-group" style={{ textAlign: 'left', marginBottom: '20px' }}>
+                <label style={{ color: '#a5b4fc', fontSize: '10.5px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Confirm Password</label>
+                <input
+                  type="password"
+                  placeholder="Confirm password"
+                  value={authConfirmPassword}
+                  onChange={e => setAuthConfirmPassword(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    background: 'rgba(255,255,255,0.03)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '10px',
+                    outline: 'none',
+                    fontSize: '13.5px',
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)',
+                    transition: 'all 0.3s'
+                  }}
+                />
+              </div>
+            )}
+
             {authError && (
               <div style={{
                 color: '#ef4444',
@@ -2230,6 +2411,51 @@ Overall Status : ${overallStatus}
               }}
             >
               {authMode === 'login' ? 'Unlock System' : 'Create Admin'}
+            </button>
+
+            <div style={{ margin: '15px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+              <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
+              <span style={{ fontSize: '10px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>or</span>
+              <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
+            </div>
+
+            <button
+              onClick={async () => {
+                addLogLine('[GITHUB] Opening GitHub OAuth secure sign-in window...', 'system');
+                try {
+                  const user = await ipcRenderer.invoke('github-oauth-sign-in');
+                  setGitHubUser(user);
+                  localStorage.setItem('github_user', JSON.stringify(user));
+                  localStorage.setItem('isLoggedIn', 'true');
+                  setIsLoggedIn(true);
+                  addLogLine(`[GITHUB] OAuth authorization successful! Welcome, ${user.name} (@${user.username}).`, 'success');
+                } catch (e) {
+                  addLogLine(`[GITHUB ERROR] Sign-in failed: ${e.message}`, 'error');
+                  alert(`GitHub Sign-In Failed:\n${e.message}`);
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '12px',
+                background: '#24292e',
+                color: 'white',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                fontSize: '13px',
+                boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+                transition: 'all 0.3s'
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.167 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.164 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
+              </svg>
+              Sign In with GitHub
             </button>
 
             <div
@@ -2357,6 +2583,11 @@ Overall Status : ${overallStatus}
               <span>{connection.type === 'failed' ? 'Failed' : connection.type ? 'Online' : 'Offline'}</span>
             </div>
 
+            <div className="header-status-pill" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)', fontSize: '11px' }}>
+              <span className="ping-label" style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dim)' }}>Socket Ping:</span>
+              <span className={`ping-result ${pingLatency.status}`} style={{ fontSize: '11px', fontWeight: 'bold' }}>{pingLatency.value}</span>
+            </div>
+
             <div className="header-account-container">
               <button className="header-account-btn" onClick={() => setShowAccountMenu(prev => !prev)}>
                 Account ▾
@@ -2428,7 +2659,7 @@ Overall Status : ${overallStatus}
                     Reboot Gateway
                   </button>
                 </div>
-                
+
                 <div className="header-right-status" style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: '0 0 auto' }}>
                   <div className="live-status-container" style={{ display: 'flex', gap: '12px', background: 'rgba(255,255,255,0.02)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '11.5px' }}>
                     <div className="live-status-item">
@@ -2452,11 +2683,6 @@ Overall Status : ${overallStatus}
                       </span>
                     </div>
                   </div>
-
-                  <div className="header-status-pill" style={{ margin: 0 }}>
-                    <span className="ping-label">Socket Ping</span>
-                    <span className={`ping-result ${pingLatency.status}`}>{pingLatency.value}</span>
-                  </div>
                 </div>
               </div>
             </header>
@@ -2470,14 +2696,56 @@ Overall Status : ${overallStatus}
                 {(!connection.type || connection.type === 'failed') ? (
                   <>
                     <div className="input-group" style={{ marginBottom: '15px' }}>
-                      <label>PCB Serial Number</label>
-                      <input
-                        type="text"
-                        value={pcbNumber}
-                        onChange={(e) => setPcbNumber(e.target.value)}
-                        placeholder="e.g. PCB-ESP32-v3-987"
-                      />
+                      <label>Select Registered Device Profile</label>
+                      <select 
+                        value={selectedRegDeviceImei} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedRegDeviceImei(val);
+                          if (val === 'custom') {
+                            setPcbNumber('');
+                          } else {
+                            const profile = registeredDevices.find(d => d.imei === val);
+                            if (profile) {
+                              setPcbNumber(profile.pcbNumber || '');
+                              if (profile.imei) {
+                                setImei(profile.imei);
+                              }
+                            }
+                          }
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '6px',
+                          color: '#fff',
+                          outline: 'none',
+                          fontSize: '13px'
+                        }}
+                      >
+                        <option value="">-- Select Registered Profile --</option>
+                        {[...registeredDevices].sort((a,b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((d) => (
+                          <option key={d._id || d.imei} value={d.imei}>
+                            Device #{d.deviceNumber || '1'} - {d.pcbNumber || d.imei}
+                          </option>
+                        ))}
+                        <option value="custom">✍️ Custom Manual Input...</option>
+                      </select>
                     </div>
+
+                    {(selectedRegDeviceImei === 'custom' || !selectedRegDeviceImei) && (
+                      <div className="input-group" style={{ marginBottom: '15px' }}>
+                        <label>PCB Serial Number</label>
+                        <input
+                          type="text"
+                          value={pcbNumber}
+                          onChange={(e) => setPcbNumber(e.target.value)}
+                          placeholder="e.g. PCB-ESP32-v3-987"
+                        />
+                      </div>
+                    )}
 
                     <div className="tabs-control">
                       <button className={`tab-btn ${activeConnTab === 'tab-wifi' ? 'active' : ''}`} onClick={() => setActiveConnTab('tab-wifi')}>WiFi IP</button>
@@ -2492,9 +2760,9 @@ Overall Status : ${overallStatus}
                             {connectionMode === 'ap' ? '📶 Direct ESP32 AP Mode' : '🌐 Router / WiFi Scope'}
                           </span>
                           <label className="switch-toggle" style={{ margin: 0 }}>
-                            <input 
-                              type="checkbox" 
-                              checked={connectionMode === 'router'} 
+                            <input
+                              type="checkbox"
+                              checked={connectionMode === 'router'}
                               onChange={(e) => {
                                 const mode = e.target.checked ? 'router' : 'ap';
                                 setConnectionMode(mode);
@@ -2503,7 +2771,7 @@ Overall Status : ${overallStatus}
                                 } else {
                                   setWifiIp(''); // Clear for router scan
                                 }
-                              }} 
+                              }}
                             />
                             <span className="switch-slider"></span>
                           </label>
@@ -2670,6 +2938,46 @@ Overall Status : ${overallStatus}
                       </div>
                     )}
                     <button className="btn btn-danger" onClick={disconnectGateway}>Disconnect active link</button>
+                    
+                    {/* Small scrollable side list of registered devices */}
+                    <div style={{ marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '15px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-dim)', display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        📋 Registered Profiles:
+                      </span>
+                      <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        {registeredDevices.length === 0 ? (
+                          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontStyle: 'italic' }}>No registered devices</div>
+                        ) : (
+                          [...registeredDevices].sort((a,b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((d) => (
+                            <div 
+                              key={d._id || d.imei} 
+                              onClick={() => {
+                                setSelectedRegDeviceImei(d.imei);
+                                setPcbNumber(d.pcbNumber || '');
+                                setImei(d.imei || '');
+                                if (d.routerSSID) setWifiRouterSsid(d.routerSSID);
+                                if (d.routerPassword) setWifiRouterPass(d.routerPassword);
+                              }}
+                              style={{ 
+                                display: 'flex', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center', 
+                                padding: '6px 8px', 
+                                background: selectedRegDeviceImei === d.imei ? 'rgba(0, 240, 255, 0.08)' : 'rgba(255,255,255,0.01)', 
+                                border: selectedRegDeviceImei === d.imei ? '1px solid rgba(0, 240, 255, 0.3)' : '1px solid rgba(255,255,255,0.04)', 
+                                borderRadius: '4px', 
+                                cursor: 'pointer',
+                                fontSize: '10.5px' 
+                              }}
+                            >
+                              <span style={{ fontWeight: 'bold', color: '#ff007f' }}>#{d.deviceNumber || '1'}</span>
+                              <span style={{ color: '#fff', fontFamily: 'monospace' }}>{d.pcbNumber || d.imei.substring(0, 8)}</span>
+                              <span className={`pulse-dot ${selectedRegDeviceImei === d.imei ? 'connected' : 'idle'}`} style={{ width: '6px', height: '6px' }}></span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2713,15 +3021,47 @@ Overall Status : ${overallStatus}
                         </div>
                       </div>
                       {key === 'gprs' && (
-                        <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '8px', width: '100%' }}>
-                          <button
-                            className="btn btn-accent small"
-                            style={{ padding: '4px 10px', fontSize: '10px', height: '26px', width: '100%', cursor: 'pointer' }}
-                            onClick={() => sendControlCommand('GPRS_SPEED')}
-                            title="Sends AT+IPR=1000000;&W to set modem baud rate to 1 Mbps"
-                          >
-                            ⚡ Set 1 Mbps Speed (AT+IPR=1000000;&w)
-                          </button>
+                        <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '8px', width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              className="btn btn-accent small"
+                              style={{ padding: '4px 10px', fontSize: '10px', height: '26px', flex: 1, cursor: 'pointer', margin: 0 }}
+                              onClick={() => sendControlCommand('GPRS_SPEED')}
+                              title="Sends AT+IPR=1000000;&W to set modem baud rate to 1 Mbps"
+                            >
+                              ⚡ Set 1 Mbps
+                            </button>
+                            <button
+                              className="btn btn-accent small"
+                              style={{ padding: '4px 10px', fontSize: '10px', height: '26px', flex: 1, cursor: 'pointer', margin: 0, background: 'var(--accent-blue)', borderColor: 'var(--accent-blue)' }}
+                              onClick={() => sendControlCommand('GPRS_SPEED_115200')}
+                              title="Sends AT+IPR=115200;&W to set modem baud rate to 115200"
+                            >
+                              ⚡ Set 115200
+                            </button>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              className="btn btn-secondary small"
+                              style={{ padding: '4px 10px', fontSize: '10px', height: '26px', flex: 1, cursor: 'pointer', margin: 0, border: '1px solid rgba(0, 240, 255, 0.3)' }}
+                              onClick={() => setShowGprsConsole(true)}
+                              title="Open GPRS Modem Interactive AT Command Debug Console"
+                            >
+                              📟 Debug Console
+                            </button>
+                            <button
+                              className="btn btn-secondary small"
+                              style={{ padding: '4px 10px', fontSize: '10px', height: '26px', flex: 1, cursor: 'pointer', margin: 0, border: '1px solid var(--accent-emerald)', color: 'var(--accent-emerald)' }}
+                              onClick={() => {
+                                addLogLine('[CMD] Starting Serial Passthrough Bridge');
+                                sendControlCommand('SERIAL_BRIDGE');
+                              }}
+                              disabled={!connection.type || connection.type !== 'serial'}
+                              title="Forward data between USB Serial and GPRS module"
+                            >
+                              🔗 Passthrough
+                            </button>
+                          </div>
                         </div>
                       )}
                       {key === 'di' && (
@@ -3495,6 +3835,17 @@ Overall Status : ${overallStatus}
                   </div>
 
                   <div className="input-group">
+                    <label>Device Number (Manual Allocation) *</label>
+                    <input
+                      type="number"
+                      value={regDeviceNumber}
+                      onChange={(e) => setRegDeviceNumber(e.target.value)}
+                      placeholder="e.g. 1"
+                      required
+                    />
+                  </div>
+
+                  <div className="input-group">
                     <label>PCB Serial Number</label>
                     <input
                       type="text"
@@ -3571,6 +3922,7 @@ Overall Status : ${overallStatus}
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                       <thead>
                         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
+                          <th style={{ padding: '8px' }}>Device #</th>
                           <th style={{ padding: '8px' }}>IMEI / PCB Serial</th>
                           <th style={{ padding: '8px' }}>Password</th>
                           <th style={{ padding: '8px' }}>SSID Target</th>
@@ -3579,8 +3931,11 @@ Overall Status : ${overallStatus}
                         </tr>
                       </thead>
                       <tbody>
-                        {registeredDevices.map((dev) => (
+                        {[...registeredDevices].sort((a, b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((dev) => (
                           <tr key={dev._id || dev.imei} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
+                            <td style={{ padding: '8px', fontWeight: 'bold', color: 'var(--accent-blue)' }}>
+                              #{dev.deviceNumber || '1'}
+                            </td>
                             <td style={{ padding: '8px' }}>
                               <div style={{ fontWeight: 'bold', color: 'white' }}>{dev.imei}</div>
                               <div style={{ fontSize: '10.5px', color: 'var(--text-dim)' }}>{dev.pcbNumber || 'No PCB Serial'}</div>
@@ -3600,6 +3955,7 @@ Overall Status : ${overallStatus}
                                     setRegSsid(dev.routerSSID || '');
                                     setRegWifiPass(dev.routerPassword || '');
                                     setRegInterval(String(dev.telemetryInterval || 1500));
+                                    setRegDeviceNumber(String(dev.deviceNumber || 1));
                                   }}
                                 >
                                   Edit
@@ -4115,7 +4471,7 @@ Overall Status : ${overallStatus}
 
             {/* Top Grid: Auto SCADA Downloader & Verification Stepper */}
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', marginBottom: '20px' }}>
-              
+
               {/* Auto SCADA Downloader Form */}
               <div className="glass-card" style={{
                 transition: 'all 0.5s ease',
@@ -4141,7 +4497,19 @@ Overall Status : ${overallStatus}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="input-group">
-                    <label>Device IMEI ID</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <label style={{ margin: 0 }}>Device IMEI ID</label>
+                      <button
+                        className="btn-link"
+                        style={{ fontSize: '10px', padding: 0, height: 'auto', border: 'none', background: 'none', color: 'var(--accent-cyan)', cursor: 'pointer', outline: 'none' }}
+                        onClick={() => sendControlCommand('FETCH_IMEI')}
+                        disabled={controlsDisabled}
+                        title="Fetch IMEI from GPRS modem using AT+CGSN"
+                        type="button"
+                      >
+                        Fetch (AT+CGSN)
+                      </button>
+                    </div>
                     <input
                       type="text"
                       value={imeiProvisionInput}
@@ -4170,20 +4538,87 @@ Overall Status : ${overallStatus}
                   />
                 </div>
 
+                {/* Nested URL Templates Configuration Block */}
+                <div style={{ marginTop: '15px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)', textAlign: 'left' }}>
+                  <h4 style={{ fontSize: '12px', color: 'var(--accent-pink)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>URL Template Patterns</h4>
+                  
+                  <div className="input-group" style={{ marginBottom: '10px' }}>
+                    <label style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Root CA Certificate URL Template</label>
+                    <input
+                      type="text"
+                      value={certRootCaUrl}
+                      onChange={(e) => setCertRootCaUrl(e.target.value)}
+                      placeholder="Template URL"
+                      disabled={isDownloadingCerts || isProvisioning}
+                      style={{ fontSize: '11px', padding: '8px' }}
+                    />
+                  </div>
+                  <div className="input-group" style={{ marginBottom: '10px' }}>
+                    <label style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Device Certificate URL Template</label>
+                    <input
+                      type="text"
+                      value={certDeviceCertUrl}
+                      onChange={(e) => setCertDeviceCertUrl(e.target.value)}
+                      placeholder="Template URL"
+                      disabled={isDownloadingCerts || isProvisioning}
+                      style={{ fontSize: '11px', padding: '8px' }}
+                    />
+                  </div>
+                  <div className="input-group" style={{ marginBottom: '10px' }}>
+                    <label style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Private Key URL Template</label>
+                    <input
+                      type="text"
+                      value={certPrivateKeyUrl}
+                      onChange={(e) => setCertPrivateKeyUrl(e.target.value)}
+                      placeholder="Template URL"
+                      disabled={isDownloadingCerts || isProvisioning}
+                      style={{ fontSize: '11px', padding: '8px' }}
+                    />
+                  </div>
+                </div>
+
                 <button
                   className="btn btn-primary"
                   onClick={triggerCertificateProvision}
                   disabled={isProvisioning || isDownloadingCerts}
-                  style={{ marginTop: '10px', width: '100%', background: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00cc55' : 'var(--accent-primary)' }}
+                  style={{ marginTop: '15px', width: '100%', height: '42px', background: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00cc55' : 'var(--accent-primary)' }}
                 >
                   {isDownloadingCerts ? 'Processing Provisioning...' : 'Start Secure Provisioning'}
                 </button>
 
-                {provisioningStatus && (
-                  <div style={{ marginTop: '15px', padding: '10px', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', fontSize: '12px', color: '#00ffff', fontFamily: 'var(--font-mono)' }}>
-                    {provisioningStatus}
+                {/* Provisioning Live Terminal Box */}
+                <div style={{ marginTop: '15px' }}>
+                  <span style={{ fontSize: '10px', color: 'var(--text-dim)', fontWeight: 'bold', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    📟 Live Provisioning Terminal:
+                  </span>
+                  <div style={{
+                    height: '140px',
+                    background: '#04020a',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    overflowY: 'auto',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '11px',
+                    textAlign: 'left'
+                  }}>
+                    {provisioningLogs.length === 0 ? (
+                      <span style={{ color: '#505070', fontStyle: 'italic' }}>Terminal idle. Fill forms and press provisioning to start.</span>
+                    ) : (
+                      provisioningLogs.map((log, idx) => {
+                        let color = '#fff';
+                        if (log.includes('SUCCESS') || log.includes('successfully') || log.includes('inserted')) color = '#00ff66';
+                        else if (log.includes('ERROR') || log.includes('failed')) color = '#ff3366';
+                        else if (log.includes('Starting') || log.includes('Initiating')) color = '#00ffff';
+                        return (
+                          <div key={idx} style={{ color, marginBottom: '4px', lineHeight: '1.4' }}>
+                            {log}
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
-                )}
+                </div>
               </div>
 
               {/* Provisioning Verification Stepper */}
@@ -4194,186 +4629,114 @@ Overall Status : ${overallStatus}
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '12px' }}>
-                  {/* Step 1 */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 'bold' }}>1st Cert: Fetch Root CA (rootCA.pem)</span>
-                      <span style={{
-                        fontWeight: 'bold',
-                        color: certStatuses['aws_root_ca.pem'] === 'success' ? '#00ff66' :
-                          certStatuses['aws_root_ca.pem'] === 'downloading' ? '#00ffff' :
-                            certStatuses['aws_root_ca.pem'] === 'failed' ? '#ff3366' : '#707090'
-                      }}>
-                        {certStatuses['aws_root_ca.pem'] === 'success' ? '✔ SUCCESS' :
-                          certStatuses['aws_root_ca.pem'] === 'downloading' ? '⌛ FETCHING...' :
-                            certStatuses['aws_root_ca.pem'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
-                      </span>
-                    </div>
-                    {certStatuses['aws_root_ca.pem'] === 'success' && certDetails['aws_root_ca.pem'] && (
-                      <div style={{ fontSize: '11px', color: '#a49fc4', paddingLeft: '12px', borderLeft: '2px solid #00f0ff', marginTop: '4px', lineHeight: '1.4' }}>
-                        <div><strong>Issuer:</strong> {certDetails['aws_root_ca.pem'].issuer}</div>
-                        <div><strong>Subject:</strong> {certDetails['aws_root_ca.pem'].subject}</div>
-                        <div><strong>Valid To:</strong> {certDetails['aws_root_ca.pem'].validTo !== 'N/A' ? new Date(certDetails['aws_root_ca.pem'].validTo).toLocaleDateString() : 'N/A'}</div>
-                      </div>
-                    )}
-                  </div>
+                  {/* Step 1: Download CA Certificate */}
+                  {(() => {
+                    const status = certStatuses['aws_root_ca.pem'] === 'downloading' ? 'running' :
+                                   (certStatuses['aws_root_ca.pem'] === 'downloaded' || certStatuses['aws_root_ca.pem'] === 'uploading' || certStatuses['aws_root_ca.pem'] === 'success') ? 'success' :
+                                   certStatuses['aws_root_ca.pem'] === 'failed' ? 'failed' : 'pending';
+                    return renderPipelineStep('Download CA Certificate', 'GET certificate from root authority', status);
+                  })()}
 
-                  {/* Step 2 */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 'bold' }}>2nd Cert: Fetch Client Cert (client.pem)</span>
-                      <span style={{
-                        fontWeight: 'bold',
-                        color: certStatuses['device_cert.crt'] === 'success' ? '#00ff66' :
-                          certStatuses['device_cert.crt'] === 'downloading' ? '#00ffff' :
-                            certStatuses['device_cert.crt'] === 'failed' ? '#ff3366' : '#707090'
-                      }}>
-                        {certStatuses['device_cert.crt'] === 'success' ? '✔ SUCCESS' :
-                          certStatuses['device_cert.crt'] === 'downloading' ? '⌛ FETCHING...' :
-                            certStatuses['device_cert.crt'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
-                      </span>
-                    </div>
-                    {certStatuses['device_cert.crt'] === 'success' && certDetails['device_cert.crt'] && (
-                      <div style={{ fontSize: '11px', color: '#a49fc4', paddingLeft: '12px', borderLeft: '2px solid #00f0ff', marginTop: '4px', lineHeight: '1.4' }}>
-                        <div><strong>Issuer:</strong> {certDetails['device_cert.crt'].issuer}</div>
-                        <div><strong>Subject:</strong> {certDetails['device_cert.crt'].subject}</div>
-                        <div><strong>Valid To:</strong> {certDetails['device_cert.crt'].validTo !== 'N/A' ? new Date(certDetails['device_cert.crt'].validTo).toLocaleDateString() : 'N/A'}</div>
-                      </div>
-                    )}
-                  </div>
+                  {/* Step 2: Download Client Certificate */}
+                  {(() => {
+                    const status = certStatuses['device_cert.crt'] === 'downloading' ? 'running' :
+                                   (certStatuses['device_cert.crt'] === 'downloaded' || certStatuses['device_cert.crt'] === 'uploading' || certStatuses['device_cert.crt'] === 'success') ? 'success' :
+                                   certStatuses['device_cert.crt'] === 'failed' ? 'failed' : 'pending';
+                    return renderPipelineStep('Download Client Certificate', 'GET device-authentication certificate', status);
+                  })()}
 
-                  {/* Step 3 */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 'bold' }}>3rd Cert: Fetch Private Key (key.pem)</span>
-                      <span style={{
-                        fontWeight: 'bold',
-                        color: certStatuses['private_key.key'] === 'success' ? '#00ff66' :
-                          certStatuses['private_key.key'] === 'downloading' ? '#00ffff' :
-                            certStatuses['private_key.key'] === 'failed' ? '#ff3366' : '#707090'
-                      }}>
-                        {certStatuses['private_key.key'] === 'success' ? '✔ SUCCESS' :
-                          certStatuses['private_key.key'] === 'downloading' ? '⌛ FETCHING...' :
-                            certStatuses['private_key.key'] === 'failed' ? '❌ ERROR' : '💤 PENDING'}
-                      </span>
-                    </div>
-                    {certStatuses['private_key.key'] === 'success' && certDetails['private_key.key'] && (
-                      <div style={{ fontSize: '11px', color: '#a49fc4', paddingLeft: '12px', borderLeft: '2px solid #00f0ff', marginTop: '4px', lineHeight: '1.4' }}>
-                        <div><strong>Type:</strong> {certDetails['private_key.key'].type}</div>
-                        <div><strong>Subject:</strong> {certDetails['private_key.key'].subject}</div>
-                        <div><strong>Issuer:</strong> {certDetails['private_key.key'].issuer}</div>
-                      </div>
-                    )}
-                  </div>
+                  {/* Step 3: Download Private Key */}
+                  {(() => {
+                    const status = certStatuses['private_key.key'] === 'downloading' ? 'running' :
+                                   (certStatuses['private_key.key'] === 'downloaded' || certStatuses['private_key.key'] === 'uploading' || certStatuses['private_key.key'] === 'success') ? 'success' :
+                                   certStatuses['private_key.key'] === 'failed' ? 'failed' : 'pending';
+                    return renderPipelineStep('Download Private Key', 'GET device private RSA/ECC key', status);
+                  })()}
 
-                  {/* Step 4 */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 'bold' }}>4th Step: Write to Device storage target</span>
-                      <span style={{
-                        fontWeight: 'bold',
-                        color: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00ff66' :
-                          isDownloadingCerts ? '#00ffff' : '#707090'
-                      }}>
-                        {(certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '✔ WRITTEN' :
-                          isDownloadingCerts ? '⌛ WRITING...' : '💤 PENDING'}
-                      </span>
-                    </div>
-                  </div>
+                  {/* Step 4: Upload CA to Device */}
+                  {(() => {
+                    const status = certStatuses['aws_root_ca.pem'] === 'uploading' ? 'running' :
+                                   certStatuses['aws_root_ca.pem'] === 'success' ? 'success' :
+                                   certStatuses['aws_root_ca.pem'] === 'failed' ? 'failed' : 'pending';
+                    return renderPipelineStep('Upload CA to Device', 'POST CA file with Bearer Authorization', status);
+                  })()}
+
+                  {/* Step 5: Upload Cert to Device */}
+                  {(() => {
+                    const status = certStatuses['device_cert.crt'] === 'uploading' ? 'running' :
+                                   certStatuses['device_cert.crt'] === 'success' ? 'success' :
+                                   certStatuses['device_cert.crt'] === 'failed' ? 'failed' : 'pending';
+                    return renderPipelineStep('Upload Cert to Device', 'POST Client cert with Bearer Authorization', status);
+                  })()}
+
+                  {/* Step 6: Upload Key to Device */}
+                  {(() => {
+                    const status = certStatuses['private_key.key'] === 'uploading' ? 'running' :
+                                   certStatuses['private_key.key'] === 'success' ? 'success' :
+                                   certStatuses['private_key.key'] === 'failed' ? 'failed' : 'pending';
+                    return renderPipelineStep('Upload Key to Device', 'POST Private key with Bearer Authorization', status);
+                  })()}
+
+                  {/* Step 7: Acknowledgement Signal */}
+                  {(() => {
+                    const allSuccess = certStatuses['aws_root_ca.pem'] === 'success' &&
+                                       certStatuses['device_cert.crt'] === 'success' &&
+                                       certStatuses['private_key.key'] === 'success';
+                    const anyFailed = certStatuses['aws_root_ca.pem'] === 'failed' ||
+                                      certStatuses['device_cert.crt'] === 'failed' ||
+                                      certStatuses['private_key.key'] === 'failed';
+                    const status = allSuccess ? 'success' :
+                                   anyFailed ? 'failed' :
+                                   (isDownloadingCerts || isProvisioning) ? 'running' : 'pending';
+                    return renderPipelineStep('Acknowledgement Signal', 'Send completion confirmation status', status);
+                  })()}
                 </div>
               </div>
 
             </div>
 
-            {/* Middle Grid: Manual files manager and update details */}
-            <div className="security-layout-grid">
-              
-              {/* Credentials & WiFi Card Column */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                
-                {/* Credentials Configuration Card */}
-                <div className="glass-card">
-                  <h3><span className="icon">🔒</span> Identity Credentials</h3>
-                  <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
-                    Update gateway hardware identifier and communication passphrase. Updates sync dynamically over the active interface.
-                  </p>
+            {/* Middle Grid: WiFi settings and Storage manager */}
+            <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '20px', marginTop: '20px' }}>
 
-                  <div className="input-group">
-                    <label>Device IMEI</label>
-                    <input
-                      type="text"
-                      value={imeiInput}
-                      onChange={(e) => setImeiInput(e.target.value)}
-                      placeholder="e.g. 866738083623502"
-                    />
-                  </div>
+              {/* WiFi Router Credentials Configuration Card */}
+              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <h3><span className="icon">📶</span> WiFi Router Credentials</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                  Update the SSID and Passphrase for the external wireless router. Gateway will store credentials to SPIFFS and auto-reboot to apply.
+                </p>
 
-                  <div className="input-group">
-                    <label>Gateway Password</label>
-                    <input
-                      type="password"
-                      value={passwordInput}
-                      onChange={(e) => setPasswordInput(e.target.value)}
-                      placeholder="Enter device passphrase"
-                    />
-                  </div>
-
-                  <button
-                    className="btn btn-primary"
-                    onClick={applyDeviceSettings}
-                    disabled={!connection.type}
-                    style={{ marginTop: '10px' }}
-                  >
-                    Apply Credentials Update
-                  </button>
-
-                  <div style={{ marginTop: '20px', padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)', fontSize: '11px' }}>
-                    <span style={{ fontWeight: 'bold', display: 'block', color: 'var(--accent-pink)', marginBottom: '5px' }}>Current Sync Profile:</span>
-                    <span style={{ display: 'block', fontFamily: 'var(--font-mono)' }}>IMEI: {imei}</span>
-                    <span style={{ display: 'block', fontFamily: 'var(--font-mono)' }}>Password: {password}</span>
-                  </div>
+                <div className="input-group">
+                  <label>Router SSID</label>
+                  <input
+                    type="text"
+                    value={wifiRouterSsid}
+                    onChange={(e) => setWifiRouterSsid(e.target.value)}
+                    placeholder="SSID of Wireless Router"
+                  />
                 </div>
 
-                {/* WiFi Router Credentials Configuration Card */}
-                <div className="glass-card">
-                  <h3><span className="icon">📶</span> WiFi Router Credentials</h3>
-                  <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
-                    Update the SSID and Passphrase for the external wireless router. Gateway will store credentials to SPIFFS and auto-reboot to apply.
-                  </p>
-
-                  <div className="input-group">
-                    <label>Router SSID</label>
-                    <input
-                      type="text"
-                      value={wifiRouterSsid}
-                      onChange={(e) => setWifiRouterSsid(e.target.value)}
-                      placeholder="SSID of Wireless Router"
-                    />
-                  </div>
-
-                  <div className="input-group">
-                    <label>Router Password</label>
-                    <input
-                      type="password"
-                      value={wifiRouterPass}
-                      onChange={(e) => setWifiRouterPass(e.target.value)}
-                      placeholder="Router WPA2 Passphrase"
-                    />
-                  </div>
-
-                  <button
-                    className="btn btn-accent"
-                    onClick={applyWifiRouterSettings}
-                    disabled={!connection.type}
-                    style={{ marginTop: '10px' }}
-                  >
-                    Apply & Reboot Gateway
-                  </button>
+                <div className="input-group">
+                  <label>Router Password</label>
+                  <input
+                    type="password"
+                    value={wifiRouterPass}
+                    onChange={(e) => setWifiRouterPass(e.target.value)}
+                    placeholder="Router WPA2 Passphrase"
+                  />
                 </div>
+
+                <button
+                  className="btn btn-accent"
+                  onClick={applyWifiRouterSettings}
+                  disabled={!connection.type}
+                  style={{ marginTop: 'auto', width: '100%', height: '40px' }}
+                >
+                  Apply & Reboot Gateway
+                </button>
               </div>
 
               {/* SPIFFS & QCOM Certificates Manager Card */}
-              <div className="glass-card">
+              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
                 <h3><span className="icon">💾</span> SPIFFS & QCOM Certificates Manager</h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
                   Inspect space utilization and manage active configuration / certificate files stored directly in the ESP32 SPIFFS filesystem.
@@ -4485,7 +4848,7 @@ Overall Status : ${overallStatus}
                 </div>
 
                 {/* UUID Token Input Area */}
-                <div style={{ marginTop: '15px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                <div style={{ marginTop: '15px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)', marginBottom: '15px' }}>
                   <label className="control-title" style={{ fontSize: '11px', color: 'var(--accent-blue)', fontWeight: 'bold' }}>UUID Token Input</label>
                   <p style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '4px', marginBottom: '10px' }}>
                     Type a token below before selecting/dropping <code>uuid.json</code> to dynamically inject it.
@@ -4499,65 +4862,6 @@ Overall Status : ${overallStatus}
                       style={{ fontSize: '12px', padding: '8px' }}
                     />
                   </div>
-                </div>
-
-                {/* URL Template Config Block (Moved below) */}
-                <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-                  <h4 style={{ fontSize: '13px', color: 'var(--accent-pink)', marginBottom: '10px' }}>URL Template Configurations</h4>
-                  
-                  <div className="input-group">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label>Root CA Certificate URL Template</label>
-                      <CertStatusBadge status={certStatuses['aws_root_ca.pem']} />
-                    </div>
-                    <input
-                      type="text"
-                      value={certRootCaUrl}
-                      onChange={(e) => setCertRootCaUrl(e.target.value)}
-                      placeholder="Template URL"
-                      disabled={isDownloadingCerts}
-                    />
-                  </div>
-                  <div className="input-group">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label>Device Certificate URL Template</label>
-                      <CertStatusBadge status={certStatuses['device_cert.crt']} />
-                    </div>
-                    <input
-                      type="text"
-                      value={certDeviceCertUrl}
-                      onChange={(e) => setCertDeviceCertUrl(e.target.value)}
-                      placeholder="Template URL"
-                      disabled={isDownloadingCerts}
-                    />
-                  </div>
-                  <div className="input-group">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label>Private Key URL Template</label>
-                      <CertStatusBadge status={certStatuses['private_key.key']} />
-                    </div>
-                    <input
-                      type="text"
-                      value={certPrivateKeyUrl}
-                      onChange={(e) => setCertPrivateKeyUrl(e.target.value)}
-                      placeholder="Template URL"
-                      disabled={isDownloadingCerts}
-                    />
-                  </div>
-
-                  <button
-                    className="btn btn-primary"
-                    onClick={startCertProvisioning}
-                    disabled={(!connection.type || connection.type === 'failed') || isDownloadingCerts}
-                    style={{ marginTop: '10px', width: '100%' }}
-                  >
-                    {isDownloadingCerts ? 'Downloading & Provisioning...' : 'Fetch & Sync Certificates (Template)'}
-                  </button>
-                  {certDownloadStatus && (
-                    <span style={{ display: 'block', marginTop: '8px', fontSize: '11px', color: certDownloadStatus.startsWith('Success') ? '#00ff66' : '#ff3366', fontFamily: 'var(--font-mono)' }}>
-                      {certDownloadStatus}
-                    </span>
-                  )}
                 </div>
 
                 {/* Uploading progress indicator */}
@@ -4665,27 +4969,27 @@ Overall Status : ${overallStatus}
             </header>
 
             <div className="hardware-spec-grid" style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '20px' }}>
-              
+
               {/* Wiring schematic layout visualizer */}
               <div className="glass-card" style={{ padding: '20px' }}>
                 <h3><span className="icon">🔌</span> ESP32 & Debugger Wiring Interface</h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
                   Live visual flow of the ESP32 Gateway connecting to the serial programmer / debugger module.
                 </p>
-                
+
                 {/* Visual block diagram */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#030107', padding: '25px', borderRadius: '8px', border: '1px solid var(--glass-border)', position: 'relative' }}>
-                  
+
                   {/* Debugger Block */}
                   <div style={{ width: '130px', padding: '15px', background: 'linear-gradient(135deg, rgba(112, 0, 255, 0.1) 0%, rgba(0, 198, 255, 0.1) 100%)', border: '1px solid #00c6ff', borderRadius: '8px', textAlign: 'center', boxShadow: '0 0 15px rgba(0, 198, 255, 0.15)' }}>
                     <div style={{ fontSize: '11px', color: '#00c6ff', fontWeight: 'bold', textTransform: 'uppercase' }}>Debugger / Programmer</div>
                     <div style={{ fontSize: '18px', margin: '8px 0' }}>🖲️</div>
                     <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'monospace' }}>CH340 / CP2102</div>
                     <div style={{ borderTop: '1px dashed rgba(255, 255, 255, 0.1)', marginTop: '8px', paddingTop: '8px', fontSize: '9px', textAlign: 'left', fontFamily: 'monospace', lineHeight: '1.4' }}>
-                      • TXD (OUT)<br/>
-                      • RXD (IN)<br/>
-                      • DTR (RST)<br/>
-                      • RTS (BOOT)<br/>
+                      • TXD (OUT)<br />
+                      • RXD (IN)<br />
+                      • DTR (RST)<br />
+                      • RTS (BOOT)<br />
                       • 3V3 / GND
                     </div>
                   </div>
@@ -4720,10 +5024,10 @@ Overall Status : ${overallStatus}
                     <div style={{ fontSize: '18px', margin: '8px 0' }}>📟</div>
                     <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'monospace' }}>Dual-Core LX7</div>
                     <div style={{ borderTop: '1px dashed rgba(255, 255, 255, 0.1)', marginTop: '8px', paddingTop: '8px', fontSize: '9px', textAlign: 'left', fontFamily: 'monospace', lineHeight: '1.4' }}>
-                      • RX0 (GPIO3)<br/>
-                      • TX0 (GPIO1)<br/>
-                      • EN Pin (Reset)<br/>
-                      • IO0 (Boot Select)<br/>
+                      • RX0 (GPIO3)<br />
+                      • TX0 (GPIO1)<br />
+                      • EN Pin (Reset)<br />
+                      • IO0 (Boot Select)<br />
                       • 3.3V / GND
                     </div>
                   </div>
@@ -4790,11 +5094,11 @@ Overall Status : ${overallStatus}
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  
+
                   <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: '6px', textAlign: 'left' }}>
                     <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#ff7300' }}>⚠️ MongoDB Invalid Namespace Error</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '5px', lineHeight: '1.4' }}>
-                      <strong>Cause:</strong> Specifying duplicate segments in the URI (e.g. `/dbname/dbname`).<br/>
+                      <strong>Cause:</strong> Specifying duplicate segments in the URI (e.g. `/dbname/dbname`).<br />
                       <strong>Solution:</strong> The system automatically sanitizes namespaces to a single segment (e.g. `/dbname`). Check the MongoDB URL configuration inside Settings.
                     </div>
                   </div>
@@ -4802,7 +5106,7 @@ Overall Status : ${overallStatus}
                   <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: '6px', textAlign: 'left' }}>
                     <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#ff7300' }}>🔌 COM Port Not Listing or Offline</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '5px', lineHeight: '1.4' }}>
-                      <strong>Cause:</strong> Missing CH340 / CP210x serial drivers on the PC, or loose USB-C connections.<br/>
+                      <strong>Cause:</strong> Missing CH340 / CP210x serial drivers on the PC, or loose USB-C connections.<br />
                       <strong>Solution:</strong> Double-check the cable, verify standard serial drivers are installed, and click the refresh (↺) button to re-scan hardware ports.
                     </div>
                   </div>
@@ -4810,7 +5114,7 @@ Overall Status : ${overallStatus}
                   <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: '6px', textAlign: 'left' }}>
                     <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#ff7300' }}>⚡ GPRS speed set 1 Mbps Mismatch</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '5px', lineHeight: '1.4' }}>
-                      <strong>Cause:</strong> Cellular modem failed to store `AT+IPR=1000000` or returned an error response.<br/>
+                      <strong>Cause:</strong> Cellular modem failed to store `AT+IPR=1000000` or returned an error response.<br />
                       <strong>Solution:</strong> Send `GPRS_SPEED` via the dashboard to view detailed TX/RX command logs and verify cellular connection signals.
                     </div>
                   </div>
@@ -4818,7 +5122,7 @@ Overall Status : ${overallStatus}
                   <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: '6px', textAlign: 'left' }}>
                     <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#ff7300' }}>🌐 Wireless OTA Port 500 Failure</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '5px', lineHeight: '1.4' }}>
-                      <strong>Cause:</strong> OS restricted ports below 1024 to Administrator processes.<br/>
+                      <strong>Cause:</strong> OS restricted ports below 1024 to Administrator processes.<br />
                       <strong>Solution:</strong> The desktop app fails over to local port 5000 automatically. The ESP32 listens on port 500, and is triggered by the dashboard. Ensure the firewall is open for local UDP/TCP traffic.
                     </div>
                   </div>
@@ -4896,7 +5200,18 @@ Overall Status : ${overallStatus}
                   </div>
                   <div className="spec-list-item">
                     <span className="spec-label">Hardware IMEI ID</span>
-                    <span className="spec-value">{imei}</span>
+                    <span className="spec-value" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {imei}
+                      <button
+                        className="btn btn-accent small"
+                        style={{ padding: '2px 8px', fontSize: '10px', height: '20px', margin: 0, width: 'auto', minWidth: 'auto', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}
+                        onClick={() => sendControlCommand('FETCH_IMEI')}
+                        disabled={controlsDisabled}
+                        title="Fetch IMEI from GPRS modem using AT+CGSN"
+                      >
+                        Fetch (AT+CGSN)
+                      </button>
+                    </span>
                   </div>
                   <div className="spec-list-item">
                     <span className="spec-label">STA MAC Address</span>
@@ -5021,14 +5336,22 @@ Overall Status : ${overallStatus}
                           <div className="diag-value">{diagnostics[key]}</div>
                         </div>
                         {key === 'gprs' && (
-                          <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '8px', width: '100%' }}>
+                          <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '8px', width: '100%', display: 'flex', gap: '8px' }}>
                             <button
                               className="btn btn-accent small"
-                              style={{ padding: '4px 10px', fontSize: '9px', height: '24px', width: '100%', cursor: 'pointer' }}
+                              style={{ padding: '4px 10px', fontSize: '9px', height: '24px', flex: 1, cursor: 'pointer', margin: 0 }}
                               onClick={() => sendControlCommand('GPRS_SPEED')}
                               title="Sends AT+IPR=1000000;&W to set modem speed to 1 Mbps"
                             >
-                              ⚡ Set 1 Mbps Speed (AT+IPR=1000000;&w)
+                              ⚡ Set 1 Mbps
+                            </button>
+                            <button
+                              className="btn btn-secondary small"
+                              style={{ padding: '4px 10px', fontSize: '9px', height: '24px', flex: 1, cursor: 'pointer', margin: 0, border: '1px solid rgba(0, 240, 255, 0.3)' }}
+                              onClick={() => setShowGprsConsole(true)}
+                              title="Open GPRS Modem Interactive AT Command Debug Console"
+                            >
+                              📟 Debug
                             </button>
                           </div>
                         )}
@@ -5925,6 +6248,148 @@ Overall Status : ${overallStatus}
               <div>[+] PORT STATUS: SECURE (9000/TCP)</div>
             </div>
           )}
+        </div>
+      )}
+
+      {showGprsConsole && (
+        <div className="gprs-modal-overlay" onClick={() => setShowGprsConsole(false)}>
+          <div className="gprs-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="gprs-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '20px' }}>📟</span>
+                <h3 style={{ margin: 0, color: 'var(--text-white)' }}>GPRS / LTE AT Command Console</h3>
+              </div>
+              <button className="gprs-modal-close" onClick={() => setShowGprsConsole(false)}>&times;</button>
+            </div>
+
+            <div className="gprs-modal-body">
+              <div className="gprs-modal-info">
+                Sends commands to the active interface. Responses will display in the console log stream below.
+              </div>
+
+              {/* Terminal Logs View */}
+              <div className="gprs-modal-terminal">
+                {consoleLogs.length === 0 ? (
+                  <div style={{ color: 'var(--text-dim)', fontStyle: 'italic', padding: '10px' }}>No terminal logs available.</div>
+                ) : (
+                  consoleLogs.map((log, idx) => (
+                    <div key={idx} className={`terminal-line ${log.type}`} style={{ fontSize: '12px', margin: '3px 0' }}>
+                      [{log.time}] {log.text}
+                    </div>
+                  ))
+                )}
+                {/* Auto Scroll Anchor */}
+                <div ref={(el) => { if (el) el.scrollIntoView({ behavior: 'smooth' }); }}></div>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="gprs-modal-actions">
+                <button
+                  className="btn btn-secondary small"
+                  onClick={() => {
+                    addLogLine('[CMD] Triggering GPRS diagnostics AT Command Check');
+                    sendControlCommand('TEST_GPRS');
+                  }}
+                  disabled={!connection.type}
+                >
+                  🧪 Run GPRS AT Test
+                </button>
+                <button
+                  className="btn btn-accent small"
+                  onClick={() => {
+                    addLogLine('[CMD] Setting GPRS Baudrate to 1 Mbps');
+                    sendControlCommand('GPRS_SPEED');
+                  }}
+                  disabled={!connection.type}
+                >
+                  ⚡ Set 1 Mbps Speed
+                </button>
+                <button
+                  className="btn btn-accent small"
+                  onClick={() => {
+                    addLogLine('[CMD] Setting GPRS Baudrate to 115200 bps');
+                    sendControlCommand('GPRS_SPEED_115200');
+                  }}
+                  disabled={!connection.type}
+                  style={{ background: 'var(--accent-blue)', borderColor: 'var(--accent-blue)' }}
+                >
+                  ⚡ Set 115200 Baud
+                </button>
+                <button
+                  className="btn btn-primary small"
+                  onClick={() => {
+                    addLogLine('[CMD] Fetching IMEI via AT+CGSN');
+                    sendControlCommand('FETCH_IMEI');
+                  }}
+                  disabled={!connection.type}
+                >
+                  📟 Fetch IMEI
+                </button>
+                <button
+                  className="btn btn-secondary small"
+                  onClick={() => {
+                    addLogLine('[CMD] Starting Serial Passthrough Bridge');
+                    sendControlCommand('SERIAL_BRIDGE');
+                  }}
+                  disabled={!connection.type || connection.type !== 'serial'}
+                  style={{ border: '1px solid var(--accent-emerald)', color: 'var(--accent-emerald)' }}
+                  title="Forward data between USB Serial and GPRS module"
+                >
+                  🔗 Passthrough
+                </button>
+                <button
+                  className="btn btn-secondary small"
+                  onClick={() => {
+                    addLogLine('[CMD] PING');
+                    sendControlCommand('PING');
+                  }}
+                  disabled={!connection.type}
+                >
+                  📡 Ping Modem
+                </button>
+                <button
+                  className="btn btn-danger small"
+                  onClick={() => setConsoleLogs([])}
+                >
+                  🗑️ Clear Logs
+                </button>
+              </div>
+
+              {/* Input Command Area */}
+              <form
+                className="gprs-modal-input-group"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const cmd = gprsCommandInput.trim();
+                  if (!cmd) return;
+                  if (!connection.type) {
+                    alert('No active connection. Gateway offline.');
+                    return;
+                  }
+                  addLogLine(`[CMD] ${cmd}`);
+                  sendControlCommand(cmd);
+                  setGprsCommandInput('');
+                }}
+              >
+                <input
+                  type="text"
+                  className="gprs-modal-input"
+                  value={gprsCommandInput}
+                  onChange={(e) => setGprsCommandInput(e.target.value)}
+                  placeholder="Type AT or control command (e.g. AT+CSQ, PING) and press Enter..."
+                  disabled={!connection.type}
+                />
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ height: '38px', margin: 0, padding: '0 20px', minWidth: '80px' }}
+                  disabled={!connection.type}
+                >
+                  Send
+                </button>
+              </form>
+            </div>
+          </div>
         </div>
       )}
     </>

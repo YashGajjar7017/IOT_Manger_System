@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { app, BrowserWindow, ipcMain, Menu, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -562,7 +563,7 @@ function startExpressServer() {
     const otaPort = appConfig.otaPort || 500;
     console.log(`[EXPRESS API] Remote URL OTA requested: ${url} -> http://${gatewayIP}:${otaPort}/update`);
 
-    const tempPath = path.join(__dirname, 'scratch', `api_remote_firmware_${Date.now()}.bin`);
+    const tempPath = path.join(app.getPath('userData'), 'scratch', `api_remote_firmware_${Date.now()}.bin`);
     if (!fs.existsSync(path.dirname(tempPath))) {
       fs.mkdirSync(path.dirname(tempPath), { recursive: true });
     }
@@ -725,6 +726,11 @@ function startExpressServer() {
     } else {
       res.status(400).json({ error: 'No active connection. Gateway offline.' });
     }
+  });
+
+  // JSON error fallback for unmatched API routes
+  expressApp.all('/api/*', (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
   });
 
   // Fallback to React index.html for single-page routing
@@ -962,7 +968,7 @@ function startOtaLocalServer() {
     const filename = req.headers['x-filename'] || 'firmware.bin';
     console.log('[OTA SERVER] Received upload');
     
-    const tempPath = path.join(__dirname, 'scratch', `temp_${Date.now()}.bin`);
+    const tempPath = path.join(app.getPath('userData'), 'scratch', `temp_${Date.now()}.bin`);
     if (!fs.existsSync(path.dirname(tempPath))) {
       fs.mkdirSync(path.dirname(tempPath), { recursive: true });
     }
@@ -1465,8 +1471,13 @@ ipcMain.on('window-close', () => {
 });
 
 ipcMain.on('focus-window', () => {
-  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFocused()) {
-    mainWindow.focus();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (!mainWindow.isFocused()) {
+      mainWindow.focus();
+    }
+    try {
+      mainWindow.webContents.focus();
+    } catch (e) {}
   }
 });
 
@@ -2701,7 +2712,7 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
   const gatewayIP = ip || '192.168.0.1';
   event.reply('console-log', `[CERTS] Starting step-by-step certificate provisioning process...`);
   
-  const scratchDir = path.join(__dirname, 'scratch', 'certs');
+  const scratchDir = path.join(app.getPath('userData'), 'scratch', 'certs');
   if (!fs.existsSync(scratchDir)) {
     fs.mkdirSync(scratchDir, { recursive: true });
   }
@@ -2838,7 +2849,7 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port, targe
 
   event.reply('console-log', `[CERTS] Starting step-by-step certificate provisioning process (Target: ${target.toUpperCase()})...`);
 
-  const scratchDir = path.join(__dirname, 'scratch', 'certs');
+  const scratchDir = path.join(app.getPath('userData'), 'scratch', 'certs');
   if (!fs.existsSync(scratchDir)) {
     fs.mkdirSync(scratchDir, { recursive: true });
   }
@@ -3024,7 +3035,7 @@ ipcMain.on('download-and-flash-firmware', async (event, { firmwareUrl, ip, port,
 
   event.reply('console-log', `[OTA] [STEP 1/2] Initiating firmware download from: ${firmwareUrl}...`);
 
-  const tempPath = path.join(__dirname, 'scratch', `remote_firmware_${Date.now()}.bin`);
+  const tempPath = path.join(app.getPath('userData'), 'scratch', `remote_firmware_${Date.now()}.bin`);
   if (!fs.existsSync(path.dirname(tempPath))) {
     fs.mkdirSync(path.dirname(tempPath), { recursive: true });
   }
@@ -3383,7 +3394,10 @@ ipcMain.on('get-spiffs-storage', (event, { ip, port }) => {
 // IPC Handler: Delete file from ESP32 SPIFFS Storage (Requirement 4 & 5)
 ipcMain.on('delete-spiffs-file', (event, { ip, port, filename }) => {
   const gatewayIP = ip || '192.168.0.1';
-  const gatewayPort = parseInt(port) || 8000;
+  let gatewayPort = parseInt(port) || 8000;
+  if (gatewayPort === 500 || gatewayPort === 80) {
+    gatewayPort = 8000;
+  }
 
   event.reply('console-log', `[SPIFFS] Requesting deletion of '${filename}' from http://${gatewayIP}:${gatewayPort}...`);
 
@@ -3420,7 +3434,10 @@ ipcMain.on('delete-spiffs-file', (event, { ip, port, filename }) => {
 // IPC Handler: Read file content from ESP32 SPIFFS Storage
 ipcMain.on('read-spiffs-file', (event, { ip, port, filename }) => {
   const gatewayIP = ip || '192.168.0.1';
-  const gatewayPort = parseInt(port) || 8000;
+  let gatewayPort = parseInt(port) || 8000;
+  if (gatewayPort === 500 || gatewayPort === 80) {
+    gatewayPort = 8000;
+  }
 
   event.reply('console-log', `[SPIFFS] Requesting content of '${filename}' from http://${gatewayIP}:${gatewayPort}...`);
 
@@ -3457,7 +3474,10 @@ ipcMain.on('read-spiffs-file', (event, { ip, port, filename }) => {
 // IPC Handler: Update file content in ESP32 SPIFFS Storage
 ipcMain.on('update-spiffs-file', (event, { ip, port, filename, content }) => {
   const gatewayIP = ip || '192.168.0.1';
-  const gatewayPort = parseInt(port) || 8000;
+  let gatewayPort = parseInt(port) || 8000;
+  if (gatewayPort === 500 || gatewayPort === 80) {
+    gatewayPort = 8000;
+  }
 
   event.reply('console-log', `[SPIFFS] Requesting update of '${filename}' to http://${gatewayIP}:${gatewayPort}...`);
 
@@ -3520,7 +3540,7 @@ ipcMain.handle('save-log-file', async (event, logContent) => {
 });
 
 // IPC Handler: Continuously append console logs to gateway_debug.log in the workspace root
-const LOG_FILE_PATH = path.join(__dirname, 'gateway_debug.log');
+const LOG_FILE_PATH = path.join(app.getPath('userData'), 'gateway_debug.log');
 ipcMain.on('append-to-log-file', (event, text) => {
   const timestamp = new Date().toLocaleString();
   const logLine = `[${timestamp}] ${text}\n`;
@@ -3532,7 +3552,7 @@ ipcMain.on('append-to-log-file', (event, text) => {
 
 
 ipcMain.handle('admin-login', async (event, { username, password }) => { return await db.verifyAdminUser(username, password); });
-ipcMain.handle('admin-signup', async (event, { username, password }) => { return await db.createAdminUser(username, password); });
+ipcMain.handle('admin-signup', async (event, { username, email, password }) => { return await db.createAdminUser(username, email, password); });
 
 ipcMain.handle('db-manual-insert', async (event, record) => {
   try {
