@@ -1,6 +1,6 @@
 {
   "name": "iot-monitor-system",
-  "version": "2.0.8",
+  "version": "2.1.0",
   "description": "IoT Monitor Gateway MERN Desktop Dashboard",
   "main": "main.js",
   "scripts": {
@@ -40,7 +40,7 @@
   "build": {
     "appId": "com.iot_PubSub.app",
     "productName": "IOT Monitor System",
-    "icon": "icon/logo.png",
+    "icon": "icon/logo1.png",
     "files": [
       "frontend-build/**/*",
       "main.js",
@@ -65,9 +65,28 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "msi",
+          "arch": [
+            "x64"
+          ]
         }
       ],
-      "icon": "icon/logo.png"
+      "icon": "icon/logo1.png"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "icon/logo1.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
     },
     "nsis": {
       "oneClick": false,

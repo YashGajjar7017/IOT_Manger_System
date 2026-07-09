@@ -106,7 +106,7 @@ function sanitizeMongoURI(uri) {
 }
 
 function connectDatabase(customURI) {
-  const rawURI = customURI || 'mongodb://192.168.1.26:27017/IOT_System_Manager/IOT_System_Manager'; // 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB';
+  const rawURI = customURI || 'mongodb://192.168.1.26:27017/IOT_Monitor_System'; // 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB';
   const mongoURI = sanitizeMongoURI(rawURI);
   console.log(`[DATABASE] Connecting to MongoDB at ${mongoURI}...`);
 
@@ -223,7 +223,7 @@ const DeviceIdentificationSchema = new mongoose.Schema({
   gprsLog: { type: String, default: '' }
 });
 
-const DeviceIdentificationModel = mongoose.model('DeviceIdentification', DeviceIdentificationSchema);
+const DeviceIdentificationModel = mongoose.model('DeviceIdentification', DeviceIdentificationSchema, 'Device_Name');
 
 let memoryCertificateLogs = [];
 

@@ -49,7 +49,7 @@ let cacheSaveTimer = null; // debounce timer for cache writes
 const CONFIG_PATH = path.join(app.getPath('userData'), 'app-config.json');
 
 let appConfig = {
-  mongoUri: 'mongodb://192.168.1.26:27017/IOT_System_Manager/IOT_System_Manager', // 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB',
+  mongoUri: 'mongodb://192.168.1.26:27017/IOT_Monitor_System', // 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB',
   expressPort: 8000,
   telemetryPort: 9000,
   otaPort: 500,
@@ -67,9 +67,9 @@ function loadConfig() {
       console.log('[CONFIG] Settings loaded from:', CONFIG_PATH);
       
       // Auto-migrate remote Atlas MongoDB URI to local IP MongoDB URI (Requirement 4)
-      if (!appConfig.mongoUri || appConfig.mongoUri.includes('reactdb.d04du.mongodb.net') || appConfig.mongoUri.includes('yashacker')) {
+      if (!appConfig.mongoUri || appConfig.mongoUri.includes('reactdb.d04du.mongodb.net') || appConfig.mongoUri.includes('yashacker') || appConfig.mongoUri.includes('IOT_System_Manager')) {
         console.log('[CONFIG] Migrating remote MongoDB Atlas URI to local IP MongoDB URI...');
-        appConfig.mongoUri = 'mongodb://192.168.1.26:27017/IOT_System_Manager/IOT_System_Manager';
+        appConfig.mongoUri = 'mongodb://192.168.1.26:27017/IOT_Monitor_System';
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(appConfig, null, 2), 'utf8');
       }
     } else {
@@ -733,6 +733,139 @@ function startExpressServer() {
     res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
   });
 
+  expressApp.get('/github/callback', async (req, res) => {
+    const code = req.query.code;
+    if (!code) {
+      res.send(`
+        <html>
+          <body style="background:#0f1016; color:#fff; font-family:sans-serif; text-align:center; padding:50px;">
+            <h1 style="color:#ff3366;">Authentication Failed</h1>
+            <p>Authorization code not provided by GitHub.</p>
+          </body>
+        </html>
+      `);
+      return;
+    }
+
+    const clientId = appConfig.githubClientId || process.env.GITHUB_CLIENT_ID;
+    const clientSecret = appConfig.githubClientSecret || process.env.GITHUB_CLIENT_SECRET;
+
+    if (!clientId) {
+      res.send(`
+        <html>
+          <body style="background:#0f1016; color:#fff; font-family:sans-serif; text-align:center; padding:50px;">
+            <h1 style="color:#ff3366;">Configuration Error</h1>
+            <p>GitHub Client ID is not configured in settings.</p>
+          </body>
+        </html>
+      `);
+      return;
+    }
+
+    try {
+      const redirectUri = `http://127.0.0.1:${appConfig.expressPort}/github/callback`;
+      const tokenRes = await new Promise((resToken, rejToken) => {
+        const postData = JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret || '',
+          code: code,
+          redirect_uri: redirectUri
+        });
+
+        const reqOpts = {
+          hostname: 'github.com',
+          port: 443,
+          path: '/login/oauth/access_token',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Content-Length': Buffer.byteLength(postData),
+            'User-Agent': 'Electron-IoT-Monitor'
+          }
+        };
+
+        const tokenReq = require('https').request(reqOpts, (httpsRes) => {
+          let body = '';
+          httpsRes.on('data', chunk => body += chunk.toString());
+          httpsRes.on('end', () => {
+            try {
+              resToken(JSON.parse(body));
+            } catch (e) {
+              rejToken(new Error('Failed to parse access token response.'));
+            }
+          });
+        });
+
+        tokenReq.on('error', err => rejToken(err));
+        tokenReq.write(postData);
+        tokenReq.end();
+      });
+
+      const accessToken = tokenRes.access_token;
+      if (!accessToken) {
+        throw new Error(tokenRes.error_description || 'Access token request rejected. Please verify your client credentials.');
+      }
+
+      const userProfile = await new Promise((resUser, rejUser) => {
+        const userOpts = {
+          hostname: 'api.github.com',
+          port: 443,
+          path: '/user',
+          method: 'GET',
+          headers: {
+            'Authorization': `token ${accessToken}`,
+            'User-Agent': 'Electron-IoT-Monitor'
+          }
+        };
+
+        const userReq = require('https').request(userOpts, (httpsRes) => {
+          let body = '';
+          httpsRes.on('data', chunk => body += chunk.toString());
+          httpsRes.on('end', () => {
+            try {
+              resUser(JSON.parse(body));
+            } catch (e) {
+              rejUser(new Error('Failed to parse user profile response.'));
+            }
+          });
+        });
+
+        userReq.on('error', err => rejUser(err));
+        userReq.end();
+      });
+
+      const user = {
+        username: userProfile.login,
+        avatarUrl: userProfile.avatar_url,
+        name: userProfile.name || userProfile.login
+      };
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('github-oauth-success', user);
+      }
+
+      res.send(`
+        <html>
+          <body style="background:#0f1016; color:#fff; font-family:sans-serif; text-align:center; padding:50px;">
+            <h1 style="color:#00ff66;">Authenticated Successfully!</h1>
+            <p>Welcome, <b>${user.name}</b> (@${user.username}).</p>
+            <p>You can close this tab/window and return to the IoT Monitor System app.</p>
+          </body>
+        </html>
+      `);
+    } catch (err) {
+      res.send(`
+        <html>
+          <body style="background:#0f1016; color:#fff; font-family:sans-serif; text-align:center; padding:50px;">
+            <h1 style="color:#ff3366;">Authentication Error</h1>
+            <p>${err.message}</p>
+          </body>
+        </html>
+      `);
+    }
+  });
+
   // Fallback to React index.html for single-page routing
   expressApp.get('*', (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
@@ -1232,6 +1365,7 @@ app.whenReady().then(async () => {
               .then(doc => {
                 if (doc) {
                   currentDeviceDbId = doc._id;
+                  wc.send('refresh-registered-devices');
                 }
               })
               .catch(err => {
@@ -1659,6 +1793,20 @@ ipcMain.on('connect-serial', (event, { portPath, baudRate, pcbNumber }) => {
       event.reply('connection-status', { status: 'connected', type: 'serial', target: portPath });
       serialBuffer = '';
 
+      // Auto-send FETCH_IMEI to query IMEI via AT+CGSN on connection
+      setTimeout(() => {
+        if (activeSerialPort && activeSerialPort.isOpen) {
+          activeSerialPort.write('FETCH_IMEI\n', (writeErr) => {
+            if (writeErr) {
+              console.error('[SERIAL] Failed to auto-send FETCH_IMEI:', writeErr.message);
+            } else {
+              console.log('[SERIAL] Auto-sent FETCH_IMEI command.');
+              event.reply('console-log', '[TX SERIAL] Auto-sent: FETCH_IMEI');
+            }
+          });
+        }
+      }, 1000);
+
       activeSerialPort.on('data', (chunk) => {
         // Use 'latin1' so raw bytes are never corrupted by utf-8 multi-byte
         // interpretation.  The garbage filter below then drops ROM-bootloader
@@ -1812,6 +1960,22 @@ function startTcpTelemetryServer() {
     }
 
     tcpBuffer = '';
+
+    // Auto-send FETCH_IMEI to query IMEI via AT+CGSN on connection
+    setTimeout(() => {
+      if (activeTcpSocket && !activeTcpSocket.destroyed) {
+        activeTcpSocket.write('FETCH_IMEI\n', (writeErr) => {
+          if (writeErr) {
+            console.error('[TCP] Failed to auto-send FETCH_IMEI:', writeErr.message);
+          } else {
+            console.log('[TCP] Auto-sent FETCH_IMEI command.');
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('console-log', '[TX TCP] Auto-sent: FETCH_IMEI');
+            }
+          }
+        });
+      }
+    }, 1000);
 
     socket.on('data', (chunk) => {
       tcpBuffer += chunk.toString();
@@ -2927,30 +3091,90 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port, targe
     }
 
     if (isQcom) {
-      // Step 2 for QCOM: Stream files directly over active serial/TCP interface
-      event.reply('console-log', `[CERTS] [STEP 2/3] Streaming certificates directly to QCOM Co-processor over active channel...`);
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const localFilePath = path.join(scratchDir, file);
-        const content = fs.readFileSync(localFilePath, 'utf8');
-        const formattedCertData = `--- START_CERT:${file} ---\n${content}\n--- END_CERT ---\n`;
+      const hasDirectChannel = (activeTcpSocket && !activeTcpSocket.destroyed) || (activeSerialPort && activeSerialPort.isOpen);
+      if (hasDirectChannel) {
+        event.reply('console-log', `[CERTS] [STEP 2/3] Streaming certificates directly to QCOM Co-processor over active channel...`);
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const localFilePath = path.join(scratchDir, file);
+          const content = fs.readFileSync(localFilePath, 'utf8');
+          const formattedCertData = `--- START_CERT:${file} ---\n${content}\n--- END_CERT ---\n`;
 
-        event.reply('cert-status-update', { file, status: 'uploading' });
-        if (activeTcpSocket && !activeTcpSocket.destroyed) {
-          activeTcpSocket.write(formattedCertData);
-          event.reply('console-log', `[CERTS] Streamed ${file} directly to QCOM via TCP socket.`);
-        } else if (activeSerialPort && activeSerialPort.isOpen) {
-          activeSerialPort.write(formattedCertData);
-          event.reply('console-log', `[CERTS] Streamed ${file} directly to QCOM via Serial Port.`);
-        } else {
-          throw new Error('No active TCP socket or Serial Port connection to stream QCOM certificates.');
+          event.reply('cert-status-update', { file, status: 'uploading' });
+          if (activeTcpSocket && !activeTcpSocket.destroyed) {
+            activeTcpSocket.write(formattedCertData);
+            event.reply('console-log', `[CERTS] Streamed ${file} directly to QCOM via TCP socket.`);
+          } else if (activeSerialPort && activeSerialPort.isOpen) {
+            activeSerialPort.write(formattedCertData);
+            event.reply('console-log', `[CERTS] Streamed ${file} directly to QCOM via Serial Port.`);
+          }
+          const details = parseCertDetails(content, file);
+          event.reply('cert-status-update', { file, status: 'success', details });
         }
-        const details = parseCertDetails(content, file);
-        event.reply('cert-status-update', { file, status: 'success', details });
+      } else {
+        event.reply('console-log', `[CERTS] No active TCP telemetry or Serial Port connection found. Falling back to HTTP provisioning to sync certificates to QCOM co-processor...`);
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const localFilePath = path.join(scratchDir, file);
+
+          event.reply('cert-status-update', { file, status: 'uploading' });
+          event.reply('console-log', `[CERTS] [STEP 2/3] Uploading ${file} from local storage to ESP32 SPIFFS via HTTP fallback...`);
+
+          const content = fs.readFileSync(localFilePath, 'utf8');
+          const contentBytes = Buffer.byteLength(content);
+
+          const uploadToPort = (portNum) => {
+            return new Promise((resolve, reject) => {
+              const options = {
+                hostname: gatewayIP,
+                port: portNum,
+                path: `/upload_cert?filename=${encodeURIComponent(file)}`,
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'text/plain',
+                  'Content-Length': contentBytes
+                }
+              };
+
+              const req = http.request(options, (res) => {
+                let responseData = '';
+                res.on('data', (chunk) => { responseData += chunk.toString(); });
+                res.on('end', () => {
+                  if (res.statusCode === 200) resolve();
+                  else reject(new Error(`Upload failed. Code ${res.statusCode}: ${responseData}`));
+                });
+              });
+              req.on('error', err => reject(err));
+              req.write(content);
+              req.end();
+            });
+          };
+
+          // Attempt 1: Upload to primary target port
+          try {
+            await uploadToPort(targetPort1);
+            const details = parseCertDetails(content, file);
+            event.reply('cert-status-update', { file, status: 'success', details });
+            event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on Port ${targetPort1} (will auto-sync to QCOM).`);
+          } catch (err1) {
+            event.reply('console-log', `[WIFI] Port ${targetPort1} upload failed: ${err1.message}. Retrying on fallback Port ${targetPort2}...`);
+
+            // Attempt 2: Fallback to secondary port
+            try {
+              await uploadToPort(targetPort2);
+              const details = parseCertDetails(content, file);
+              event.reply('cert-status-update', { file, status: 'success', details });
+              event.reply('console-log', `[WIFI] Certificate ${file} uploaded to SPIFFS on fallback Port ${targetPort2} (will auto-sync to QCOM).`);
+            } catch (err2) {
+              event.reply('cert-status-update', { file, status: 'failed' });
+              throw err2;
+            }
+          }
+        }
       }
 
       // Step 3 for QCOM: Complete
-      event.reply('console-log', `[CERTS] [STEP 3/3] Certificates stored directly to QCOM.`);
+      event.reply('console-log', `[CERTS] [STEP 3/3] Certificates stored to QCOM.`);
     } else {
       // Step 2 for ESP32: Upload locally stored files to ESP32 SPIFFS with Port Fallback
       for (let i = 0; i < files.length; i++) {
@@ -3561,6 +3785,17 @@ ipcMain.handle('db-manual-insert', async (event, record) => {
   } catch (err) {
     return { success: false, error: err.message };
   }
+});
+
+// GitHub OAuth Link Retrieval IPC Handler
+ipcMain.handle('get-github-oauth-link', async (event) => {
+  const clientId = appConfig.githubClientId || process.env.GITHUB_CLIENT_ID;
+  if (!clientId) {
+    throw new Error('GitHub Client ID is not configured. Please set it in Settings.');
+  }
+  const redirectUri = `http://127.0.0.1:${appConfig.expressPort}/github/callback`;
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=read:user`;
+  return authUrl;
 });
 
 // GitHub OAuth Sign-In Flow IPC Handler

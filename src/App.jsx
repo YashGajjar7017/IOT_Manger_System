@@ -620,7 +620,7 @@ export default function App() {
   const [isUploadingUuid, setIsUploadingUuid] = useState(false);
 
   // App Config Settings State (Requirement 6)
-  const [dbUriInput, setDbUriInput] = useState('mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB');
+  const [dbUriInput, setDbUriInput] = useState('mongodb://192.168.1.26:27017/IOT_Monitor_System');
   const [dbReconnectStatus, setDbReconnectStatus] = useState('');
   const [isReconnectingDb, setIsReconnectingDb] = useState(false);
 
@@ -794,6 +794,11 @@ export default function App() {
         setImeiInput(payload.imei || '');
         setPasswordInput(payload.password || '');
         setCertificates(payload.certificates || []);
+        setRegImei(payload.imei || '');
+        setRegPass(payload.password || 'admin_secure_gate');
+        if (payload.wifi) {
+          setRegSsid(payload.wifi.ssid || '');
+        }
         /* setOtaIp('192.168.0.1'); */
         // Maintain connection-dynamic IP or sync with current wifiIp state:
         if (wifiIp) {
@@ -805,16 +810,19 @@ export default function App() {
 
         addLogLine('[SYS] Boot diagnostics report sync complete.', 'success');
 
-        const newDiags = {};
-        Object.keys(payload.diagnostics || {}).forEach(key => {
-          const val = payload.diagnostics[key];
-          if (val === 'WAITING' || val === 'PENDING') {
-            newDiags[key] = 'WAITING';
-          } else {
-            newDiags[key] = val ? 'OK' : 'ERROR';
-          }
+        setDiagnostics(prev => {
+          const updated = { ...prev };
+          Object.keys(payload.diagnostics || {}).forEach(key => {
+            const val = payload.diagnostics[key];
+            const nextVal = (val === 'WAITING' || val === 'PENDING') ? 'WAITING' : (val ? 'OK' : 'ERROR');
+            if (nextVal === 'WAITING' && (prev[key] === 'OK' || prev[key] === 'ERROR')) {
+              // Preserve existing OK/ERROR status
+            } else {
+              updated[key] = nextVal;
+            }
+          });
+          return updated;
         });
-        setDiagnostics(prev => ({ ...prev, ...newDiags }));
         if (payload.wifi) {
           setWifiDetails(payload.wifi);
         }
@@ -827,9 +835,11 @@ export default function App() {
       } else if (payload.status === 'PASSWORD_UPDATED') {
         setPassword(payload.password);
         setPasswordInput(payload.password);
+        setRegPass(payload.password);
         addLogLine('[SYS] Dynamic Credentials Password update completed successfully.', 'success');
       } else if (payload.status === 'WIFI_UPDATED') {
         setWifiRouterSsid(payload.ssid);
+        setRegSsid(payload.ssid);
         addLogLine(`[SYS] WiFi credentials updated on gateway. SSID is now: ${payload.ssid}`, 'success');
       } else if (payload.status === 'ok' && payload.msg && payload.msg.includes('Modem baud rate')) {
         addLogLine(`[GPRS Speed Update] ${payload.msg}`, 'success');
@@ -1087,12 +1097,25 @@ export default function App() {
         addLogLine(`[SPIFFS ERROR] Save failed: ${result.error}`, 'error');
       }
     };
-    ipcRenderer.on('spiffs-update-result', onSpiffsUpdateResult);
+    const onGitHubOauthSuccess = (event, user) => {
+      setGitHubUser(user);
+      localStorage.setItem('github_user', JSON.stringify(user));
+      localStorage.setItem('isLoggedIn', 'true');
+      setIsLoggedIn(true);
+      addLogLine(`[GITHUB] Authentication successful! Welcome ${user.name} (@${user.username}).`, 'success');
+      alert(`GitHub Authentication Successful!\nWelcome ${user.name} (@${user.username}).`);
+    };
+    ipcRenderer.on('github-oauth-success', onGitHubOauthSuccess);
+
+    const onRefreshRegisteredDevices = () => {
+      fetchRegisteredDevices();
+    };
+    ipcRenderer.on('refresh-registered-devices', onRefreshRegisteredDevices);
 
     // Fetch initial app configuration (Requirement 6)
     ipcRenderer.invoke('get-app-config').then((config) => {
       if (config) {
-        setDbUriInput(config.mongoUri || 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB');
+        setDbUriInput(config.mongoUri || 'mongodb://192.168.1.26:27017/IOT_Monitor_System');
         setExpressPortInput(String(config.expressPort || '8000'));
         setTelemetryPortInput(String(config.telemetryPort || '9000'));
         setOtaPortInput(String(config.otaPort || '500'));
@@ -1122,6 +1145,8 @@ export default function App() {
       ipcRenderer.off('cert-status-update', onCertStatusUpdate);
       ipcRenderer.off('spiffs-read-result', onSpiffsReadResult);
       ipcRenderer.off('spiffs-update-result', onSpiffsUpdateResult);
+      ipcRenderer.off('github-oauth-success', onGitHubOauthSuccess);
+      ipcRenderer.off('refresh-registered-devices', onRefreshRegisteredDevices);
     };
   }, []);
 
@@ -1614,6 +1639,18 @@ Overall Status : ${overallStatus}
     } catch (e) {
       addLogLine(`[GITHUB ERROR] Sign-in failed: ${e.message}`, 'error');
       alert(`GitHub Sign-In Failed:\n${e.message}`);
+    }
+  };
+
+  const handleGitHubCopyLink = async () => {
+    try {
+      const link = await ipcRenderer.invoke('get-github-oauth-link');
+      navigator.clipboard.writeText(link);
+      addLogLine('[GITHUB] OAuth link copied to clipboard. Paste it in your browser!', 'info');
+      alert('GitHub Auth Link copied to clipboard!\n\nPaste it into your browser to authenticate. Once you authorize, you will be redirected to the app.');
+    } catch (e) {
+      addLogLine(`[GITHUB ERROR] Failed to generate auth link: ${e.message}`, 'error');
+      alert(`Failed to generate link:\n${e.message}`);
     }
   };
 
@@ -2419,44 +2456,67 @@ Overall Status : ${overallStatus}
               <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
             </div>
 
-            <button
-              onClick={async () => {
-                addLogLine('[GITHUB] Opening GitHub OAuth secure sign-in window...', 'system');
-                try {
-                  const user = await ipcRenderer.invoke('github-oauth-sign-in');
-                  setGitHubUser(user);
-                  localStorage.setItem('github_user', JSON.stringify(user));
-                  localStorage.setItem('isLoggedIn', 'true');
-                  setIsLoggedIn(true);
-                  addLogLine(`[GITHUB] OAuth authorization successful! Welcome, ${user.name} (@${user.username}).`, 'success');
-                } catch (e) {
-                  addLogLine(`[GITHUB ERROR] Sign-in failed: ${e.message}`, 'error');
-                  alert(`GitHub Sign-In Failed:\n${e.message}`);
-                }
-              }}
-              style={{
-                width: '100%',
-                padding: '12px',
-                background: '#24292e',
-                color: 'white',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '10px',
-                cursor: 'pointer',
-                fontWeight: 'bold',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                fontSize: '13px',
-                boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
-                transition: 'all 0.3s'
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.167 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.164 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
-              </svg>
-              Sign In with GitHub
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+              <button
+                onClick={async () => {
+                  addLogLine('[GITHUB] Opening GitHub OAuth secure sign-in window...', 'system');
+                  try {
+                    const user = await ipcRenderer.invoke('github-oauth-sign-in');
+                    setGitHubUser(user);
+                    localStorage.setItem('github_user', JSON.stringify(user));
+                    localStorage.setItem('isLoggedIn', 'true');
+                    setIsLoggedIn(true);
+                    addLogLine(`[GITHUB] OAuth authorization successful! Welcome, ${user.name} (@${user.username}).`, 'success');
+                  } catch (e) {
+                    addLogLine(`[GITHUB ERROR] Sign-in failed: ${e.message}`, 'error');
+                    alert(`GitHub Sign-In Failed:\n${e.message}`);
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: '#24292e',
+                  color: 'white',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  fontSize: '13px',
+                  boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+                  transition: 'all 0.3s'
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.167 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.164 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
+                </svg>
+                Sign In via Window (OAuth Portal)
+              </button>
+              <button
+                onClick={handleGitHubCopyLink}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: 'rgba(255,255,255,0.03)',
+                  color: 'white',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  fontSize: '13px',
+                  transition: 'all 0.3s'
+                }}
+              >
+                🔗 Copy Auth Link to Browser
+              </button>
+            </div>
 
             <div
               style={{ color: '#a5b4fc', fontSize: '12px', marginTop: '20px', cursor: 'pointer', display: 'inline-block', borderBottom: '1px dotted #a5b4fc' }}
@@ -2578,10 +2638,7 @@ Overall Status : ${overallStatus}
           </nav>
 
           <div className="header-right">
-            <div className="header-status-box">
-              <span className={`pulse-dot ${connection.type === 'failed' ? 'error' : connection.type ? 'connected' : 'idle'}`}></span>
-              <span>{connection.type === 'failed' ? 'Failed' : connection.type ? 'Online' : 'Offline'}</span>
-            </div>
+            {/* Header status indicator removed as requested */}
 
             <div className="header-status-pill" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)', fontSize: '11px' }}>
               <span className="ping-label" style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dim)' }}>Socket Ping:</span>
@@ -2669,12 +2726,6 @@ Overall Status : ${overallStatus}
                     <div className="live-status-item">
                       <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>PCB: </span>
                       <span className="live-status-value" style={{ fontWeight: 'bold', color: '#fff' }}>{pcbNumber || 'N/A'}</span>
-                    </div>
-                    <div className="live-status-item">
-                      <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>Link: </span>
-                      <span className="live-status-value" style={{ fontWeight: 'bold', color: connection.type ? '#00ff66' : 'var(--text-dim)' }}>
-                        {connection.type ? connection.type.toUpperCase() : 'Offline'}
-                      </span>
                     </div>
                     <div className="live-status-item">
                       <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>DB Status: </span>
@@ -3525,7 +3576,6 @@ Overall Status : ${overallStatus}
                     <div key={dev.id} className={`device-card ${dev.status === 'ONLINE' ? '' : 'offline'}`}>
                       <div className="device-card-header">
                         <span className="device-id">NODE #{dev.id}</span>
-                        <span className="device-status-badge">{dev.status}</span>
                       </div>
                       <div className="device-metrics">
                         <div className="device-metric">
@@ -5813,6 +5863,15 @@ Overall Status : ${overallStatus}
                       <div className="theme-preview-bar"></div>
                       <span className="theme-preset-name">Star Nova</span>
                     </div>
+
+                    <div
+                      className={`theme-preset-card ${currentTheme === 'cyber-sunset' ? 'active' : ''}`}
+                      onClick={() => changeThemeWithTransition('cyber-sunset')}
+                      style={{ '--theme-card-border': '#ec4899', '--theme-card-bg-rgb': '236, 72, 153', '--theme-preview-grad': 'linear-gradient(135deg, #ec4899 0%, #eab308 100%)' }}
+                    >
+                      <div className="theme-preview-bar"></div>
+                      <span className="theme-preset-name">Cyber Sunset</span>
+                    </div>
                   </div>
                 </div>
 
@@ -5847,12 +5906,17 @@ Overall Status : ${overallStatus}
                       </button>
                     </div>
                   ) : (
-                    <button className="btn btn-secondary" onClick={handleGitHubSignIn} style={{ width: '100%', marginTop: '10px', gap: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                        <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
-                      </svg>
-                      Sign in with GitHub
-                    </button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '10px' }}>
+                      <button className="btn btn-secondary" onClick={handleGitHubSignIn} style={{ width: '100%', margin: 0, gap: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                          <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
+                        </svg>
+                        Sign in via Window (OAuth Portal)
+                      </button>
+                      <button className="btn btn-secondary" onClick={handleGitHubCopyLink} style={{ width: '100%', margin: 0, gap: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.03)', borderColor: 'rgba(255,255,255,0.1)' }}>
+                        🔗 Copy Auth Link to Browser
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

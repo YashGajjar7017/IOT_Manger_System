@@ -121,6 +121,8 @@ bool swState[SW_COUNT] = {false, false, false, false};
 #define GPRS_BAUD_RATE 115200
 #define GPRS_AT_TIMEOUT_MS 2000
 
+uint32_t currentGprsBaud = GPRS_BAUD_RATE;
+
 // ============================================================
 //  WI-FI  (Diagnostic / Web dashboard AP)
 // ============================================================
@@ -574,14 +576,13 @@ void testRS232() {
     drain(Serial2);
     Serial2.write(req, 8);
     Serial2.flush();
-    passes++; // Request successfully transmitted counts as a pass!
-
     uint8_t resp[128];
     size_t rn = readFrame(Serial2, resp, sizeof(resp), MODBUS_TIMEOUT_MS,
                           MODBUS_GAP_MS);
     if (rn > 0) {
       logFmt("       Resp: %s (%u B)\n",
              hexStr(resp, min(rn, (size_t)16)).c_str(), (unsigned)rn);
+      passes++;
     } else {
       logLn("       Sent OK (No response frame check needed)");
     }
@@ -598,8 +599,8 @@ void testRS232() {
               "MUX OK | Device responded " + String(passes) + "/" +
                   String(attempts) + " times");
   } else {
-    setResult(T_RS232, S_WARN,
-              "MUX OK · slave port got no reply (" + String(attempts) +
+    setResult(T_RS232, S_FAIL,
+              "ERROR: No response from slave (" + String(attempts) +
                   " rounds)");
   }
 
@@ -690,7 +691,30 @@ static String AT(const char *cmd, uint32_t ms = 1200) {
   drain(Serial1);
   Serial1.print(cmd);
   Serial1.print("\r\n");
-  return atRead(ms);
+  String r = atRead(ms);
+  if (r.length() == 0) {
+    uint32_t alternativeBaud = (currentGprsBaud == 115200) ? 1000000 : 115200;
+    logFmt("[AT] No response at %u baud. Trying alternative %u baud...\n", currentGprsBaud, alternativeBaud);
+    Serial1.end();
+    delay(20);
+    Serial1.begin(alternativeBaud, SERIAL_8N1, GPRS_RX, GPRS_TX);
+    delay(100);
+    drain(Serial1);
+    Serial1.print(cmd);
+    Serial1.print("\r\n");
+    r = atRead(ms);
+    if (r.length() > 0) {
+      logFmt("[AT] Success at %u baud! Updating active baud to %u.\n", alternativeBaud, alternativeBaud);
+      currentGprsBaud = alternativeBaud;
+    } else {
+      logFmt("[AT] Failed at both. Reverting to %u baud.\n", currentGprsBaud);
+      Serial1.end();
+      delay(20);
+      Serial1.begin(currentGprsBaud, SERIAL_8N1, GPRS_RX, GPRS_TX);
+      delay(100);
+    }
+  }
+  return r;
 }
 
 static int parseCSQ(const String &r) {
@@ -726,6 +750,7 @@ void testGPRS() {
     Serial1.end();
     delay(20);
     Serial1.begin(activeBaud, SERIAL_8N1, GPRS_RX, GPRS_TX);
+    currentGprsBaud = activeBaud;
     delay(300);
 
     for (int i = 0; i < 3 && !alive; i++) {
@@ -752,11 +777,14 @@ void testGPRS() {
   String csqR = AT("AT+CSQ", GPRS_AT_TIMEOUT_MS);
   String cregR = AT("AT+CREG?", GPRS_AT_TIMEOUT_MS);
   String cgmiR = AT("AT+CGMI", GPRS_AT_TIMEOUT_MS);
+  String cIEMI = AT("AT+CGSN", GPRS_AT_TIMEOUT_MS);
+
 
   logFmt("CPIN : %s\n", simR.c_str());
   logFmt("CSQ  : %s\n", csqR.c_str());
   logFmt("CREG : %s\n", cregR.c_str());
   logFmt("CGMI : %s\n", cgmiR.c_str());
+  logFmt("CIEMI : %s\n", cIEMI.c_str());
 
   int csqV = parseCSQ(csqR);
   bool simOK = simR.indexOf("READY") >= 0;
@@ -1246,6 +1274,7 @@ String executeGPRSSpeed() {
     Serial1.end();
     delay(20);
     Serial1.begin(b, SERIAL_8N1, GPRS_RX, GPRS_TX);
+    currentGprsBaud = b;
     delay(300);
     drain(Serial1);
     
@@ -1286,6 +1315,7 @@ String executeGPRSSpeed() {
   Serial1.end();
   delay(20);
   Serial1.begin(1000000, SERIAL_8N1, GPRS_RX, GPRS_TX);
+  currentGprsBaud = 1000000;
   delay(100);
   
   gprsDetailsLog += "--- STEP 3: Restoring local Serial1 to 1000000 baud ---\\n";
@@ -1325,6 +1355,7 @@ String executeGPRSSpeed115200() {
     Serial1.end();
     delay(20);
     Serial1.begin(b, SERIAL_8N1, GPRS_RX, GPRS_TX);
+    currentGprsBaud = b;
     delay(300);
     drain(Serial1);
     
@@ -1365,6 +1396,7 @@ String executeGPRSSpeed115200() {
   Serial1.end();
   delay(20);
   Serial1.begin(115200, SERIAL_8N1, GPRS_RX, GPRS_TX);
+  currentGprsBaud = 115200;
   delay(100);
   
   gprsDetailsLog += "--- STEP 3: Restoring local Serial1 to 115200 baud ---\\n";
@@ -1395,9 +1427,7 @@ void onGPRSReset() {
   }
   logLine();
   logLn("GPRS RESET → Sending ATZ");
-  drain(Serial1);
-  Serial1.print("ATZ\r\n");
-  String r = atRead(1500);
+  String r = AT("ATZ", 1500);
   logFmt("ATZ -> %s\n", r.c_str());
   bool ok = r.indexOf("OK") >= 0;
   String resp;
@@ -1413,9 +1443,7 @@ void onGPRSEchoOff() {
     server.send(429, "application/json", "{\"error\":\"busy\"}");
     return;
   }
-  drain(Serial1);
-  Serial1.print("ATE0\r\n");
-  String r = atRead(1000);
+  String r = AT("ATE0", 1000);
   logFmt("ATE0 -> %s\n", r.c_str());
   bool ok = r.indexOf("OK") >= 0;
   String resp;
@@ -1563,7 +1591,7 @@ String getSoftAPStationsJson() {
 //  PRODUCTION: QCOM CERT SYNC
 // ============================================================
 void dumpCertsToQcom() {
-  logLn("[QCOM SYNC] Syncing certificates to QCOM over Serial1...");
+  logLn("[QCOM SYNC] Syncing certificates to QCOM over Serial1 using AT+QFUPL...");
   String certsToSync[] = {"aws_root_ca.pem", "device_cert.crt",
                           "private_key.key"};
   for (int i = 0; i < 3; i++) {
@@ -1571,39 +1599,76 @@ void dumpCertsToQcom() {
     if (SPIFFS.exists(path)) {
       File f = SPIFFS.open(path, "r");
       if (f) {
-        logFmt("[QCOM] Streaming '%s'...\n", certsToSync[i].c_str());
-        Serial1.printf("--- START_CERT:%s ---\n", certsToSync[i].c_str());
-        while (f.available())
-          Serial1.write(f.read());
-        Serial1.println("\n--- END_CERT ---");
-        f.close();
-        unsigned long sw = millis();
-        String qr = "";
-        while (millis() - sw < 1500) {
+        size_t fileSize = f.size();
+        logFmt("[QCOM] Uploading '%s' using AT+QFUPL (%u bytes)...\n", certsToSync[i].c_str(), (unsigned)fileSize);
+        
+        // Clear read buffer first
+        drain(Serial1);
+        
+        // Send command: AT+QFUPL="filename",size
+        Serial1.printf("AT+QFUPL=\"%s\",%u\r\n", certsToSync[i].c_str(), (unsigned)fileSize);
+        
+        // Wait for CONNECT
+        unsigned long t0 = millis();
+        String connectResp = "";
+        bool connected = false;
+        while (millis() - t0 < 1500) {
           while (Serial1.available()) {
-            char c = Serial1.read();
-            qr += c;
+            char c = (char)Serial1.read();
+            connectResp += c;
           }
-          if (qr.indexOf("SUCCESS") != -1 || qr.indexOf("OK") != -1)
+          if (connectResp.indexOf("CONNECT") != -1) {
+            connected = true;
             break;
-          delay(10);
+          }
+          delay(5);
         }
-        qr.trim();
-        logFmt("[QCOM] Response: %s\n",
-               qr.length() > 0 ? qr.c_str() : "SUCCESS (Simulated)");
-        if (tcpClient && tcpClient.connected())
-          tcpClient.printf("[QCOM RESPONSE] %s\n", qr.length() > 0
-                                                       ? qr.c_str()
-                                                       : "SUCCESS (Simulated)");
+        
+        connectResp.trim();
+        logFmt("[QCOM] Acknowledge/Response: %s\n", connectResp.length() > 0 ? connectResp.c_str() : "TIMEOUT waiting for CONNECT");
+        if (tcpClient && tcpClient.connected()) {
+          tcpClient.printf("[QCOM AT+QFUPL] %s\n", connectResp.length() > 0 ? connectResp.c_str() : "TIMEOUT waiting for CONNECT");
+        }
+        
+        if (connected) {
+          // Send raw data
+          while (f.available()) {
+            Serial1.write(f.read());
+          }
+          Serial1.flush();
+          
+          // Wait for response (+QFUPL: <size>,<checksum> and OK)
+          unsigned long t1 = millis();
+          String ackResp = "";
+          while (millis() - t1 < 4000) {
+            while (Serial1.available()) {
+              char c = (char)Serial1.read();
+              ackResp += c;
+            }
+            if (ackResp.indexOf("OK") != -1 || ackResp.indexOf("ERROR") != -1) {
+              break;
+            }
+            delay(10);
+          }
+          ackResp.trim();
+          logFmt("[QCOM] Upload Result: %s\n", ackResp.c_str());
+          if (tcpClient && tcpClient.connected()) {
+            tcpClient.printf("[QCOM RESPONSE] %s\n", ackResp.c_str());
+          }
+        }
+        f.close();
       }
     } else {
-      logFmt("[QCOM] (Mock) Streaming '%s'...\n", certsToSync[i].c_str());
-      Serial1.printf("--- START_CERT:%s (SIMULATED) ---\n",
-                     certsToSync[i].c_str());
+      // Mock / Simulation mode
+      logFmt("[QCOM] (Mock) Uploading '%s' using simulated AT+QFUPL...\n", certsToSync[i].c_str());
+      Serial1.printf("AT+QFUPL=\"%s\",42\r\n", certsToSync[i].c_str());
+      delay(50);
       Serial1.println("MOCK_CERTIFICATE_DATA_FOR_PROOF_OF_CONCEPT");
-      Serial1.println("--- END_CERT ---");
-      delay(100);
-      logLn("[QCOM] SUCCESS (Simulated mock verification)");
+      delay(50);
+      logLn("[QCOM] Response: +QFUPL: 42,0000a1b2\n\nOK");
+      if (tcpClient && tcpClient.connected()) {
+        tcpClient.println("[QCOM RESPONSE] +QFUPL: 42,0000a1b2\n\nOK");
+      }
     }
   }
   logLn("[QCOM SYNC] Certificate sync completed.");
@@ -1833,6 +1898,7 @@ void handleCertUploadDirect(String filename, String certType) {
   Serial.println(reply);
   if (tcpClient && tcpClient.connected())
     tcpClient.println(reply);
+  dumpCertsToQcom();
   httpServer.send(200, "text/plain", "OK");
 }
 
@@ -2517,6 +2583,12 @@ void processCommand(String cmd) {
     deviceIMEI = cmd.substring(9);
     deviceIMEI.trim();
     logFmt("[CMD] IMEI updated: %s\n", deviceIMEI.c_str());
+    File f = SPIFFS.open("/imei.txt", "w");
+    if (f) {
+      f.print(deviceIMEI);
+      f.close();
+      logLn("[SPIFFS] Saved IMEI to /imei.txt");
+    }
     String reply =
         "{\"status\":\"IMEI_UPDATED\",\"imei\":\"" + deviceIMEI + "\"}";
     Serial.print("JSON_PAYLOAD:");
@@ -2579,9 +2651,7 @@ void processCommand(String cmd) {
       tcpClient.println(reply);
   } else if (cmd == "FETCH_IMEI") {
     logLn("[CMD] Fetching IMEI from GPRS modem using AT+CGSN...");
-    drain(Serial1);
-    Serial1.print("AT+CGSN\r\n");
-    String resp = atRead(2000);
+    String resp = AT("AT+CGSN", 2000);
     logFmt("[GPRS] AT+CGSN Response: %s\n", resp.c_str());
     
     // Parse the 15-digit numeric IMEI from the response
@@ -2600,6 +2670,12 @@ void processCommand(String cmd) {
     if (imeiVal.length() >= 15) {
       deviceIMEI = imeiVal.substring(0, 15);
       logFmt("[GPRS] Extracted IMEI: %s\n", deviceIMEI.c_str());
+      File f = SPIFFS.open("/imei.txt", "w");
+      if (f) {
+        f.print(deviceIMEI);
+        f.close();
+        logLn("[SPIFFS] Saved IMEI to /imei.txt");
+      }
       String reply = "{\"status\":\"IMEI_UPDATED\",\"imei\":\"" + deviceIMEI + "\"}";
       Serial.print("JSON_PAYLOAD:");
       Serial.println(reply);
@@ -2877,6 +2953,18 @@ void setup() {
     logFmt("[SPIFFS] OK. Total: %u KB  Used: %u KB\n",
            (unsigned)(SPIFFS.totalBytes() / 1024),
            (unsigned)(SPIFFS.usedBytes() / 1024));
+    if (SPIFFS.exists("/imei.txt")) {
+      File f = SPIFFS.open("/imei.txt", "r");
+      if (f) {
+        String savedImei = f.readString();
+        savedImei.trim();
+        if (savedImei.length() >= 15) {
+          deviceIMEI = savedImei.substring(0, 15);
+          logFmt("[SPIFFS] Loaded saved IMEI: %s\n", deviceIMEI.c_str());
+        }
+        f.close();
+      }
+    }
   }
 
   // WiFi AP
