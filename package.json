@@ -1,6 +1,6 @@
 {
   "name": "iot-monitor-system",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "IoT Monitor Gateway MERN Desktop Dashboard",
   "main": "main.js",
   "scripts": {
@@ -8,7 +8,7 @@
     "start": "vite --port 4000",
     "electron-start": "electron .",
     "electron-build": "npm run build && electron-builder",
-    "electron-dev": "concurrently \"npm start\" \"wait-on http://localhost:4000 && electron .\""
+    "electron-dev": "concurrently \"npm run build\" \"npm start\" \"wait-on http://localhost:4000 && electron .\""
   },
   "keywords": [
     "IoT",
@@ -47,6 +47,9 @@
       "backend/**/*",
       "package.json",
       "icon/**/*"
+    ],
+    "extraResources": [
+      "firmware/**/*"
     ],
     "directories": {
       "buildResources": "public",

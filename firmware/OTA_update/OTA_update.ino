@@ -70,8 +70,8 @@ void dumpCertsToQcom() {
   logMsg(
       "[BOOT] [QCOM SYNC] Syncing active certificates to QCOM over Serial1...");
 
-  String certsToSync[] = {"aws_root_ca.pem", "device_cert.crt",
-                          "private_key.key"};
+  String certsToSync[] = {"rootCA.pem", "client.pem",
+                          "key.pem"};
 
   for (int i = 0; i < 3; i++) {
     String path = "/" + certsToSync[i];
@@ -525,12 +525,12 @@ void setup() {
   });
 
   server.on("/api/upload_ca", HTTP_POST,
-            []() { handleCertUploadDirect("/aws_root_ca.pem", "Root CA"); });
+            []() { handleCertUploadDirect("/rootCA.pem", "Root CA"); });
   server.on("/api/upload_cert", HTTP_POST, []() {
-    handleCertUploadDirect("/device_cert.crt", "Device Cert");
+    handleCertUploadDirect("/client.pem", "Device Cert");
   });
   server.on("/api/upload_key", HTTP_POST, []() {
-    handleCertUploadDirect("/private_key.key", "Private Key");
+    handleCertUploadDirect("/key.pem", "Private Key");
   });
 
   // Storage check and filesystem manager (Requirement 4 & 5)

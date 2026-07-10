@@ -106,7 +106,7 @@ function sanitizeMongoURI(uri) {
 }
 
 function connectDatabase(customURI) {
-  const rawURI = customURI || 'mongodb://192.168.1.26:27017/IOT_Monitor_System'; // 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB';
+  const rawURI = customURI || process.env.MONOGDB_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/IOT_Monitor_System';
   const mongoURI = sanitizeMongoURI(rawURI);
   console.log(`[DATABASE] Connecting to MongoDB at ${mongoURI}...`);
 
@@ -126,7 +126,7 @@ function connectDatabase(customURI) {
       mongodbConnected = false;
       console.warn('[DATABASE] MongoDB connection failed. Falling back to In-Memory Logging.');
       console.warn(`[DATABASE] Error details: ${err.message}`);
-      throw err;
+      return null;
     });
 }
 

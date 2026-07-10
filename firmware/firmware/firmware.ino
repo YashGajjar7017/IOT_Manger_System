@@ -234,8 +234,8 @@ SemaphoreHandle_t tcpQueueSemaphore = NULL;
 
 // SPIFFS certificate list
 #define MAX_CERTS 10
-String certNames[MAX_CERTS] = {"rootCA.pem", "device_cert.crt",
-                               "private_key.key"};
+String certNames[MAX_CERTS] = {"rootCA.pem", "client.pem",
+                               "key.pem"};
 size_t certSizes[MAX_CERTS] = {1188, 2048, 1675};
 int certCount = 3;
 
@@ -778,7 +778,7 @@ void testGPRS() {
   String cregR = AT("AT+CREG?", GPRS_AT_TIMEOUT_MS);
   String cgmiR = AT("AT+CGMI", GPRS_AT_TIMEOUT_MS);
   String cIEMI = AT("AT+CGSN", GPRS_AT_TIMEOUT_MS);
-  String CFiles = AT("AT+QFLST='*'", GPRS_AT_TIMEOUT_MS);
+  String CFiles = AT("AT+QFLST=\"*\"", GPRS_AT_TIMEOUT_MS);
 
   logFmt("CPIN : %s\n", simR.c_str());
   logFmt("CSQ  : %s\n", csqR.c_str());
@@ -2134,10 +2134,17 @@ void setupHTTPServer() {
           httpServer.send(200, "text/plain",
                           (targetPartition && writeOffset > 0) ? "OK" : "FAIL");
         } else {
-          httpServer.send(200, "text/plain",
-                          (Update.hasError()) ? "FAIL" : "OK");
-          delay(1000);
-          ESP.restart();
+          if (Update.hasError()) {
+            String errorStr = "Update failed: " + String(Update.errorString()) +
+                              " (Code: " + String(Update.getError()) + ")";
+            Serial.println("[OTA ERROR] " + errorStr);
+            httpServer.send(500, "text/plain", errorStr);
+          } else {
+            Serial.println("[OTA SUCCESS] Flash update successful. Rebooting ESP32...");
+            httpServer.send(200, "text/plain", "OK");
+            delay(1000);
+            ESP.restart();
+          }
         }
       },
       []() {
@@ -2163,10 +2170,16 @@ void setupHTTPServer() {
             isQcomUpdate = false;
             const esp_partition_t *update_partition =
                 esp_ota_get_next_update_partition(NULL);
-            if (update_partition != NULL)
-              Update.begin(UPDATE_SIZE_UNKNOWN);
-            else
-              Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH);
+            bool beginSuccess = false;
+            if (update_partition != NULL) {
+              beginSuccess = Update.begin(update_partition->size, U_FLASH, -1,
+                                          LOW, update_partition->label);
+            } else {
+              beginSuccess = Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH);
+            }
+            if (!beginSuccess) {
+              Update.printError(Serial);
+            }
           }
         } else if (upload.status == UPLOAD_FILE_WRITE) {
           if (isQcomUpdate) {
@@ -2175,16 +2188,20 @@ void setupHTTPServer() {
                                   upload.currentSize);
             writeOffset += upload.currentSize;
           } else {
-            Update.write(upload.buf, upload.currentSize);
+            if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+              Update.printError(Serial);
+            }
           }
         } else if (upload.status == UPLOAD_FILE_END) {
           if (isQcomUpdate) {
             logFmt("[OTA QCOM] %u bytes written\n", writeOffset);
             shiftToQcomPartition();
           } else {
-            if (Update.end(true))
-              logFmt("[OTA ESP32] Done: %u bytes\n",
-                     (unsigned)upload.totalSize);
+            if (!Update.end(true)) {
+              Update.printError(Serial);
+            } else {
+              logFmt("[OTA ESP32] Done: %u bytes\n", (unsigned)upload.totalSize);
+            }
           }
         }
       });
@@ -2880,7 +2897,7 @@ void handleRunningState() {
     int totalNodes = 1 + connectedClients;
 
     String telemetryJSON =
-        "{\"type\":\"telemetry\",\"count\":" + String(totalNodes) +
+        "{\"type\":\"telemetry\",\"imei\":\"" + deviceIMEI + "\",\"count\":" + String(totalNodes) +
         ",\"devices\":[";
     telemetryJSON += "{\"id\":1,\"temp\":" + String(temp, 1) +
                      ",\"rssi\":" + String(rssi) +

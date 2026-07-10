@@ -222,6 +222,8 @@ export default function App() {
   const [expandedLogId, setExpandedLogId] = useState(null);
   const [registeredDevices, setRegisteredDevices] = useState([]);
   const [dbSubTab, setDbSubTab] = useState('tab-db-history');
+  const [isRegistryLocked, setIsRegistryLocked] = useState(true);
+  const [editingDeviceImei, setEditingDeviceImei] = useState(null);
   // Login / Signup State
   const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('isLoggedIn') === 'true');
   const [authMode, setAuthMode] = useState('login');
@@ -347,10 +349,21 @@ export default function App() {
     { id: 4, label: 'App Firmware', address: '0x10000', checked: true, file: null, status: 'idle', progress: 0 },
   ]);
   const [isFlashingAdvanced, setIsFlashingAdvanced] = useState(false);
+  const [isFlashingUsb, setIsFlashingUsb] = useState(false);
+  const [cliStatus, setCliStatus] = useState({ installed: false, version: '', checking: true });
+  const [isInstallingCli, setIsInstallingCli] = useState(false);
+  const [cliConsoleLogs, setCliConsoleLogs] = useState([]);
+  const [arduinoFqbn, setArduinoFqbn] = useState(() => localStorage.getItem('arduino_fqbn') || 'esp32:esp32:esp32s3');
+  const [isGitHubSyncing, setIsGitHubSyncing] = useState(false);
+  const [gitHubRepoUrlInput, setGitHubRepoUrlInput] = useState(() => localStorage.getItem('github_repo_url') || 'https://github.com/YashGajjar7017/IOT_Manger_System');
+  const [gitHubRepoBranchInput, setGitHubRepoBranchInput] = useState('main');
 
   // Dynamic Theme, Font, and GitHub Integration States
   // Default to the 1st theme 'quantum-indigo' on startup
-  const [currentTheme, setCurrentTheme] = useState(() => localStorage.getItem('theme') || 'quantum-indigo');
+  const [currentTheme, setCurrentTheme] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    return saved && saved !== 'minecraft' ? saved : 'quantum-indigo';
+  });
   const [currentFont, setCurrentFont] = useState(() => localStorage.getItem('font') || 'outfit');
   const starNovaStars = useMemo(() => Array.from({ length: 24 }, (_, index) => ({
     id: index,
@@ -507,14 +520,14 @@ export default function App() {
   const [pcbNumber, setPcbNumber] = useState('');
   const [certPreUploadTarget, setCertPreUploadTarget] = useState('BOTH');
   const [certStatuses, setCertStatuses] = useState({
-    'aws_root_ca.pem': 'idle',
-    'device_cert.crt': 'idle',
-    'private_key.key': 'idle'
+    'rootCA.pem': 'idle',
+    'client.pem': 'idle',
+    'key.pem': 'idle'
   });
   const [certDetails, setCertDetails] = useState({
-    'aws_root_ca.pem': null,
-    'device_cert.crt': null,
-    'private_key.key': null
+    'rootCA.pem': null,
+    'client.pem': null,
+    'key.pem': null
   });
   const [selectedSpiffsFile, setSelectedSpiffsFile] = useState('');
   const [selectedFileContent, setSelectedFileContent] = useState('');
@@ -620,7 +633,7 @@ export default function App() {
   const [isUploadingUuid, setIsUploadingUuid] = useState(false);
 
   // App Config Settings State (Requirement 6)
-  const [dbUriInput, setDbUriInput] = useState('mongodb://192.168.1.26:27017/IOT_Monitor_System');
+  const [dbUriInput, setDbUriInput] = useState('mongodb://127.0.0.1:27017/IOT_Monitor_System');
   const [dbReconnectStatus, setDbReconnectStatus] = useState('');
   const [isReconnectingDb, setIsReconnectingDb] = useState(false);
 
@@ -737,7 +750,7 @@ export default function App() {
     // 3. Subscribe to console logs
     const onConsoleLog = (event, message) => {
       addLogLine(message);
-      if (message.includes('[CERTS]') || message.includes('[PROVISION]') || message.includes('[WIFI]') || message.includes('aws_root_ca.pem') || message.includes('device_cert.crt') || message.includes('private_key.key')) {
+      if (message.includes('[CERTS]') || message.includes('[PROVISION]') || message.includes('[WIFI]') || message.includes('rootCA.pem') || message.includes('client.pem') || message.includes('key.pem')) {
         setProvisioningLogs(prev => [...prev, message]);
       }
     };
@@ -969,6 +982,53 @@ export default function App() {
     };
     ipcRenderer.on('ota-progress', onOtaProgress);
 
+    const onUsbFlashProgress = (event, payload) => {
+      if (payload.status === 'compiling' || payload.status === 'uploading') {
+        setIsFlashingUsb(true);
+        addLogLine(`[USB FLASH PROGRESS] ${payload.message || 'Processing...'} (${payload.progress}%)`, 'info');
+      } else if (payload.status === 'success') {
+        setIsFlashingUsb(false);
+        addLogLine(`[USB FLASH SUCCESS] ${payload.message}`, 'success');
+        alert('USB Flash Completed successfully!');
+      } else if (payload.status === 'error') {
+        setIsFlashingUsb(false);
+        addLogLine(`[USB FLASH ERROR] Flashing failed: ${payload.message}`, 'error');
+        alert(`USB Flashing Failed:\n${payload.message}`);
+      }
+    };
+    ipcRenderer.on('usb-flash-progress', onUsbFlashProgress);
+
+    const onArduinoCliInstallStatus = (event, payload) => {
+      if (payload.status === 'downloading' || payload.status === 'extracting') {
+        setIsInstallingCli(true);
+        addCliLog(`[INSTALL STATUS] ${payload.message}`, 'info');
+      } else if (payload.status === 'success') {
+        setIsInstallingCli(false);
+        addCliLog(`[INSTALL SUCCESS] ${payload.message}`, 'success');
+        checkCliInstallation();
+        alert('Arduino CLI installed successfully!');
+      } else if (payload.status === 'error') {
+        setIsInstallingCli(false);
+        addCliLog(`[INSTALL ERROR] ${payload.message}`, 'error');
+        alert(`Arduino CLI installation failed:\n${payload.message}`);
+      }
+    };
+    ipcRenderer.on('arduino-cli-install-status', onArduinoCliInstallStatus);
+
+    const onGitHubSyncResult = (event, result) => {
+      setIsGitHubSyncing(false);
+      if (result.success) {
+        addLogLine(`[GITHUB SYNC SUCCESS] ${result.message}`, 'success');
+        alert('Code updated successfully from GitHub! The application will now restart to apply updates.');
+      } else {
+        addLogLine(`[GITHUB SYNC ERROR] Sync failed: ${result.message}`, 'error');
+        alert(`GitHub Code Sync Failed:\n${result.message}`);
+      }
+    };
+    ipcRenderer.on('github-sync-result', onGitHubSyncResult);
+
+    checkCliInstallation();
+
     const onGatewayDiscovered = (event, gateway) => {
       setDiscoveredGateways(prev => {
         if (prev.some(g => g.ip === gateway.ip)) return prev;
@@ -1021,9 +1081,11 @@ export default function App() {
         addLogLine('[DATABASE] MongoDB reconnected successfully.', 'success');
         fetchDatabaseStatus();
         fetchDatabaseHistory();
+        alert('Database connected successfully!');
       } else {
         setDbReconnectStatus(`Failed: ${result.message}`);
         addLogLine(`[DATABASE ERROR] MongoDB reconnection failed: ${result.message}`, 'error');
+        alert(`Database connection failed:\n${result.message}`);
       }
     };
     ipcRenderer.on('database-connection-result', onDbConnectionResult);
@@ -1115,7 +1177,7 @@ export default function App() {
     // Fetch initial app configuration (Requirement 6)
     ipcRenderer.invoke('get-app-config').then((config) => {
       if (config) {
-        setDbUriInput(config.mongoUri || 'mongodb://192.168.1.26:27017/IOT_Monitor_System');
+        setDbUriInput(config.mongoUri || 'mongodb://127.0.0.1:27017/IOT_Monitor_System');
         setExpressPortInput(String(config.expressPort || '8000'));
         setTelemetryPortInput(String(config.telemetryPort || '9000'));
         setOtaPortInput(String(config.otaPort || '500'));
@@ -1147,6 +1209,9 @@ export default function App() {
       ipcRenderer.off('spiffs-update-result', onSpiffsUpdateResult);
       ipcRenderer.off('github-oauth-success', onGitHubOauthSuccess);
       ipcRenderer.off('refresh-registered-devices', onRefreshRegisteredDevices);
+      ipcRenderer.off('usb-flash-progress', onUsbFlashProgress);
+      ipcRenderer.off('arduino-cli-install-status', onArduinoCliInstallStatus);
+      ipcRenderer.off('github-sync-result', onGitHubSyncResult);
     };
   }, []);
 
@@ -1198,7 +1263,7 @@ export default function App() {
 
   // Sync / query database history whenever history log tab is clicked active
   useEffect(() => {
-    if (activeTab === 'page-database') {
+    if (activeTab === 'page-device-registry') {
       fetchDatabaseHistory();
       fetchDatabaseStatus();
       fetchRegisteredDevices();
@@ -1389,7 +1454,7 @@ Overall Status : ${overallStatus}
         })
       });
       if (res.ok) {
-        alert('Device configuration registered/updated successfully.');
+        alert(editingDeviceImei ? 'Device configuration updated successfully.' : 'Device configuration registered successfully.');
         setRegImei('');
         setRegPcb('');
         setRegPass('admin_secure_gate');
@@ -1397,6 +1462,7 @@ Overall Status : ${overallStatus}
         setRegWifiPass('');
         setRegInterval('1500');
         setRegDeviceNumber('1');
+        setEditingDeviceImei(null);
         fetchRegisteredDevices();
       } else {
         const errData = await res.json();
@@ -1662,6 +1728,71 @@ Overall Status : ${overallStatus}
     ipcRenderer.send('connect-serial', { portPath: selectedSerialPort, baudRate: selectedBaud, pcbNumber });
   };
 
+  const handleUsbFlash = () => {
+    const port = selectedSerialPort || (connection.type === 'serial' ? connection.target : null);
+    if (!port || port === 'CUSTOM_PORT') {
+      alert('Please select a valid COM port first.');
+      return;
+    }
+
+    const fqbn = localStorage.getItem('arduino_fqbn') || 'esp32:esp32:esp32s3';
+
+    if (connection.type === 'serial') {
+      addLogLine(`[USB FLASH] Disconnecting active serial connection on ${port} to release port for flashing...`);
+      ipcRenderer.send('disconnect-active');
+    }
+
+    setIsFlashingUsb(true);
+    addLogLine(`[USB FLASH] Initiating compiler & flash upload to ${port} using FQBN: ${fqbn}...`);
+    ipcRenderer.send('compile-and-flash-serial', { port, fqbn });
+  };
+
+  const checkCliInstallation = async () => {
+    try {
+      const res = await ipcRenderer.invoke('check-arduino-cli-installed');
+      setCliStatus({
+        installed: res.installed,
+        version: res.version || res.path || '',
+        source: res.source || '',
+        checking: false
+      });
+      addCliLog(`[TOOLCHAIN CHECK] Arduino-CLI detected: ${res.installed ? 'YES (' + (res.source || '') + ')' : 'NO'}`);
+    } catch (e) {
+      setCliStatus({ installed: false, version: '', checking: false });
+      addCliLog(`[TOOLCHAIN CHECK ERROR] Verify check failed: ${e.message}`);
+    }
+  };
+
+  const handleDownloadCli = () => {
+    setIsInstallingCli(true);
+    addCliLog('[INSTALL] Triggering Arduino CLI automatic installer download...');
+    ipcRenderer.send('install-arduino-cli');
+  };
+
+  const addCliLog = (text, type = 'system') => {
+    const logObj = {
+      time: new Date().toLocaleTimeString(),
+      text,
+      type
+    };
+    setCliConsoleLogs(prev => {
+      const next = [...prev, logObj];
+      if (next.length > 500) next.shift();
+      return next;
+    });
+  };
+
+  const handleGitHubSync = () => {
+    if (!gitHubRepoUrlInput) {
+      alert('Please enter a valid GitHub repository URL.');
+      return;
+    }
+    localStorage.setItem('github_repo_url', gitHubRepoUrlInput);
+    setIsGitHubSyncing(true);
+    addLogLine(`[GITHUB SYNC] Starting sync trigger for repository: ${gitHubRepoUrlInput} (branch: ${gitHubRepoBranchInput})...`);
+    ipcRenderer.send('sync-code-from-github', { repoUrl: gitHubRepoUrlInput, branch: gitHubRepoBranchInput });
+  };
+
   // Auto-scan: refresh port list then try connecting to each one in order
   // until a successful connection is established (useful when exact COM port is unknown)
   const autoScanAndConnect = async () => {
@@ -1904,20 +2035,20 @@ Overall Status : ${overallStatus}
     setIsDownloadingCerts(true);
     setCertDownloadStatus('Initiating download...');
     setCertStatuses({
-      'aws_root_ca.pem': 'idle',
-      'device_cert.crt': 'idle',
-      'private_key.key': 'idle'
+      'rootCA.pem': 'idle',
+      'client.pem': 'idle',
+      'key.pem': 'idle'
     });
     setCertDetails({
-      'aws_root_ca.pem': null,
-      'device_cert.crt': null,
-      'private_key.key': null
+      'rootCA.pem': null,
+      'client.pem': null,
+      'key.pem': null
     });
     ipcRenderer.send('download-and-provision-certs', {
       urls: {
-        'aws_root_ca.pem': formatUrl(certRootCaUrl),
-        'device_cert.crt': formatUrl(certDeviceCertUrl),
-        'private_key.key': formatUrl(certPrivateKeyUrl)
+        'rootCA.pem': formatUrl(certRootCaUrl),
+        'client.pem': formatUrl(certDeviceCertUrl),
+        'key.pem': formatUrl(certPrivateKeyUrl)
       },
       ip: gatewayIpProvisionInput || wifiIp,
       port: otaPort,
@@ -2568,13 +2699,11 @@ Overall Status : ${overallStatus}
               <span>Dashboard</span>
             </button>
 
-            <button className={`header-nav-item ${activeTab === 'page-database' ? 'active' : ''}`} onClick={() => setActiveTab('page-database')}>
+            <button className={`header-nav-item ${activeTab === 'page-firmware-flash' ? 'active' : ''}`} onClick={() => setActiveTab('page-firmware-flash')}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <ellipse cx="12" cy="5" rx="9" ry="3" />
-                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
               </svg>
-              <span>MongoDB History</span>
+              <span>Firmware Flasher</span>
             </button>
 
             <button className={`header-nav-item ${activeTab === 'page-device-registry' ? 'active' : ''}`} onClick={() => setActiveTab('page-device-registry')}>
@@ -2703,9 +2832,9 @@ Overall Status : ${overallStatus}
                   <button className="btn btn-accent header-btn" onClick={() => sendControlCommand('SYNC_CERTS_TO_QCOM')} disabled={!connection.type} title="Sync certificates from ESP32 to QCOM">
                     Sync Certs
                   </button>
-                  <button className="btn btn-secondary header-btn" onClick={handleDownloadReport} title="Export diagnostics report to local disk">
+                  {/* <button className="btn btn-secondary header-btn" onClick={handleDownloadReport} title="Export diagnostics report to local disk">
                     Download Report
-                  </button>
+                  </button> */}
                   <button className="btn btn-secondary header-btn" onClick={exportTelemetryJson} title="Export telemetry history as JSON">
                     Export Telemetry
                   </button>
@@ -2719,6 +2848,18 @@ Overall Status : ${overallStatus}
 
                 <div className="header-right-status" style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: '0 0 auto' }}>
                   <div className="live-status-container" style={{ display: 'flex', gap: '12px', background: 'rgba(255,255,255,0.02)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '11.5px' }}>
+                    <div className="live-status-item">
+                      <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>Link: </span>
+                      <span className="live-status-value" style={{ fontWeight: 'bold', color: connection.type ? '#00ff66' : '#ff3366' }}>
+                        {connection.type ? `CONNECTED (${connection.type.toUpperCase()})` : 'DISCONNECTED (CLOSED)'}
+                      </span>
+                    </div>
+                    {connection.type && connection.target && (
+                      <div className="live-status-item">
+                        {/* <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>Target: </span> */}
+                        {/* <span className="live-status-value" style={{ fontWeight: 'bold', color: '#fff' }}>{connection.target}</span> */}
+                      </div>
+                    )}
                     <div className="live-status-item">
                       <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>Device IMEI: </span>
                       <span className="live-status-value" style={{ fontWeight: 'bold', color: '#fff' }}>{imei && imei !== '--' ? imei : 'N/A'}</span>
@@ -2957,9 +3098,19 @@ Overall Status : ${overallStatus}
                                 <option value="74880">74880 (ROM bootloader)</option>
                               </select>
                             </div>
-                            <div className="button-row" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                              <button className="btn btn-primary" style={{ flex: '1 1 100%' }} onClick={connectSerial}>Open COM Port</button>
-                              <button className="btn btn-accent" style={{ flex: '1 1 100%' }} onClick={triggerBoot} disabled={!bootTriggerEnabled}>START_BOOT</button>
+                            <div className="button-row" style={{ display: 'flex', gap: '8px', width: '100%', marginBottom: '8px' }}>
+                              <button className="btn btn-primary" style={{ width: '80%', margin: 0 }} onClick={connectSerial}>Open COM Port</button>
+                              <button
+                                className="btn btn-secondary"
+                                style={{ width: '20%', margin: 0, minWidth: 'auto', padding: 0, fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                onClick={() => setShowGprsConsole(true)}
+                                title="Open GPRS Modem AT Command Debug Console"
+                              >
+                                📟
+                              </button>
+                            </div>
+                            <div className="button-row" style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                              <button className="btn btn-accent" style={{ flex: 1, margin: 0 }} onClick={triggerBoot} disabled={!bootTriggerEnabled}>START_BOOT</button>
                             </div>
                           </>
                         )}
@@ -2968,28 +3119,35 @@ Overall Status : ${overallStatus}
                   </>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {connection.type === 'serial' && (
-                      <div className="button-row" style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          className="btn btn-secondary"
-                          style={{ flex: 1 }}
-                          onClick={() => ipcRenderer.send('reset-serial-device')}
-                          title="Pulses the EN/RTS line to reboot firmware normally (NOT bootloader mode)"
-                        >
-                          ↺ Reset ESP32
-                        </button>
-                        <button
-                          className="btn btn-accent"
-                          style={{ flex: 1 }}
-                          onClick={() => sendControlCommand('FORMAT_SPIFFS')}
-                          title="Send FORMAT_SPIFFS command to reformat SPIFFS if it failed to mount"
-                        >
-                          🗂 Format SPIFFS
-                        </button>
-                      </div>
-                    )}
-                    <button className="btn btn-danger" onClick={disconnectGateway}>Disconnect active link</button>
-
+                    <div className="button-row" style={{ display: 'flex', gap: '8px', width: '100%', marginBottom: '8px' }}>
+                      <button className="btn btn-danger" style={{ width: '80%', margin: 0 }} onClick={disconnectGateway}>Disconnect active link</button>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ width: '20%', margin: 0, minWidth: 'auto', padding: 0, fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                        onClick={() => setShowGprsConsole(true)}
+                        title="Open GPRS Modem AT Command Debug Console"
+                      >
+                        📟
+                      </button>
+                    </div>
+                    <div className="button-row" style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ flex: 1, margin: 0 }}
+                        onClick={() => ipcRenderer.send('reset-serial-device')}
+                        title="Pulses the EN/RTS line to reboot firmware normally (NOT bootloader mode)"
+                      >
+                        ↺ Reset ESP32
+                      </button>
+                      <button
+                        className="btn btn-accent"
+                        style={{ flex: 1, margin: 0 }}
+                        onClick={() => sendControlCommand('FORMAT_SPIFFS')}
+                        title="Send FORMAT_SPIFFS command to reformat SPIFFS if it failed to mount"
+                      >
+                        🗂 Format SPIFFS
+                      </button>
+                    </div>
                     {/* Small scrollable side list of registered devices */}
                     <div style={{ marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '15px' }}>
                       <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-dim)', display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -3057,64 +3215,42 @@ Overall Status : ${overallStatus}
                     <div key={key} className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : diagnostics[key] === 'TESTING' ? 'warning' : ''}`}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                         <div className="diag-indicator" style={{ marginRight: '8px' }}></div>
-                        <div className="diag-label" style={{ flex: 1 }}>{key.toUpperCase()} Module</div>
+                        <div className="diag-label" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span>{key.toUpperCase()} Module</span>
+                        </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <div className="diag-value" style={{ fontSize: '11px', fontWeight: 'bold' }}>{diagnostics[key]}</div>
                           {connection.type && diagnostics[key] !== 'TESTING' && (
-                            <button
-                              className="btn btn-secondary small"
-                              style={{ padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', margin: 0, border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
-                              onClick={() => testModule(key)}
-                            >
-                              Test
-                            </button>
+                            key === 'gprs' ? (
+                              <div style={{ display: 'flex', gap: '6px', width: '100px', flexShrink: 0 }}>
+                                <button
+                                  className="btn btn-secondary small"
+                                  style={{ width: '80%', margin: 0, padding: '2px 4px', fontSize: '10px', height: '22px', minWidth: 'auto', border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
+                                  onClick={() => testModule(key)}
+                                >
+                                  Test
+                                </button>
+                                <button
+                                  className="btn btn-secondary small"
+                                  style={{ width: '20%', margin: 0, padding: 0, fontSize: '12px', height: '22px', minWidth: 'auto', border: '1px solid rgba(0, 240, 255, 0.4)', color: '#00f0ff', background: 'rgba(0, 240, 255, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                  onClick={() => setShowGprsConsole(true)}
+                                  title="Open GPRS Modem Interactive AT Command Debug Console"
+                                >
+                                  📟
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                className="btn btn-secondary small"
+                                style={{ padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', margin: 0, border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
+                                onClick={() => testModule(key)}
+                              >
+                                Test
+                              </button>
+                            )
                           )}
                         </div>
                       </div>
-                      {key === 'gprs' && (
-                        <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '8px', width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button
-                              className="btn btn-accent small"
-                              style={{ padding: '4px 10px', fontSize: '10px', height: '26px', flex: 1, cursor: 'pointer', margin: 0 }}
-                              onClick={() => sendControlCommand('GPRS_SPEED')}
-                              title="Sends AT+IPR=1000000;&W to set modem baud rate to 1 Mbps"
-                            >
-                              ⚡ Set 1 Mbps
-                            </button>
-                            <button
-                              className="btn btn-accent small"
-                              style={{ padding: '4px 10px', fontSize: '10px', height: '26px', flex: 1, cursor: 'pointer', margin: 0, background: 'var(--accent-blue)', borderColor: 'var(--accent-blue)' }}
-                              onClick={() => sendControlCommand('GPRS_SPEED_115200')}
-                              title="Sends AT+IPR=115200;&W to set modem baud rate to 115200"
-                            >
-                              ⚡ Set 115200
-                            </button>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button
-                              className="btn btn-secondary small"
-                              style={{ padding: '4px 10px', fontSize: '10px', height: '26px', flex: 1, cursor: 'pointer', margin: 0, border: '1px solid rgba(0, 240, 255, 0.3)' }}
-                              onClick={() => setShowGprsConsole(true)}
-                              title="Open GPRS Modem Interactive AT Command Debug Console"
-                            >
-                              📟 Debug Console
-                            </button>
-                            <button
-                              className="btn btn-secondary small"
-                              style={{ padding: '4px 10px', fontSize: '10px', height: '26px', flex: 1, cursor: 'pointer', margin: 0, border: '1px solid var(--accent-emerald)', color: 'var(--accent-emerald)' }}
-                              onClick={() => {
-                                addLogLine('[CMD] Starting Serial Passthrough Bridge');
-                                sendControlCommand('SERIAL_BRIDGE');
-                              }}
-                              disabled={!connection.type || connection.type !== 'serial'}
-                              title="Forward data between USB Serial and GPRS module"
-                            >
-                              🔗 Passthrough
-                            </button>
-                          </div>
-                        </div>
-                      )}
                       {key === 'di' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                           <div className="di-pins-container" style={{
@@ -3646,41 +3782,163 @@ Overall Status : ${overallStatus}
           </section>
 
           {/* ================= VIEW 2: MONGODB DATABASE LOGS ================= */}
-          <section id="page-database" className={`page-view ${activeTab === 'page-database' ? 'active' : ''}`}>
+          {/* ================= VIEW 2: USB FIRMWARE COMPILER & INSTALLER ================= */}
+          <section id="page-firmware-flash" className={`page-view ${activeTab === 'page-firmware-flash' ? 'active' : ''}`}>
             <header className="view-header">
               <div>
-                <h1>MERN Database Dashboard</h1>
-                <p>Review telemetry history logs stored in MongoDB</p>
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button className="btn btn-danger small" style={{ width: 'auto', height: '36px' }} onClick={clearDatabaseLogs}>Clear database logs</button>
+                <h1>USB Firmware Compiler & Installer</h1>
+                <p>Compile firmware.ino and flash directly to ESP32 Gateway via USB using Arduino CLI</p>
               </div>
             </header>
 
-            <div className="db-layout-container">
+            <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px' }}>
 
-              {/* Database status widget */}
-              <div className="glass-card db-status-card" style={{ marginBottom: '15px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '20px', alignItems: 'center' }}>
-                  <div>
-                    <h4 style={{ textTransform: 'uppercase', letterSpacing: '0.1em', fontSize: '11px', color: 'var(--accent-pink)', marginBottom: '5px' }}>MERN database state</h4>
-                    <span style={{ fontSize: '15px', fontWeight: 'bold', color: dbStatus.mongodb === 'CONNECTED' ? '#00ff66' : '#ff9900' }}>
-                      {dbStatus.mongodb === 'CONNECTED' ? '🟢 MONGODB CONNECTED' : '🟡 MEMORY LOGGER FALLBACK'}
+              {/* Arduino-CLI Installer Status Card */}
+              <div className="glass-card">
+                <h3><span className="icon">📥</span> Arduino-CLI Toolchain Manager</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                  Arduino CLI is required to compile and flash the firmware source code (.ino) locally.
+                </p>
+
+                <div style={{ background: 'rgba(0,0,0,0.2)', padding: '15px', borderRadius: '8px', border: '1px solid var(--glass-border)', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: 'bold', textTransform: 'uppercase' }}>Arduino CLI Status</span>
+                    <span style={{ fontSize: '12px', fontWeight: 'bold', color: cliStatus.installed ? '#00ff66' : '#ff3366' }}>
+                      {cliStatus.installed ? `🟢 DETECTED (${cliStatus.source === 'local' ? 'Local' : 'Global'} Version)` : '🔴 NOT DETECTED'}
                     </span>
                   </div>
+                  {cliStatus.installed && (
+                    <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                      <strong>Path/Ver:</strong> {cliStatus.version || cliStatus.path}
+                    </div>
+                  )}
+                </div>
 
-                  <div className="input-group" style={{ marginBottom: 0 }}>
-                    <label style={{ fontSize: '10px' }}>MongoDB connection URL</label>
-                    <div style={{ display: 'flex', gap: '6px' }}>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleDownloadCli}
+                    disabled={isInstallingCli}
+                    style={{ flex: 1, margin: 0 }}
+                  >
+                    {isInstallingCli ? '📥 Downloading toolchain...' : '📥 Download & Install Arduino CLI'}
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={checkCliInstallation}
+                    style={{ flex: '0 0 auto', margin: 0, width: 'auto', padding: '0 15px' }}
+                    title="Re-verify toolchain installation status"
+                  >
+                    🔄 Verify
+                  </button>
+                </div>
+              </div>
+
+              {/* USB Compile & Flash Control Card */}
+              <div className="glass-card">
+                <h3><span className="icon">⚡</span> USB / Serial Flash Controller</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                  Choose your target board serial COM port and FQBN architecture to compile & upload.
+                </p>
+
+                <div className="input-group">
+                  <label>Select Target COM Port</label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <select
+                      value={selectedSerialPort}
+                      onChange={(e) => setSelectedSerialPort(e.target.value)}
+                      style={{ flex: 1 }}
+                    >
+                      {serialPorts.length === 0 ? (
+                        <option value="">No COM ports scanned</option>
+                      ) : (
+                        serialPorts.map(p => <option key={p.path} value={p.path}>{p.path} — {p.manufacturer || 'Generic'}</option>)
+                      )}
+                    </select>
+                    <button className="btn btn-secondary small" style={{ height: '38px', padding: '0 10px', minWidth: 'auto' }} onClick={refreshPorts}>&#8635;</button>
+                  </div>
+                </div>
+
+                <div className="input-group">
+                  <label>Board FQBN target</label>
+                  <input
+                    type="text"
+                    value={arduinoFqbn}
+                    onChange={(e) => {
+                      setArduinoFqbn(e.target.value);
+                      localStorage.setItem('arduino_fqbn', e.target.value);
+                    }}
+                    placeholder="esp32:esp32:esp32s3"
+                  />
+                </div>
+
+                <button
+                  className="btn btn-accent"
+                  onClick={handleUsbFlash}
+                  disabled={isFlashingUsb || !cliStatus.installed || !selectedSerialPort}
+                  style={{ width: '100%', margin: 0, height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                >
+                  {isFlashingUsb ? '⚡ Compiling & Flashing...' : '⚡ Compile & Upload Firmware'}
+                </button>
+              </div>
+
+            </div>
+
+            {/* Dedicated compiler console logs */}
+            <div className="glass-card" style={{ marginTop: '20px', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                <h3><span className="icon">📟</span> Toolchain Logs & Compiler Terminal</h3>
+                <button
+                  className="btn btn-secondary small"
+                  style={{ width: 'auto', padding: '4px 12px', fontSize: '11px', height: '26px' }}
+                  onClick={() => setCliConsoleLogs([])}
+                >
+                  Clear Terminal
+                </button>
+              </div>
+
+              <div className="console-box" style={{ height: '300px', display: 'flex', flexDirection: 'column' }}>
+                <div className="console-terminal" style={{ padding: '12px' }}>
+                  {cliConsoleLogs.length === 0 ? (
+                    <div style={{ color: 'var(--text-dim)', fontStyle: 'italic', padding: '20px', textAlign: 'center' }}>
+                      Awaiting toolchain installation or firmware compilation triggers...
+                    </div>
+                  ) : (
+                    cliConsoleLogs.map((log, idx) => (
+                      <div key={idx} className={`terminal-line ${log.type}`}>
+                        [{log.time}] {log.text}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* ================= VIEW: DEVICE REGISTRY (PROMOTED) ================= */}
+          <section id="page-device-registry" className={`page-view ${activeTab === 'page-device-registry' ? 'active' : ''}`}>
+            <header className="view-header">
+              <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+                <div>
+                  <h1>Device Configuration Registry</h1>
+                  <p>Register and manage configurations associated with specific device IMEI identifiers</p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '15px' }}>
+
+                  {/* MongoDB Connection input */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '9px', textTransform: 'uppercase', fontWeight: 'bold', color: 'var(--accent-pink)', margin: 0, letterSpacing: '0.05em' }}>MongoDB Connection URL</label>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                       <input
                         type="text"
                         value={dbUriInput}
                         onChange={(e) => setDbUriInput(e.target.value)}
-                        style={{ fontSize: '11px', padding: '6px 10px', height: '28px', background: 'var(--input-bg)', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '4px' }}
+                        placeholder="mongodb://127.0.0.1:27017/IOT_System_Manager"
+                        style={{ width: '240px', fontSize: '11px', padding: '4px 10px', height: '28px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '6px', margin: 0 }}
                       />
                       <button
                         className="btn btn-secondary"
-                        style={{ height: '28px', minWidth: 'auto', padding: '0 10px', fontSize: '11px' }}
+                        style={{ height: '28px', minWidth: 'auto', padding: '0 12px', fontSize: '11px', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                         onClick={triggerDbReconnect}
                         disabled={isReconnectingDb}
                       >
@@ -3689,185 +3947,48 @@ Overall Status : ${overallStatus}
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-                    <button
-                      className="btn btn-secondary"
-                      style={{ height: '30px', minWidth: 'auto', padding: '0 12px', fontSize: '11px', border: '1px dashed var(--accent-pink)' }}
-                      onClick={async () => {
-                        const randomRecord = {
-                          pcbNumber: "PCB-TEST-" + Math.floor(Math.random() * 1000),
-                          connectionType: "tcp",
-                          target: "192.168.1.100:9000",
-                          imei: "86673808" + Math.floor(1000000 + Math.random() * 9000000),
-                          mac: "DE:AD:BE:EF:00:" + Math.floor(10 + Math.random() * 89),
-                          password: "admin_secure_gate",
-                          routerSSID: "Test_SSID",
-                          routerPassword: "test_password",
-                          telemetryInterval: 1500,
-                          rs232Status: "OK",
-                          rs485Status: "WAITING",
-                          gprsStatus: "OK",
-                          rs232Log: "RS232 connection loopback verified.",
-                          rs485Log: "Awaiting peripheral query response.",
-                          gprsLog: "Modem registered on network."
-                        };
-                        try {
-                          const res = await ipcRenderer.invoke('db-manual-insert', randomRecord);
-                          if (res.success) {
-                            alert('Successfully manually inserted telemetry snapshot record!');
-                            // Refresh db history
-                            ipcRenderer.send('reconnect-database', { uri: dbUriInput });
-                          } else {
-                            alert('Insertion failed: ' + res.error);
-                          }
-                        } catch (e) {
-                          alert('Error calling manual insert: ' + e.message);
-                        }
-                      }}
-                    >
-                      ➕ Manual Insert Test
-                    </button>
-                    <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
-                      Logs: {dbHistory.length} logs
+                  {/* Lock toggle switch */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.02)', padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--glass-border)', height: '28px', boxShadow: isRegistryLocked ? 'none' : '0 0 15px rgba(0,255,100,0.1)' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 'bold', color: isRegistryLocked ? '#ff3366' : '#00ff66', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {isRegistryLocked ? '🔒 Locked' : '🔓 Unlocked'}
                     </span>
+                    <label className="switch-toggle" style={{ margin: 0 }}>
+                      <input type="checkbox" checked={!isRegistryLocked} onChange={(e) => {
+                        setIsRegistryLocked(!e.target.checked);
+                        if (!e.target.checked) {
+                          setEditingDeviceImei(null);
+                          setRegImei('');
+                          setRegPcb('');
+                          setRegPass('admin_secure_gate');
+                          setRegSsid('');
+                          setRegWifiPass('');
+                          setRegInterval('1500');
+                          setRegDeviceNumber('1');
+                        }
+                      }} />
+                      <span className="switch-slider"></span>
+                    </label>
                   </div>
+
                 </div>
-              </div>
-
-              {/* logs display */}
-              <div className="glass-card" style={{ padding: '0px' }}>
-                {dbHistory.length === 0 ? (
-                  <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>
-                    No logs found. Connect your gateway, start the socket telemetry stream, and records will save automatically.
-                  </div>
-                ) : (
-                  <div className="db-history-table">
-                    <div className="db-table-header" style={{ display: 'grid', gridTemplateColumns: '140px 140px 140px 140px 85px 85px 85px 1fr', padding: '15px 20px', borderBottom: '1px solid var(--glass-border)', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-pink)' }}>
-                      <span>Timestamp</span>
-                      <span>IMEI</span>
-                      <span>PCB Number</span>
-                      <span>Link Target</span>
-                      <span>RS232</span>
-                      <span>RS485</span>
-                      <span>GPRS</span>
-                      <span style={{ textAlign: 'right' }}>Details</span>
-                    </div>
-
-                    <div className="db-table-body" style={{ maxHeight: '420px', overflowY: 'auto' }}>
-                      {dbHistory.map((record) => {
-                        const isExpanded = expandedLogId === record._id || expandedLogId === record.timestamp;
-                        const recordId = record._id || record.timestamp;
-
-                        return (
-                          <div key={recordId} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '140px 140px 140px 140px 85px 85px 85px 1fr', padding: '12px 20px', fontSize: '12.5px', alignItems: 'center' }}>
-                              <span style={{ fontFamily: 'var(--font-mono)' }}>{new Date(record.timestamp).toLocaleTimeString()}</span>
-                              <span style={{ fontWeight: 'bold' }}>{record.imei || '--'}</span>
-                              <span style={{ color: 'var(--text-dim)' }}>{record.pcbNumber || '--'}</span>
-                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{record.target || '--'}</span>
-                              <span>
-                                <span className={`status-tag ${record.rs232Status === 'OK' ? 'ok' : record.rs232Status === 'ERROR' ? 'err' : 'wait'}`}>
-                                  {record.rs232Status || 'WAITING'}
-                                </span>
-                              </span>
-                              <span>
-                                <span className={`status-tag ${record.rs485Status === 'OK' ? 'ok' : record.rs485Status === 'ERROR' ? 'err' : 'wait'}`}>
-                                  {record.rs485Status || 'WAITING'}
-                                </span>
-                              </span>
-                              <span>
-                                <span className={`status-tag ${record.gprsStatus === 'OK' ? 'ok' : record.gprsStatus === 'ERROR' ? 'err' : 'wait'}`}>
-                                  {record.gprsStatus || 'WAITING'}
-                                </span>
-                              </span>
-                              <button className="btn btn-secondary small-btn" style={{ marginLeft: 'auto', minWidth: '70px', padding: '4px' }} onClick={() => setExpandedLogId(isExpanded ? null : recordId)}>
-                                {isExpanded ? 'Hide' : 'Expand'}
-                              </button>
-                            </div>
-
-                            {isExpanded && (
-                              <div style={{ padding: '20px 25px', background: 'rgba(3, 0, 10, 0.5)', borderTop: '1px dashed var(--glass-border)' }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '20px' }}>
-                                  <div>
-                                    <div style={{ fontSize: '10.5px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Device Profile</div>
-                                    <div style={{ fontSize: '12.5px', lineHeight: '1.6' }}>
-                                      <div><strong>IMEI ID:</strong> {record.imei || 'N/A'}</div>
-                                      <div><strong>MAC Address:</strong> {record.mac || 'N/A'}</div>
-                                      <div><strong>PCB Serial:</strong> {record.pcbNumber || 'N/A'}</div>
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: '10.5px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Network Link</div>
-                                    <div style={{ fontSize: '12.5px', lineHeight: '1.6' }}>
-                                      <div><strong>Interface:</strong> {(record.connectionType || 'tcp').toUpperCase()}</div>
-                                      <div><strong>Connection Target:</strong> {record.target || 'N/A'}</div>
-                                      <div><strong>Telemetry Interval:</strong> {record.telemetryInterval || 1500} ms</div>
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: '10.5px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>WIFI Configurations</div>
-                                    <div style={{ fontSize: '12.5px', lineHeight: '1.6' }}>
-                                      <div><strong>Router SSID:</strong> {record.routerSSID || 'N/A'}</div>
-                                      <div><strong>Router Password:</strong> {record.routerPassword ? '••••••••' : 'N/A'}</div>
-                                      <div><strong>Gateway Credentials:</strong> {record.password || 'admin_secure_gate'}</div>
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: '10.5px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Peripherals Status</div>
-                                    <div style={{ fontSize: '12.5px', lineHeight: '1.6' }}>
-                                      <div><strong>RS232 Channel:</strong> <span style={{ color: record.rs232Status === 'OK' ? '#00ff66' : record.rs232Status === 'ERROR' ? '#ff3366' : record.rs232Status === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.rs232Status || 'WAITING'}</span></div>
-                                      <div><strong>RS485 Channel:</strong> <span style={{ color: record.rs485Status === 'OK' ? '#00ff66' : record.rs485Status === 'ERROR' ? '#ff3366' : record.rs485Status === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.rs485Status || 'WAITING'}</span></div>
-                                      <div><strong>GPRS Cell Modem:</strong> <span style={{ color: record.gprsStatus === 'OK' ? '#00ff66' : record.gprsStatus === 'ERROR' ? '#ff3366' : record.gprsStatus === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.gprsStatus || 'WAITING'}</span></div>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '15px' }}>
-                                  <div>
-                                    <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>RS232 Log</div>
-                                    <pre style={{ margin: 0, padding: '8px', background: '#040209', borderRadius: '4px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', color: '#00ffcc', textAlign: 'left' }}>
-                                      {record.rs232Log || 'No RS232 transmission log stored.'}
-                                    </pre>
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>RS485 Log</div>
-                                    <pre style={{ margin: 0, padding: '8px', background: '#040209', borderRadius: '4px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', color: '#00ffcc', textAlign: 'left' }}>
-                                      {record.rs485Log || 'No RS485 transmission log stored.'}
-                                    </pre>
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>GPRS Modem Log</div>
-                                    <pre style={{ margin: 0, padding: '8px', background: '#040209', borderRadius: '4px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', color: '#00ffcc', textAlign: 'left' }}>
-                                      {record.gprsLog || 'No GPRS AT-command log stored.'}
-                                    </pre>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-            </div>
-          </section>
-
-          {/* ================= VIEW: DEVICE REGISTRY (PROMOTED) ================= */}
-          <section id="page-device-registry" className={`page-view ${activeTab === 'page-device-registry' ? 'active' : ''}`}>
-            <header className="view-header">
-              <div>
-                <h1>Device Configuration Registry</h1>
-                <p>Register and manage configurations associated with specific device IMEI identifiers</p>
               </div>
             </header>
 
             <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
               {/* Registry Form */}
-              <div className="glass-card">
-                <h3><span className="icon">📝</span> Register Device Config</h3>
+              <div className="glass-card" style={{ border: editingDeviceImei ? '1px solid rgba(0, 122, 255, 0.4)' : '1px solid var(--glass-border)', boxShadow: editingDeviceImei ? '0 0 20px rgba(0, 122, 255, 0.15)' : 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
+                  <h3><span className="icon">📝</span> {editingDeviceImei ? 'Modify Device Profile' : 'Register Device Config'}</h3>
+                  {editingDeviceImei ? (
+                    <span style={{ fontSize: '11px', background: 'rgba(0,122,255,0.15)', color: '#007aff', border: '1px solid rgba(0,122,255,0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
+                      Update Mode
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '11px', background: 'rgba(0,255,100,0.15)', color: '#00ff66', border: '1px solid rgba(0,255,100,0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
+                      Insert Mode
+                    </span>
+                  )}
+                </div>
                 <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
                   Register or modify settings associated with a specific device IMEI ID. Settings automatically sync upon connection.
                 </p>
@@ -3881,6 +4002,8 @@ Overall Status : ${overallStatus}
                       onChange={(e) => setRegImei(e.target.value)}
                       placeholder="e.g. 866738083623502"
                       required
+                      disabled={isRegistryLocked || !!editingDeviceImei}
+                      style={{ opacity: editingDeviceImei ? 0.6 : 1 }}
                     />
                   </div>
 
@@ -3892,6 +4015,7 @@ Overall Status : ${overallStatus}
                       onChange={(e) => setRegDeviceNumber(e.target.value)}
                       placeholder="e.g. 1"
                       required
+                      disabled={isRegistryLocked}
                     />
                   </div>
 
@@ -3902,6 +4026,7 @@ Overall Status : ${overallStatus}
                       value={regPcb}
                       onChange={(e) => setRegPcb(e.target.value)}
                       placeholder="e.g. PCB-ESP32-v3-987"
+                      disabled={isRegistryLocked}
                     />
                   </div>
 
@@ -3912,6 +4037,7 @@ Overall Status : ${overallStatus}
                       value={regPass}
                       onChange={(e) => setRegPass(e.target.value)}
                       placeholder="Device credentials password"
+                      disabled={isRegistryLocked}
                     />
                   </div>
 
@@ -3922,6 +4048,7 @@ Overall Status : ${overallStatus}
                       value={regSsid}
                       onChange={(e) => setRegSsid(e.target.value)}
                       placeholder="SSID of Wireless Router"
+                      disabled={isRegistryLocked}
                     />
                   </div>
 
@@ -3932,6 +4059,7 @@ Overall Status : ${overallStatus}
                       value={regWifiPass}
                       onChange={(e) => setRegWifiPass(e.target.value)}
                       placeholder="Router WPA2 Passphrase"
+                      disabled={isRegistryLocked}
                     />
                   </div>
 
@@ -3942,17 +4070,39 @@ Overall Status : ${overallStatus}
                       value={regInterval}
                       onChange={(e) => setRegInterval(e.target.value)}
                       placeholder="1500"
+                      disabled={isRegistryLocked}
                     />
                   </div>
 
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={isRegisteringDevice}
-                    style={{ marginTop: '15px', width: '100%' }}
-                  >
-                    {isRegisteringDevice ? 'Saving Registry...' : 'Save Configuration Profile'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      disabled={isRegisteringDevice || isRegistryLocked}
+                      style={{ flex: 2, margin: 0 }}
+                    >
+                      {isRegistryLocked ? '🔒 Locked' : isRegisteringDevice ? 'Saving...' : editingDeviceImei ? 'Update Profile' : 'Insert Profile'}
+                    </button>
+                    {editingDeviceImei && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ flex: 1, margin: 0 }}
+                        onClick={() => {
+                          setEditingDeviceImei(null);
+                          setRegImei('');
+                          setRegPcb('');
+                          setRegPass('admin_secure_gate');
+                          setRegSsid('');
+                          setRegWifiPass('');
+                          setRegInterval('1500');
+                          setRegDeviceNumber('1');
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
                 </form>
               </div>
 
@@ -3997,7 +4147,8 @@ Overall Status : ${overallStatus}
                               <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                                 <button
                                   className="btn btn-secondary small"
-                                  style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto' }}
+                                  style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', opacity: isRegistryLocked ? 0.5 : 1 }}
+                                  disabled={isRegistryLocked}
                                   onClick={() => {
                                     setRegImei(dev.imei);
                                     setRegPcb(dev.pcbNumber || '');
@@ -4006,6 +4157,7 @@ Overall Status : ${overallStatus}
                                     setRegWifiPass(dev.routerPassword || '');
                                     setRegInterval(String(dev.telemetryInterval || 1500));
                                     setRegDeviceNumber(String(dev.deviceNumber || 1));
+                                    setEditingDeviceImei(dev.imei);
                                   }}
                                 >
                                   Edit
@@ -4019,7 +4171,8 @@ Overall Status : ${overallStatus}
                                 </button>
                                 <button
                                   className="btn btn-danger small"
-                                  style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', background: 'rgba(255, 0, 85, 0.1)', border: '1px solid rgba(255, 0, 85, 0.3)', color: '#ff0055' }}
+                                  style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', background: 'rgba(255, 0, 85, 0.1)', border: '1px solid rgba(255, 0, 85, 0.3)', color: '#ff0055', opacity: isRegistryLocked ? 0.5 : 1 }}
+                                  disabled={isRegistryLocked}
                                   onClick={() => handleDeleteDevice(dev._id || dev.imei, dev.imei || dev.pcbNumber || 'Unnamed Device')}
                                 >
                                   Delete
@@ -4033,6 +4186,134 @@ Overall Status : ${overallStatus}
                   )}
                 </div>
               </div>
+            </div>
+            {/* Relocated Database Telemetry History Logs Section */}
+            <div className="glass-card" style={{ marginTop: '20px', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                <div>
+                  <h3><span className="icon">📊</span> Telemetry Database History Logs ({dbHistory.length} logs)</h3>
+                  <p style={{ fontSize: '12px', color: 'var(--text-dim)', margin: 0 }}>Review telemetry snapshot logs stored inside MongoDB database</p>
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button className="btn btn-secondary small" style={{ width: 'auto', padding: '6px 12px', fontSize: '11px', height: '30px' }} onClick={fetchDatabaseHistory}>🔄 Refresh Logs</button>
+                  <button className="btn btn-danger small" style={{ width: 'auto', padding: '6px 12px', fontSize: '11px', height: '30px', background: 'rgba(255, 50, 50, 0.1)', border: '1px solid rgba(255, 50, 50, 0.3)', color: '#ff3333' }} onClick={clearDatabaseLogs}>Clear database logs</button>
+                </div>
+              </div>
+
+              {dbHistory.length === 0 ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}>
+                  No telemetry logs found inside MongoDB database. Run telemetry streaming to record.
+                </div>
+              ) : (
+                <div className="db-history-table">
+                  <div className="db-table-header" style={{ display: 'grid', gridTemplateColumns: '140px 140px 140px 140px 85px 85px 85px 1fr', padding: '15px 20px', borderBottom: '1px solid var(--glass-border)', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-pink)' }}>
+                    <span>Timestamp</span>
+                    <span>IMEI</span>
+                    <span>PCB Number</span>
+                    <span>Link Target</span>
+                    <span>RS232</span>
+                    <span>RS485</span>
+                    <span>GPRS</span>
+                    <span style={{ textAlign: 'right' }}>Details</span>
+                  </div>
+
+                  <div className="db-table-body" style={{ maxHeight: '350px', overflowY: 'auto' }}>
+                    {dbHistory.map((record) => {
+                      const isExpanded = expandedLogId === record._id || expandedLogId === record.timestamp;
+                      const recordId = record._id || record.timestamp;
+
+                      return (
+                        <div key={recordId} style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '140px 140px 140px 140px 85px 85px 85px 1fr', padding: '12px 20px', fontSize: '12px', alignItems: 'center' }}>
+                            <span style={{ fontFamily: 'var(--font-mono)' }}>{new Date(record.timestamp).toLocaleTimeString()}</span>
+                            <span style={{ fontWeight: 'bold' }}>{record.imei || '--'}</span>
+                            <span style={{ color: 'var(--text-dim)' }}>{record.pcbNumber || '--'}</span>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{record.target || '--'}</span>
+                            <span>
+                              <span className={`status-tag ${record.rs232Status === 'OK' ? 'ok' : record.rs232Status === 'ERROR' ? 'err' : 'wait'}`}>
+                                {record.rs232Status || 'WAITING'}
+                              </span>
+                            </span>
+                            <span>
+                              <span className={`status-tag ${record.rs485Status === 'OK' ? 'ok' : record.rs485Status === 'ERROR' ? 'err' : 'wait'}`}>
+                                {record.rs485Status || 'WAITING'}
+                              </span>
+                            </span>
+                            <span>
+                              <span className={`status-tag ${record.gprsStatus === 'OK' ? 'ok' : record.gprsStatus === 'ERROR' ? 'err' : 'wait'}`}>
+                                {record.gprsStatus || 'WAITING'}
+                              </span>
+                            </span>
+                            <button className="btn btn-secondary small-btn" style={{ marginLeft: 'auto', minWidth: '70px', padding: '4px', height: '24px', fontSize: '10.5px' }} onClick={() => setExpandedLogId(isExpanded ? null : recordId)}>
+                              {isExpanded ? 'Hide' : 'Expand'}
+                            </button>
+                          </div>
+
+                          {isExpanded && (
+                            <div style={{ padding: '20px 25px', background: 'rgba(3, 0, 10, 0.5)', borderTop: '1px dashed var(--glass-border)' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+                                <div>
+                                  <div style={{ fontSize: '10.5px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Device Profile</div>
+                                  <div style={{ fontSize: '12px', lineHeight: '1.6' }}>
+                                    <div><strong>IMEI ID:</strong> {record.imei || 'N/A'}</div>
+                                    <div><strong>MAC Address:</strong> {record.mac || 'N/A'}</div>
+                                    <div><strong>PCB Serial:</strong> {record.pcbNumber || 'N/A'}</div>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '10.5px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Network Link</div>
+                                  <div style={{ fontSize: '12px', lineHeight: '1.6' }}>
+                                    <div><strong>Interface:</strong> {(record.connectionType || 'tcp').toUpperCase()}</div>
+                                    <div><strong>Connection Target:</strong> {record.target || 'N/A'}</div>
+                                    <div><strong>Telemetry Interval:</strong> {record.telemetryInterval || 1500} ms</div>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '10.5px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>WIFI Configurations</div>
+                                  <div style={{ fontSize: '12px', lineHeight: '1.6' }}>
+                                    <div><strong>Router SSID:</strong> {record.routerSSID || 'N/A'}</div>
+                                    <div><strong>Router Password:</strong> {record.routerPassword ? '••••••••' : 'N/A'}</div>
+                                    <div><strong>Gateway Credentials:</strong> {record.password || 'admin_secure_gate'}</div>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '10.5px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Peripherals Status</div>
+                                  <div style={{ fontSize: '12px', lineHeight: '1.6' }}>
+                                    <div><strong>RS232 Channel:</strong> <span style={{ color: record.rs232Status === 'OK' ? '#00ff66' : record.rs232Status === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.rs232Status || 'WAITING'}</span></div>
+                                    <div><strong>RS485 Channel:</strong> <span style={{ color: record.rs485Status === 'OK' ? '#00ff66' : record.rs485Status === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.rs485Status || 'WAITING'}</span></div>
+                                    <div><strong>GPRS Cell Modem:</strong> <span style={{ color: record.gprsStatus === 'OK' ? '#00ff66' : record.gprsStatus === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.gprsStatus || 'WAITING'}</span></div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '15px' }}>
+                                <div>
+                                  <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>RS232 Log</div>
+                                  <pre style={{ margin: 0, padding: '8px', background: '#040209', borderRadius: '4px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', color: '#00ffcc', textAlign: 'left' }}>
+                                    {record.rs232Log || 'No RS232 transmission log stored.'}
+                                  </pre>
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>RS485 Log</div>
+                                  <pre style={{ margin: 0, padding: '8px', background: '#040209', borderRadius: '4px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', color: '#00ffcc', textAlign: 'left' }}>
+                                    {record.rs485Log || 'No RS485 transmission log stored.'}
+                                  </pre>
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>GPRS Modem Log</div>
+                                  <pre style={{ margin: 0, padding: '8px', background: '#040209', borderRadius: '4px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', color: '#00ffcc', textAlign: 'left' }}>
+                                    {record.gprsLog || 'No GPRS AT-command log stored.'}
+                                  </pre>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
@@ -4525,8 +4806,8 @@ Overall Status : ${overallStatus}
               {/* Auto SCADA Downloader Form */}
               <div className="glass-card" style={{
                 transition: 'all 0.5s ease',
-                borderColor: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00ff66' : 'var(--glass-border)',
-                boxShadow: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '0 0 25px rgba(0, 255, 100, 0.25)' : 'var(--glow-theme)'
+                borderColor: (certStatuses['rootCA.pem'] === 'success' && certStatuses['client.pem'] === 'success' && certStatuses['key.pem'] === 'success') ? '#00ff66' : 'var(--glass-border)',
+                boxShadow: (certStatuses['rootCA.pem'] === 'success' && certStatuses['client.pem'] === 'success' && certStatuses['key.pem'] === 'success') ? '0 0 25px rgba(0, 255, 100, 0.25)' : 'var(--glow-theme)'
               }}>
                 <h3><span className="icon">⚡</span> Auto Certificate Download & Provisioning</h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
@@ -4631,7 +4912,7 @@ Overall Status : ${overallStatus}
                   className="btn btn-primary"
                   onClick={triggerCertificateProvision}
                   disabled={isProvisioning || isDownloadingCerts}
-                  style={{ marginTop: '15px', width: '100%', height: '42px', background: (certStatuses['aws_root_ca.pem'] === 'success' && certStatuses['device_cert.crt'] === 'success' && certStatuses['private_key.key'] === 'success') ? '#00cc55' : 'var(--accent-primary)' }}
+                  style={{ marginTop: '15px', width: '100%', height: '42px', background: (certStatuses['rootCA.pem'] === 'success' && certStatuses['client.pem'] === 'success' && certStatuses['key.pem'] === 'success') ? '#00cc55' : 'var(--accent-primary)' }}
                 >
                   {isDownloadingCerts ? 'Processing Provisioning...' : 'Start Secure Provisioning'}
                 </button>
@@ -4681,60 +4962,60 @@ Overall Status : ${overallStatus}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '12px' }}>
                   {/* Step 1: Download CA Certificate */}
                   {(() => {
-                    const status = certStatuses['aws_root_ca.pem'] === 'downloading' ? 'running' :
-                      (certStatuses['aws_root_ca.pem'] === 'downloaded' || certStatuses['aws_root_ca.pem'] === 'uploading' || certStatuses['aws_root_ca.pem'] === 'success') ? 'success' :
-                        certStatuses['aws_root_ca.pem'] === 'failed' ? 'failed' : 'pending';
+                    const status = certStatuses['rootCA.pem'] === 'downloading' ? 'running' :
+                      (certStatuses['rootCA.pem'] === 'downloaded' || certStatuses['rootCA.pem'] === 'uploading' || certStatuses['rootCA.pem'] === 'success') ? 'success' :
+                        certStatuses['rootCA.pem'] === 'failed' ? 'failed' : 'pending';
                     return renderPipelineStep('Download CA Certificate', 'GET certificate from root authority', status);
                   })()}
 
                   {/* Step 2: Download Client Certificate */}
                   {(() => {
-                    const status = certStatuses['device_cert.crt'] === 'downloading' ? 'running' :
-                      (certStatuses['device_cert.crt'] === 'downloaded' || certStatuses['device_cert.crt'] === 'uploading' || certStatuses['device_cert.crt'] === 'success') ? 'success' :
-                        certStatuses['device_cert.crt'] === 'failed' ? 'failed' : 'pending';
+                    const status = certStatuses['client.pem'] === 'downloading' ? 'running' :
+                      (certStatuses['client.pem'] === 'downloaded' || certStatuses['client.pem'] === 'uploading' || certStatuses['client.pem'] === 'success') ? 'success' :
+                        certStatuses['client.pem'] === 'failed' ? 'failed' : 'pending';
                     return renderPipelineStep('Download Client Certificate', 'GET device-authentication certificate', status);
                   })()}
 
                   {/* Step 3: Download Private Key */}
                   {(() => {
-                    const status = certStatuses['private_key.key'] === 'downloading' ? 'running' :
-                      (certStatuses['private_key.key'] === 'downloaded' || certStatuses['private_key.key'] === 'uploading' || certStatuses['private_key.key'] === 'success') ? 'success' :
-                        certStatuses['private_key.key'] === 'failed' ? 'failed' : 'pending';
+                    const status = certStatuses['key.pem'] === 'downloading' ? 'running' :
+                      (certStatuses['key.pem'] === 'downloaded' || certStatuses['key.pem'] === 'uploading' || certStatuses['key.pem'] === 'success') ? 'success' :
+                        certStatuses['key.pem'] === 'failed' ? 'failed' : 'pending';
                     return renderPipelineStep('Download Private Key', 'GET device private RSA/ECC key', status);
                   })()}
 
                   {/* Step 4: Upload CA to Device */}
                   {(() => {
-                    const status = certStatuses['aws_root_ca.pem'] === 'uploading' ? 'running' :
-                      certStatuses['aws_root_ca.pem'] === 'success' ? 'success' :
-                        certStatuses['aws_root_ca.pem'] === 'failed' ? 'failed' : 'pending';
+                    const status = certStatuses['rootCA.pem'] === 'uploading' ? 'running' :
+                      certStatuses['rootCA.pem'] === 'success' ? 'success' :
+                        certStatuses['rootCA.pem'] === 'failed' ? 'failed' : 'pending';
                     return renderPipelineStep('Upload CA to Device', 'POST CA file with Bearer Authorization', status);
                   })()}
 
                   {/* Step 5: Upload Cert to Device */}
                   {(() => {
-                    const status = certStatuses['device_cert.crt'] === 'uploading' ? 'running' :
-                      certStatuses['device_cert.crt'] === 'success' ? 'success' :
-                        certStatuses['device_cert.crt'] === 'failed' ? 'failed' : 'pending';
+                    const status = certStatuses['client.pem'] === 'uploading' ? 'running' :
+                      certStatuses['client.pem'] === 'success' ? 'success' :
+                        certStatuses['client.pem'] === 'failed' ? 'failed' : 'pending';
                     return renderPipelineStep('Upload Cert to Device', 'POST Client cert with Bearer Authorization', status);
                   })()}
 
                   {/* Step 6: Upload Key to Device */}
                   {(() => {
-                    const status = certStatuses['private_key.key'] === 'uploading' ? 'running' :
-                      certStatuses['private_key.key'] === 'success' ? 'success' :
-                        certStatuses['private_key.key'] === 'failed' ? 'failed' : 'pending';
+                    const status = certStatuses['key.pem'] === 'uploading' ? 'running' :
+                      certStatuses['key.pem'] === 'success' ? 'success' :
+                        certStatuses['key.pem'] === 'failed' ? 'failed' : 'pending';
                     return renderPipelineStep('Upload Key to Device', 'POST Private key with Bearer Authorization', status);
                   })()}
 
                   {/* Step 7: Acknowledgement Signal */}
                   {(() => {
-                    const allSuccess = certStatuses['aws_root_ca.pem'] === 'success' &&
-                      certStatuses['device_cert.crt'] === 'success' &&
-                      certStatuses['private_key.key'] === 'success';
-                    const anyFailed = certStatuses['aws_root_ca.pem'] === 'failed' ||
-                      certStatuses['device_cert.crt'] === 'failed' ||
-                      certStatuses['private_key.key'] === 'failed';
+                    const allSuccess = certStatuses['rootCA.pem'] === 'success' &&
+                      certStatuses['client.pem'] === 'success' &&
+                      certStatuses['key.pem'] === 'success';
+                    const anyFailed = certStatuses['rootCA.pem'] === 'failed' ||
+                      certStatuses['client.pem'] === 'failed' ||
+                      certStatuses['key.pem'] === 'failed';
                     const status = allSuccess ? 'success' :
                       anyFailed ? 'failed' :
                         (isDownloadingCerts || isProvisioning) ? 'running' : 'pending';
@@ -4980,6 +5261,42 @@ Overall Status : ${overallStatus}
                     </table>
                   )}
                 </div>
+              </div>
+            </div>
+            {/* Added GitHub Code Sync card */}
+            <div className="glass-card" style={{ marginTop: '20px' }}>
+              <h3><span className="icon">🔄</span> GitHub App Code Auto-Updater</h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                Pull the latest javascript, styling, and firmware source files directly from your GitHub repository to update the app dynamically without reinstalling the full .exe.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 180px', gap: '15px', alignItems: 'flex-end' }}>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label>GitHub Repository URL</label>
+                  <input
+                    type="text"
+                    value={gitHubRepoUrlInput}
+                    onChange={(e) => setGitHubRepoUrlInput(e.target.value)}
+                    placeholder="https://github.com/Username/RepoName"
+                  />
+                </div>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label>Branch / Head target</label>
+                  <input
+                    type="text"
+                    value={gitHubRepoBranchInput}
+                    onChange={(e) => setGitHubRepoBranchInput(e.target.value)}
+                    placeholder="main"
+                  />
+                </div>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleGitHubSync}
+                  disabled={isGitHubSyncing}
+                  style={{ height: '38px', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                >
+                  {isGitHubSyncing ? 'Syncing...' : '🔄 Pull Latest Code'}
+                </button>
               </div>
             </div>
           </section>

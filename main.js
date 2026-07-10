@@ -49,7 +49,7 @@ let cacheSaveTimer = null; // debounce timer for cache writes
 const CONFIG_PATH = path.join(app.getPath('userData'), 'app-config.json');
 
 let appConfig = {
-  mongoUri: 'mongodb://192.168.1.26:27017/IOT_Monitor_System', // 'mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB',
+  mongoUri: process.env.MONOGDB_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/IOT_Monitor_System',
   expressPort: 8000,
   telemetryPort: 9000,
   otaPort: 500,
@@ -69,7 +69,7 @@ function loadConfig() {
       // Auto-migrate remote Atlas MongoDB URI to local IP MongoDB URI (Requirement 4)
       if (!appConfig.mongoUri || appConfig.mongoUri.includes('reactdb.d04du.mongodb.net') || appConfig.mongoUri.includes('yashacker') || appConfig.mongoUri.includes('IOT_System_Manager')) {
         console.log('[CONFIG] Migrating remote MongoDB Atlas URI to local IP MongoDB URI...');
-        appConfig.mongoUri = 'mongodb://192.168.1.26:27017/IOT_Monitor_System';
+        appConfig.mongoUri = 'mongodb://127.0.0.1:27017/IOT_Monitor_System';
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(appConfig, null, 2), 'utf8');
       }
     } else {
@@ -158,11 +158,24 @@ function startExpressServer() {
   expressApp.use(express.static(distPath));
 
   // REST API: Get database connection and logs status
-  expressApp.get('/api/status', (req, res) => {
-    res.json({
-      mongodb: db.isDbConnected() ? 'CONNECTED' : 'FALLBACK_MEMORY',
-      recordsCount: db.isDbConnected() ? 'Fetching dynamically' : db.getMemoryHistoryBuffer().length
-    });
+  expressApp.get('/api/status', async (req, res) => {
+    try {
+      let count = 0;
+      if (db.isDbConnected()) {
+        count = await db.TelemetryModel.countDocuments();
+      } else {
+        count = db.getMemoryHistoryBuffer().length;
+      }
+      res.json({
+        mongodb: db.isDbConnected() ? 'CONNECTED' : 'FALLBACK_MEMORY',
+        recordsCount: count
+      });
+    } catch (err) {
+      res.json({
+        mongodb: db.isDbConnected() ? 'CONNECTED' : 'FALLBACK_MEMORY',
+        recordsCount: 0
+      });
+    }
   });
 
   // REST API: Retrieve the last 50 historical telemetry snapshots
@@ -2545,6 +2558,277 @@ ipcMain.on('start-ota', async (event, { fileBuffer, filename, ip, port, target, 
   }
 });
 
+// Helper to get local or global arduino-cli executable path
+function getArduinoCliCmd() {
+  const fs = require('fs');
+  const path = require('path');
+  const localPath = path.join(app.getPath('userData'), 'arduino-cli.exe');
+  if (fs.existsSync(localPath)) {
+    return `"${localPath}"`;
+  }
+  return 'arduino-cli';
+}
+
+// IPC Handler: Check if arduino-cli is installed (globally or locally)
+ipcMain.handle('check-arduino-cli-installed', async () => {
+  const { exec } = require('child_process');
+  const fs = require('fs');
+  const path = require('path');
+  
+  const localPath = path.join(app.getPath('userData'), 'arduino-cli.exe');
+  if (fs.existsSync(localPath)) {
+    return { installed: true, path: localPath, source: 'local' };
+  }
+  
+  return new Promise((resolve) => {
+    exec('arduino-cli version', (err, stdout) => {
+      if (err) {
+        resolve({ installed: false });
+      } else {
+        resolve({ installed: true, version: stdout.trim(), source: 'global' });
+      }
+    });
+  });
+});
+
+// IPC Handler: Install Arduino-CLI tool locally in app's userData folder
+ipcMain.on('install-arduino-cli', (event) => {
+  const { exec } = require('child_process');
+  const fs = require('fs');
+  const path = require('path');
+  const https = require('https');
+
+  event.reply('console-log', `[ARDUINO CLI INSTALL] Initiating download of official arduino-cli 64-bit Windows binary...`);
+  event.reply('arduino-cli-install-status', { status: 'downloading', message: 'Downloading arduino-cli.zip...' });
+
+  const targetUrl = 'https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Windows_64bit.zip';
+  const targetZip = path.join(app.getPath('userData'), 'arduino-cli.zip');
+  const targetDir = app.getPath('userData');
+
+  const file = fs.createWriteStream(targetZip);
+  
+  const download = (url) => {
+    https.get(url, (res) => {
+      if (res.statusCode === 302 || res.statusCode === 301) {
+        download(res.headers.location);
+        return;
+      }
+      if (res.statusCode !== 200) {
+        event.reply('console-log', `[ARDUINO CLI INSTALL ERROR] Download failed: Server returned ${res.statusCode}`);
+        event.reply('arduino-cli-install-status', { status: 'error', message: `Server returned status code ${res.statusCode}` });
+        return;
+      }
+      
+      res.pipe(file);
+      
+      file.on('finish', () => {
+        file.close();
+        event.reply('console-log', `[ARDUINO CLI INSTALL] Download finished successfully. Extracting zip contents...`);
+        event.reply('arduino-cli-install-status', { status: 'extracting', message: 'Extracting arduino-cli.exe...' });
+
+        const unzipCmd = `powershell -Command "Expand-Archive -Path '${targetZip}' -DestinationPath '${targetDir}' -Force"`;
+        exec(unzipCmd, (unzipErr) => {
+          try { fs.unlinkSync(targetZip); } catch(e) {}
+          
+          if (unzipErr) {
+            event.reply('console-log', `[ARDUINO CLI INSTALL ERROR] Extraction failed: ${unzipErr.message}`);
+            event.reply('arduino-cli-install-status', { status: 'error', message: `Extraction failed: ${unzipErr.message}` });
+            return;
+          }
+
+          const localCliPath = path.join(targetDir, 'arduino-cli.exe');
+          if (fs.existsSync(localCliPath)) {
+            event.reply('console-log', `[ARDUINO CLI INSTALL SUCCESS] arduino-cli.exe successfully installed at: ${localCliPath}`);
+            exec(`"${localCliPath}" version`, (verErr, verOut) => {
+              const versionInfo = verOut ? verOut.trim() : 'Installed (Version check skipped)';
+              event.reply('console-log', `[ARDUINO CLI INSTALL] Version verification: ${versionInfo}`);
+              event.reply('arduino-cli-install-status', { status: 'success', message: 'Arduino CLI successfully installed!', version: versionInfo });
+            });
+          } else {
+            event.reply('console-log', `[ARDUINO CLI INSTALL ERROR] Extraction succeeded but arduino-cli.exe was not found.`);
+            event.reply('arduino-cli-install-status', { status: 'error', message: 'arduino-cli.exe missing from extracted files' });
+          }
+        });
+      });
+    }).on('error', (err) => {
+      event.reply('console-log', `[ARDUINO CLI INSTALL ERROR] Network download failed: ${err.message}`);
+      event.reply('arduino-cli-install-status', { status: 'error', message: `Download failed: ${err.message}` });
+    });
+  };
+
+  download(targetUrl);
+});
+
+// IPC Handler: Sync/Update app code from GitHub without removing the wrapper .exe
+ipcMain.on('sync-code-from-github', async (event, { repoUrl, branch }) => {
+  const { exec } = require('child_process');
+  const fs = require('fs');
+  const path = require('path');
+  const https = require('https');
+
+  const targetBranch = branch || 'main';
+  const localDir = __dirname;
+  
+  event.reply('console-log', `[GITHUB SYNC] Checking for local git repository in: ${localDir}...`);
+
+  if (fs.existsSync(path.join(localDir, '.git'))) {
+    event.reply('console-log', `[GITHUB SYNC] Detected local Git repository. Running git pull origin ${targetBranch}...`);
+    exec(`git pull origin ${targetBranch}`, (err, stdout, stderr) => {
+      if (stdout) event.reply('console-log', `[GITHUB SYNC STDOUT] ${stdout}`);
+      if (stderr) event.reply('console-log', `[GITHUB SYNC STDERR] ${stderr}`);
+      if (err) {
+        event.reply('console-log', `[GITHUB SYNC ERROR] Git pull failed: ${err.message}`);
+        event.reply('github-sync-result', { success: false, message: `Git pull failed: ${err.message}` });
+      } else {
+        event.reply('console-log', `[GITHUB SYNC SUCCESS] Git pull completed successfully. Restarting application...`);
+        event.reply('github-sync-result', { success: true, message: 'Code updated successfully via Git pull!' });
+        setTimeout(() => {
+          app.relaunch();
+          app.exit(0);
+        }, 1500);
+      }
+    });
+  } else {
+    event.reply('console-log', `[GITHUB SYNC] Local Git not found. Downloading repository zip from GitHub...`);
+    
+    let repoPath = "YashGajjar7017/IOT_Manger_System";
+    if (repoUrl) {
+      const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+      if (match) {
+        repoPath = `${match[1]}/${match[2].replace(/\.git$/, '')}`;
+      }
+    }
+    
+    const zipUrl = `https://github.com/${repoPath}/archive/refs/heads/${targetBranch}.zip`;
+    event.reply('console-log', `[GITHUB SYNC] Target Zip URL: ${zipUrl}`);
+    
+    const tempZipPath = path.join(app.getPath('userData'), 'repo-update.zip');
+    const extractDir = path.join(app.getPath('userData'), 'repo-update-extract');
+    
+    const file = fs.createWriteStream(tempZipPath);
+    
+    const download = (url) => {
+      https.get(url, (res) => {
+        if (res.statusCode === 302 || res.statusCode === 301) {
+          download(res.headers.location);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          event.reply('console-log', `[GITHUB SYNC ERROR] Download failed: Status Code ${res.statusCode}`);
+          event.reply('github-sync-result', { success: false, message: `GitHub returned status code ${res.statusCode}` });
+          return;
+        }
+        
+        res.pipe(file);
+        
+        file.on('finish', () => {
+          file.close();
+          event.reply('console-log', `[GITHUB SYNC] Download completed. Size: ${fs.statSync(tempZipPath).size} bytes. Extracting...`);
+          
+          const unzipCmd = `powershell -Command "Expand-Archive -Path '${tempZipPath}' -DestinationPath '${extractDir}' -Force"`;
+          event.reply('console-log', `[GITHUB SYNC] Unzipping: ${unzipCmd}`);
+          
+          exec(unzipCmd, (unzipErr) => {
+            if (unzipErr) {
+              event.reply('console-log', `[GITHUB SYNC ERROR] Unzip failed: ${unzipErr.message}`);
+              event.reply('github-sync-result', { success: false, message: `Unzip failed: ${unzipErr.message}` });
+              return;
+            }
+            
+            event.reply('console-log', `[GITHUB SYNC] Unzipped successfully. Copying new source files...`);
+            
+            const extractedFolders = fs.readdirSync(extractDir);
+            if (extractedFolders.length === 0) {
+              event.reply('console-log', `[GITHUB SYNC ERROR] No extracted folder found.`);
+              event.reply('github-sync-result', { success: false, message: 'Extracted folder structure not found.' });
+              return;
+            }
+            
+            const sourceFolder = path.join(extractDir, extractedFolders[0]);
+            const copyCmd = `powershell -Command "Copy-Item -Path '${sourceFolder}\\*' -Destination '${localDir}' -Recurse -Force"`;
+            event.reply('console-log', `[GITHUB SYNC] Copying: ${copyCmd}`);
+            
+            exec(copyCmd, (copyErr) => {
+              try {
+                fs.unlinkSync(tempZipPath);
+                fs.rmdirSync(extractDir, { recursive: true });
+              } catch(e) {}
+              
+              if (copyErr) {
+                event.reply('console-log', `[GITHUB SYNC ERROR] Copy failed: ${copyErr.message}`);
+                event.reply('github-sync-result', { success: false, message: `Copy failed: ${copyErr.message}` });
+              } else {
+                event.reply('console-log', `[GITHUB SYNC SUCCESS] Application code updated successfully! Restarting...`);
+                event.reply('github-sync-result', { success: true, message: 'Code updated successfully from GitHub Zip!' });
+                setTimeout(() => {
+                  app.relaunch();
+                  app.exit(0);
+                }, 1500);
+              }
+            });
+          });
+        });
+      }).on('error', (e) => {
+        event.reply('console-log', `[GITHUB SYNC ERROR] Network error: ${e.message}`);
+        event.reply('github-sync-result', { success: false, message: `Network error: ${e.message}` });
+      });
+    };
+
+    download(zipUrl);
+  }
+});
+
+// IPC Handler: compile and upload firmware using arduino-cli
+ipcMain.on('compile-and-flash-serial', (event, { port, fqbn }) => {
+  const { exec } = require('child_process');
+  const isDev = !app.isPackaged;
+  const firmwareInoPath = isDev
+    ? path.join(__dirname, 'firmware', 'firmware', 'firmware.ino')
+    : path.join(process.resourcesPath, 'firmware', 'firmware', 'firmware.ino');
+
+  const boardFqbn = fqbn || 'esp32:esp32:esp32s3';
+  const cliCmd = getArduinoCliCmd();
+
+  event.reply('console-log', `[USB FLASH] Preparing compilation. Target FQBN: ${boardFqbn}. COM Port: ${port}...`);
+  event.reply('usb-flash-progress', { status: 'compiling', progress: 10, message: 'Compiling firmware...' });
+
+  const compileCmd = `${cliCmd} compile --fqbn ${boardFqbn} "${firmwareInoPath}"`;
+  event.reply('console-log', `[USB FLASH] Command: ${compileCmd}`);
+
+  exec(compileCmd, (compileErr, stdout, stderr) => {
+    if (stdout) event.reply('console-log', `[USB COMPILER] ${stdout}`);
+    if (stderr) event.reply('console-log', `[USB COMPILER MSG] ${stderr}`);
+
+    if (compileErr) {
+      console.error('[USB FLASH] Compile error:', compileErr.message);
+      event.reply('console-log', `[USB FLASH ERROR] Compile failed: ${compileErr.message}`);
+      event.reply('usb-flash-progress', { status: 'error', message: `Compilation failed: ${compileErr.message}` });
+      return;
+    }
+
+    event.reply('usb-flash-progress', { status: 'uploading', progress: 50, message: 'Compilation successful. Flashing binary...' });
+    event.reply('console-log', `[USB FLASH] Compilation complete. Uploading firmware to port ${port}...`);
+
+    const uploadCmd = `${cliCmd} upload -p ${port} --fqbn ${boardFqbn} "${firmwareInoPath}"`;
+    event.reply('console-log', `[USB FLASH] Command: ${uploadCmd}`);
+
+    exec(uploadCmd, (uploadErr, upStdout, upStderr) => {
+      if (upStdout) event.reply('console-log', `[USB UPLOADER] ${upStdout}`);
+      if (upStderr) event.reply('console-log', `[USB UPLOADER MSG] ${upStderr}`);
+
+      if (uploadErr) {
+        console.error('[USB FLASH] Upload error:', uploadErr.message);
+        event.reply('console-log', `[USB FLASH ERROR] Upload failed: ${uploadErr.message}`);
+        event.reply('usb-flash-progress', { status: 'error', message: `Upload failed: ${uploadErr.message}` });
+        return;
+      }
+
+      event.reply('usb-flash-progress', { status: 'success', progress: 100, message: 'Flash completed successfully!' });
+      event.reply('console-log', `[USB FLASH SUCCESS] Firmware successfully booted on device on port ${port}!`);
+    });
+  });
+});
+
 // IPC Handler: upload-certificate to ESP32 WebServer via HTTP POST with dynamic fallback
 ipcMain.on('upload-certificate', async (event, { filePath, ip, port }) => {
   const gatewayIP = ip || '192.168.0.1';
@@ -2711,7 +2995,7 @@ ipcMain.on('download-and-provision-certs', async (event, { baseUrl, ip }) => {
   const gatewayIP = ip || '192.168.0.1';
   event.reply('console-log', `[CERTS] Downloading certificates from: ${baseUrl}...`);
   
-  const files = ['aws_root_ca.pem', 'device_cert.crt', 'private_key.key'];
+  const files = ['rootCA.pem', 'client.pem', 'key.pem'];
   
   try {
     for (let i = 0; i < files.length; i++) {

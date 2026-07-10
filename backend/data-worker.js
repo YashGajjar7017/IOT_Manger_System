@@ -36,7 +36,7 @@ try {
   db = require(path.join(__dirname, 'database.js'));
   const mongoUri = workerData && workerData.mongoUri
     ? workerData.mongoUri
-    : 'mongodb://192.168.1.26:27017/IOT_Monitor_System';
+    : 'mongodb://127.0.0.1:27017/IOT_Monitor_System';
 
   db.connectDatabase(mongoUri)
     .then(() => {
