@@ -1756,15 +1756,7 @@ ipcMain.on('connect-serial', (event, { portPath, baudRate, pcbNumber }) => {
   currentPcbNumber = pcbNumber || '';
   currentDeviceDbId = null;
 
-  if (db.isDbConnected()) {
-    db.createDeviceIdentification({
-      pcbNumber: currentPcbNumber,
-      connectionType: 'serial',
-      target: portPath
-    }).then(id => {
-      currentDeviceDbId = id;
-    });
-  }
+  // We do not auto-create a profile on connection; instead, we register/update when BOOT_SUCCESS or payload containing device identifier is received.
 
   try {
     activeSerialPort = new SerialPort({
@@ -2074,15 +2066,7 @@ ipcMain.on('connect-tcp', (event, { ip, port, pcbNumber }) => {
   currentPcbNumber = pcbNumber || '';
   currentDeviceDbId = null;
 
-  if (db.isDbConnected()) {
-    db.createDeviceIdentification({
-      pcbNumber: currentPcbNumber,
-      connectionType: 'tcp',
-      target: `0.0.0.0:${port || appConfig.telemetryPort || 9000} (Listening)`
-    }).then(id => {
-      currentDeviceDbId = id;
-    });
-  }
+  // We do not auto-create a profile on connection; instead, we register/update when BOOT_SUCCESS or payload containing device identifier is received.
 
   // Ensure TCP server is running
   if (!tcpTelemetryServer || !tcpTelemetryServer.listening) {

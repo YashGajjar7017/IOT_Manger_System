@@ -437,11 +437,11 @@ async function registerOrUpdateDevice(data) {
   return savedDoc;
 }
 
-async function deleteDeviceByImei(imei) {
+async function deleteDeviceByImei(identifier) {
   let deletedFromLocal = false;
   try {
     const localDevices = loadLocalDevices();
-    const filtered = localDevices.filter(d => d.imei !== imei);
+    const filtered = localDevices.filter(d => d.imei !== identifier && d._id !== identifier);
     if (filtered.length !== localDevices.length) {
       saveLocalDevices(filtered);
       deletedFromLocal = true;
@@ -450,10 +450,15 @@ async function deleteDeviceByImei(imei) {
     console.error('[DATABASE] Failed to delete local device registry:', e);
   }
 
-  if (mongodbConnected && imei) {
+  if (mongodbConnected && identifier) {
     try {
-      await DeviceIdentificationModel.deleteOne({ imei });
-      console.log(`[DATABASE] Device deleted in MongoDB for IMEI: ${imei}`);
+      const isObjectId = mongoose.Types.ObjectId.isValid(identifier);
+      if (isObjectId) {
+        await DeviceIdentificationModel.deleteOne({ _id: identifier });
+      } else {
+        await DeviceIdentificationModel.deleteOne({ imei: identifier });
+      }
+      console.log(`[DATABASE] Device deleted in MongoDB for identifier: ${identifier}`);
       return true;
     } catch (err) {
       console.error('[DATABASE] Failed to delete device in MongoDB:', err);

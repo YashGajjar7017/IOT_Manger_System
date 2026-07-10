@@ -778,13 +778,14 @@ void testGPRS() {
   String cregR = AT("AT+CREG?", GPRS_AT_TIMEOUT_MS);
   String cgmiR = AT("AT+CGMI", GPRS_AT_TIMEOUT_MS);
   String cIEMI = AT("AT+CGSN", GPRS_AT_TIMEOUT_MS);
-
+  String CFiles = AT("AT+QFLST='*'", GPRS_AT_TIMEOUT_MS);
 
   logFmt("CPIN : %s\n", simR.c_str());
   logFmt("CSQ  : %s\n", csqR.c_str());
   logFmt("CREG : %s\n", cregR.c_str());
   logFmt("CGMI : %s\n", cgmiR.c_str());
-  logFmt("CIEMI : %s\n", cIEMI.c_str());
+  logFmt("IEMI : %s\n", cIEMI.c_str());
+  logFmt("Files : %s\n", CFiles.c_str());
 
   int csqV = parseCSQ(csqR);
   bool simOK = simR.indexOf("READY") >= 0;
@@ -1592,8 +1593,8 @@ String getSoftAPStationsJson() {
 // ============================================================
 void dumpCertsToQcom() {
   logLn("[QCOM SYNC] Syncing certificates to QCOM over Serial1 using AT+QFUPL...");
-  String certsToSync[] = {"aws_root_ca.pem", "device_cert.crt",
-                          "private_key.key"};
+  String certsToSync[] = {"rootCA.pem", "client.pem",
+                          "key.pem"};
   for (int i = 0; i < 3; i++) {
     String path = "/" + certsToSync[i];
     if (SPIFFS.exists(path)) {
@@ -1973,12 +1974,12 @@ void setupServer() {
     handleCertUploadDirectOta(filename, "Certificate");
   });
   Server.on("/api/upload_ca", HTTP_POST,
-            []() { handleCertUploadDirectOta("/aws_root_ca.pem", "Root CA"); });
+            []() { handleCertUploadDirectOta("/rootCA.pem", "Root CA"); });
   Server.on("/api/upload_cert", HTTP_POST, []() {
-    handleCertUploadDirectOta("/device_cert.crt", "Device Cert");
+    handleCertUploadDirectOta("/client.pem", "Device Cert");
   });
   Server.on("/api/upload_key", HTTP_POST, []() {
-    handleCertUploadDirectOta("/private_key.key", "Private Key");
+    handleCertUploadDirectOta("/key.pem", "Private Key");
   });
 
   Server.begin();
@@ -2026,7 +2027,7 @@ String queryQcomFiles() {
   }
   
   if (first) {
-    String certs[] = {"aws_root_ca.pem", "device_cert.crt", "private_key.key"};
+    String certs[] = {"rootCA.pem", "client.pem", "key.pem"};
     for (int i = 0; i < 3; i++) {
       if (SPIFFS.exists("/" + certs[i])) {
         File f = SPIFFS.open("/" + certs[i], "r");
@@ -2196,13 +2197,13 @@ void setupHTTPServer() {
     handleCertUploadDirect(filename, "Certificate");
   });
   httpServer.on("/api/upload_ca", HTTP_POST, []() {
-    handleCertUploadDirect("/aws_root_ca.pem", "Root CA");
+    handleCertUploadDirect("/rootCA.pem", "Root CA");
   });
   httpServer.on("/api/upload_cert", HTTP_POST, []() {
-    handleCertUploadDirect("/device_cert.crt", "Device Cert");
+    handleCertUploadDirect("/client.pem", "Device Cert");
   });
   httpServer.on("/api/upload_key", HTTP_POST, []() {
-    handleCertUploadDirect("/private_key.key", "Private Key");
+    handleCertUploadDirect("/key.pem", "Private Key");
   });
 
   httpServer.on("/api/storage", HTTP_GET, []() {

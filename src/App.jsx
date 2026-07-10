@@ -31,8 +31,8 @@ function IoTStarLogo({ size = 28 }) {
       <line x1="50" y1="50" x2="28" y2="85" stroke="#00f0ff" strokeWidth="2.5" strokeDasharray="3,3" />
       <line x1="50" y1="50" x2="14" y2="42" stroke="#00f0ff" strokeWidth="2.5" strokeDasharray="3,3" />
       <circle cx="50" cy="50" r="28" fill="none" stroke="rgba(255, 0, 127, 0.4)" strokeWidth="1.5" strokeDasharray="5,4" />
-      <path d="M 50 22 L 58 41 L 79 41 L 62 53 L 68 73 L 50 61 L 32 73 L 38 53 L 21 41 L 42 41 Z" 
-            fill="url(#starGlow)" stroke="#ffffff" strokeWidth="1.5" filter="url(#neonShadow)" />
+      <path d="M 50 22 L 58 41 L 79 41 L 62 53 L 68 73 L 50 61 L 32 73 L 38 53 L 21 41 L 42 41 Z"
+        fill="url(#starGlow)" stroke="#ffffff" strokeWidth="1.5" filter="url(#neonShadow)" />
       <circle cx="50" cy="50" r="5" fill="#ffffff" stroke="#ff007f" strokeWidth="1.5" />
       <circle cx="50" cy="15" r="4.5" fill="#00f0ff" stroke="#ffffff" strokeWidth="1" />
       <circle cx="86" cy="42" r="4.5" fill="#00f0ff" stroke="#ffffff" strokeWidth="1" />
@@ -1446,14 +1446,14 @@ Overall Status : ${overallStatus}
   };
 
   // REST API: Delete a device configuration
-  const handleDeleteDevice = async (imei) => {
-    if (!imei) {
-      alert('Cannot delete: Device IMEI is empty or undefined.');
+  const handleDeleteDevice = async (identifier, displayName) => {
+    if (!identifier) {
+      alert('Cannot delete: Device identifier is empty or undefined.');
       return;
     }
-    if (!confirm(`Are you sure you want to unregister device IMEI ${imei}?`)) return;
+    if (!confirm(`Are you sure you want to unregister device: ${displayName}?`)) return;
     try {
-      const res = await fetch(`/api/devices/${imei}`, { method: 'DELETE' });
+      const res = await fetch(`/api/devices/${identifier}`, { method: 'DELETE' });
       if (res.ok) {
         alert('Device unregistered successfully.');
         fetchRegisteredDevices();
@@ -2748,8 +2748,8 @@ Overall Status : ${overallStatus}
                   <>
                     <div className="input-group" style={{ marginBottom: '15px' }}>
                       <label>Select Registered Device Profile</label>
-                      <select 
-                        value={selectedRegDeviceImei} 
+                      <select
+                        value={selectedRegDeviceImei}
                         onChange={(e) => {
                           const val = e.target.value;
                           setSelectedRegDeviceImei(val);
@@ -2777,7 +2777,7 @@ Overall Status : ${overallStatus}
                         }}
                       >
                         <option value="">-- Select Registered Profile --</option>
-                        {[...registeredDevices].sort((a,b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((d) => (
+                        {[...registeredDevices].sort((a, b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((d) => (
                           <option key={d._id || d.imei} value={d.imei}>
                             Device #{d.deviceNumber || '1'} - {d.pcbNumber || d.imei}
                           </option>
@@ -2989,7 +2989,7 @@ Overall Status : ${overallStatus}
                       </div>
                     )}
                     <button className="btn btn-danger" onClick={disconnectGateway}>Disconnect active link</button>
-                    
+
                     {/* Small scrollable side list of registered devices */}
                     <div style={{ marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '15px' }}>
                       <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-dim)', display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -2999,9 +2999,9 @@ Overall Status : ${overallStatus}
                         {registeredDevices.length === 0 ? (
                           <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontStyle: 'italic' }}>No registered devices</div>
                         ) : (
-                          [...registeredDevices].sort((a,b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((d) => (
-                            <div 
-                              key={d._id || d.imei} 
+                          [...registeredDevices].sort((a, b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((d) => (
+                            <div
+                              key={d._id || d.imei}
                               onClick={() => {
                                 setSelectedRegDeviceImei(d.imei);
                                 setPcbNumber(d.pcbNumber || '');
@@ -3009,16 +3009,16 @@ Overall Status : ${overallStatus}
                                 if (d.routerSSID) setWifiRouterSsid(d.routerSSID);
                                 if (d.routerPassword) setWifiRouterPass(d.routerPassword);
                               }}
-                              style={{ 
-                                display: 'flex', 
-                                justifyContent: 'space-between', 
-                                alignItems: 'center', 
-                                padding: '6px 8px', 
-                                background: selectedRegDeviceImei === d.imei ? 'rgba(0, 240, 255, 0.08)' : 'rgba(255,255,255,0.01)', 
-                                border: selectedRegDeviceImei === d.imei ? '1px solid rgba(0, 240, 255, 0.3)' : '1px solid rgba(255,255,255,0.04)', 
-                                borderRadius: '4px', 
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '6px 8px',
+                                background: selectedRegDeviceImei === d.imei ? 'rgba(0, 240, 255, 0.08)' : 'rgba(255,255,255,0.01)',
+                                border: selectedRegDeviceImei === d.imei ? '1px solid rgba(0, 240, 255, 0.3)' : '1px solid rgba(255,255,255,0.04)',
+                                borderRadius: '4px',
                                 cursor: 'pointer',
-                                fontSize: '10.5px' 
+                                fontSize: '10.5px'
                               }}
                             >
                               <span style={{ fontWeight: 'bold', color: '#ff007f' }}>#{d.deviceNumber || '1'}</span>
@@ -4020,7 +4020,7 @@ Overall Status : ${overallStatus}
                                 <button
                                   className="btn btn-danger small"
                                   style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', background: 'rgba(255, 0, 85, 0.1)', border: '1px solid rgba(255, 0, 85, 0.3)', color: '#ff0055' }}
-                                  onClick={() => handleDeleteDevice(dev.imei)}
+                                  onClick={() => handleDeleteDevice(dev._id || dev.imei, dev.imei || dev.pcbNumber || 'Unnamed Device')}
                                 >
                                   Delete
                                 </button>
@@ -4083,7 +4083,7 @@ Overall Status : ${overallStatus}
                       }}
                     >
                       <option value="esp32" style={{ background: '#1c1b22', color: 'white' }}>ESP32 Firmware (OTA app0/app1)</option>
-                      <option value="qcom" style={{ background: '#1c1b22', color: 'white' }}>QCOM Co-processor (core partition)</option>
+                      <option value="qcom" style={{ background: '#1c1b22', color: 'white' }}>Quectel Co-processor (core partition)</option>
                     </select>
                   </div>
                   <div className="input-group" style={{ flex: 1, minWidth: '180px', maxWidth: '220px' }}>
@@ -4541,7 +4541,7 @@ Overall Status : ${overallStatus}
                     style={{ width: '100%', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
                   >
                     <option value="esp32">1. Store into ESP32 SPIFFS + co-processor sync</option>
-                    <option value="qcom">2. Store directly to QCOM co-processor</option>
+                    <option value="qcom">2. Store directly to Quectel-L40 co-processor</option>
                   </select>
                 </div>
 
@@ -4591,7 +4591,7 @@ Overall Status : ${overallStatus}
                 {/* Nested URL Templates Configuration Block */}
                 <div style={{ marginTop: '15px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)', textAlign: 'left' }}>
                   <h4 style={{ fontSize: '12px', color: 'var(--accent-pink)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>URL Template Patterns</h4>
-                  
+
                   <div className="input-group" style={{ marginBottom: '10px' }}>
                     <label style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Root CA Certificate URL Template</label>
                     <input
@@ -4682,62 +4682,62 @@ Overall Status : ${overallStatus}
                   {/* Step 1: Download CA Certificate */}
                   {(() => {
                     const status = certStatuses['aws_root_ca.pem'] === 'downloading' ? 'running' :
-                                   (certStatuses['aws_root_ca.pem'] === 'downloaded' || certStatuses['aws_root_ca.pem'] === 'uploading' || certStatuses['aws_root_ca.pem'] === 'success') ? 'success' :
-                                   certStatuses['aws_root_ca.pem'] === 'failed' ? 'failed' : 'pending';
+                      (certStatuses['aws_root_ca.pem'] === 'downloaded' || certStatuses['aws_root_ca.pem'] === 'uploading' || certStatuses['aws_root_ca.pem'] === 'success') ? 'success' :
+                        certStatuses['aws_root_ca.pem'] === 'failed' ? 'failed' : 'pending';
                     return renderPipelineStep('Download CA Certificate', 'GET certificate from root authority', status);
                   })()}
 
                   {/* Step 2: Download Client Certificate */}
                   {(() => {
                     const status = certStatuses['device_cert.crt'] === 'downloading' ? 'running' :
-                                   (certStatuses['device_cert.crt'] === 'downloaded' || certStatuses['device_cert.crt'] === 'uploading' || certStatuses['device_cert.crt'] === 'success') ? 'success' :
-                                   certStatuses['device_cert.crt'] === 'failed' ? 'failed' : 'pending';
+                      (certStatuses['device_cert.crt'] === 'downloaded' || certStatuses['device_cert.crt'] === 'uploading' || certStatuses['device_cert.crt'] === 'success') ? 'success' :
+                        certStatuses['device_cert.crt'] === 'failed' ? 'failed' : 'pending';
                     return renderPipelineStep('Download Client Certificate', 'GET device-authentication certificate', status);
                   })()}
 
                   {/* Step 3: Download Private Key */}
                   {(() => {
                     const status = certStatuses['private_key.key'] === 'downloading' ? 'running' :
-                                   (certStatuses['private_key.key'] === 'downloaded' || certStatuses['private_key.key'] === 'uploading' || certStatuses['private_key.key'] === 'success') ? 'success' :
-                                   certStatuses['private_key.key'] === 'failed' ? 'failed' : 'pending';
+                      (certStatuses['private_key.key'] === 'downloaded' || certStatuses['private_key.key'] === 'uploading' || certStatuses['private_key.key'] === 'success') ? 'success' :
+                        certStatuses['private_key.key'] === 'failed' ? 'failed' : 'pending';
                     return renderPipelineStep('Download Private Key', 'GET device private RSA/ECC key', status);
                   })()}
 
                   {/* Step 4: Upload CA to Device */}
                   {(() => {
                     const status = certStatuses['aws_root_ca.pem'] === 'uploading' ? 'running' :
-                                   certStatuses['aws_root_ca.pem'] === 'success' ? 'success' :
-                                   certStatuses['aws_root_ca.pem'] === 'failed' ? 'failed' : 'pending';
+                      certStatuses['aws_root_ca.pem'] === 'success' ? 'success' :
+                        certStatuses['aws_root_ca.pem'] === 'failed' ? 'failed' : 'pending';
                     return renderPipelineStep('Upload CA to Device', 'POST CA file with Bearer Authorization', status);
                   })()}
 
                   {/* Step 5: Upload Cert to Device */}
                   {(() => {
                     const status = certStatuses['device_cert.crt'] === 'uploading' ? 'running' :
-                                   certStatuses['device_cert.crt'] === 'success' ? 'success' :
-                                   certStatuses['device_cert.crt'] === 'failed' ? 'failed' : 'pending';
+                      certStatuses['device_cert.crt'] === 'success' ? 'success' :
+                        certStatuses['device_cert.crt'] === 'failed' ? 'failed' : 'pending';
                     return renderPipelineStep('Upload Cert to Device', 'POST Client cert with Bearer Authorization', status);
                   })()}
 
                   {/* Step 6: Upload Key to Device */}
                   {(() => {
                     const status = certStatuses['private_key.key'] === 'uploading' ? 'running' :
-                                   certStatuses['private_key.key'] === 'success' ? 'success' :
-                                   certStatuses['private_key.key'] === 'failed' ? 'failed' : 'pending';
+                      certStatuses['private_key.key'] === 'success' ? 'success' :
+                        certStatuses['private_key.key'] === 'failed' ? 'failed' : 'pending';
                     return renderPipelineStep('Upload Key to Device', 'POST Private key with Bearer Authorization', status);
                   })()}
 
                   {/* Step 7: Acknowledgement Signal */}
                   {(() => {
                     const allSuccess = certStatuses['aws_root_ca.pem'] === 'success' &&
-                                       certStatuses['device_cert.crt'] === 'success' &&
-                                       certStatuses['private_key.key'] === 'success';
+                      certStatuses['device_cert.crt'] === 'success' &&
+                      certStatuses['private_key.key'] === 'success';
                     const anyFailed = certStatuses['aws_root_ca.pem'] === 'failed' ||
-                                      certStatuses['device_cert.crt'] === 'failed' ||
-                                      certStatuses['private_key.key'] === 'failed';
+                      certStatuses['device_cert.crt'] === 'failed' ||
+                      certStatuses['private_key.key'] === 'failed';
                     const status = allSuccess ? 'success' :
-                                   anyFailed ? 'failed' :
-                                   (isDownloadingCerts || isProvisioning) ? 'running' : 'pending';
+                      anyFailed ? 'failed' :
+                        (isDownloadingCerts || isProvisioning) ? 'running' : 'pending';
                     return renderPipelineStep('Acknowledgement Signal', 'Send completion confirmation status', status);
                   })()}
                 </div>
