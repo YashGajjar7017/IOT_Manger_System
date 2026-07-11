@@ -354,9 +354,21 @@ export default function App() {
   const [isInstallingCli, setIsInstallingCli] = useState(false);
   const [cliConsoleLogs, setCliConsoleLogs] = useState([]);
   const [arduinoFqbn, setArduinoFqbn] = useState(() => localStorage.getItem('arduino_fqbn') || 'esp32:esp32:esp32s3');
+  const [gitHubRepoBranchInput, setGitHubRepoBranchInput] = useState('main');
   const [isGitHubSyncing, setIsGitHubSyncing] = useState(false);
   const [gitHubRepoUrlInput, setGitHubRepoUrlInput] = useState(() => localStorage.getItem('github_repo_url') || 'https://github.com/YashGajjar7017/IOT_Manger_System');
-  const [gitHubRepoBranchInput, setGitHubRepoBranchInput] = useState('main');
+  const [updateState, setUpdateState] = useState({
+    checking: false,
+    checked: false,
+    hasUpdate: false,
+    currentVersion: '2.1.1',
+    onlineVersion: '',
+    changes: '',
+    downloadUrl: '',
+    error: null
+  });
+  const [isUpdatingSoftware, setIsUpdatingSoftware] = useState(false);
+  const [hwAccelInput, setHwAccelInput] = useState(true);
 
   // Dynamic Theme, Font, and GitHub Integration States
   // Default to the 1st theme 'quantum-indigo' on startup
@@ -1185,6 +1197,7 @@ export default function App() {
         setDefaultBaudRateInput(String(config.defaultBaudRate || '115200'));
         setGithubClientIdInput(config.githubClientId || '');
         setGithubClientSecretInput(config.githubClientSecret || '');
+        setHwAccelInput(config.hardwareAcceleration !== false);
       }
     });
 
@@ -1793,6 +1806,38 @@ Overall Status : ${overallStatus}
     ipcRenderer.send('sync-code-from-github', { repoUrl: gitHubRepoUrlInput, branch: gitHubRepoBranchInput });
   };
 
+  const handleCheckUpdate = async () => {
+    setUpdateState(prev => ({ ...prev, checking: true, error: null }));
+    try {
+      const res = await ipcRenderer.invoke('check-software-update');
+      if (res.success) {
+        setUpdateState({
+          checking: false,
+          checked: true,
+          hasUpdate: res.hasUpdate,
+          currentVersion: res.currentVersion,
+          onlineVersion: res.onlineVersion,
+          changes: res.changes,
+          downloadUrl: res.downloadUrl,
+          error: null
+        });
+      } else {
+        setUpdateState(prev => ({ ...prev, checking: false, error: res.message }));
+      }
+    } catch (e) {
+      setUpdateState(prev => ({ ...prev, checking: false, error: e.message }));
+    }
+  };
+
+  const handleApplyUpdate = () => {
+    setIsUpdatingSoftware(true);
+    addLogLine('[GITHUB SYNC] Applying update trigger downloaded from GitHub script...');
+    ipcRenderer.send('sync-code-from-github', {
+      repoUrl: 'https://github.com/YashGajjar7017/IOT_Manger_System',
+      branch: 'main'
+    });
+  };
+
   // Auto-scan: refresh port list then try connecting to each one in order
   // until a successful connection is established (useful when exact COM port is unknown)
   const autoScanAndConnect = async () => {
@@ -2065,11 +2110,12 @@ Overall Status : ${overallStatus}
       udpPort: parseInt(udpPortInput) || 5002,
       defaultBaudRate: parseInt(defaultBaudRateInput) || 115200,
       githubClientId: githubClientIdInput,
-      githubClientSecret: githubClientSecretInput
+      githubClientSecret: githubClientSecretInput,
+      hardwareAcceleration: hwAccelInput
     };
     ipcRenderer.send('save-app-config', config);
     setOtaPort(String(config.otaPort));
-    alert('Settings saved successfully. Restart the application for port updates to take effect.');
+    alert('Settings saved successfully. Restart the application for updates to take effect.');
   };
 
   const triggerDbReconnect = () => {
@@ -2797,6 +2843,9 @@ Overall Status : ${overallStatus}
                       <button className="header-dropdown-item" onClick={() => { setActiveTab('page-settings'); setShowAccountMenu(false); }}>
                         ⚙️ App Settings
                       </button>
+                      <button className="header-dropdown-item" onClick={() => { setActiveTab('page-update-check'); setShowAccountMenu(false); handleCheckUpdate(); }}>
+                        🔄 Check for Updates
+                      </button>
                       <div className="header-dropdown-divider"></div>
                       <button className="header-dropdown-item" onClick={() => { localStorage.removeItem('isLoggedIn'); setIsLoggedIn(false); setShowAccountMenu(false); addLogLine('[GUI] Signed out.', 'system'); }}>
                         🚪 Sign Out
@@ -2811,6 +2860,80 @@ Overall Status : ${overallStatus}
 
         {/* View Layout Panels */}
         <main className="main-content">
+
+          {/* ================= VIEW: SOFTWARE UPDATE CHECKER ================= */}
+          <section id="page-update-check" className={`page-view ${activeTab === 'page-update-check' ? 'active' : ''}`}>
+            <header className="view-header">
+              <div>
+                <h1>Software Update Center</h1>
+                <p>Check for system updates, review changelogs, and update application code instantly</p>
+              </div>
+            </header>
+
+            <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+              <div className="glass-card" style={{ textAlign: 'center', padding: '30px 20px' }}>
+                <div style={{ fontSize: '48px', marginBottom: '15px' }}>🚀</div>
+                <h3>Check for Updates</h3>
+                <p style={{ fontSize: '13px', color: 'var(--text-dim)', marginBottom: '25px' }}>
+                  Match your current software scripts with the latest release metadata index XML on the GitHub production repository.
+                </p>
+
+                {updateState.checking ? (
+                  <div style={{ fontSize: '14px', color: 'var(--accent-blue)', fontWeight: 'bold' }}>
+                    🔍 Accessing GitHub version repository...
+                  </div>
+                ) : updateState.error ? (
+                  <div style={{ background: 'rgba(255,51,102,0.1)', border: '1px solid rgba(255,51,102,0.3)', padding: '15px', borderRadius: '8px', color: '#ff3366', fontSize: '13px', marginBottom: '20px' }}>
+                    <strong>Error checking updates:</strong> {updateState.error}
+                  </div>
+                ) : updateState.checked ? (
+                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', padding: '20px', borderRadius: '8px', marginBottom: '25px', textAlign: 'left' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <span style={{ color: 'var(--text-dim)' }}>Installed Version:</span>
+                      <span style={{ fontWeight: 'bold', fontFamily: 'monospace' }}>v{updateState.currentVersion}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <span style={{ color: 'var(--text-dim)' }}>Latest Online Version:</span>
+                      <span style={{ fontWeight: 'bold', fontFamily: 'monospace', color: updateState.hasUpdate ? 'var(--accent-pink)' : '#00ff66' }}>
+                        v{updateState.onlineVersion}
+                      </span>
+                    </div>
+                    <div style={{ marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '15px' }}>
+                      <strong style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase' }}>What's New:</strong>
+                      <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '5px', lineHeight: '1.4' }}>{updateState.changes}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '15px' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
+                      Current script version: <strong>v{updateState.currentVersion}</strong>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '20px' }}>
+                  <button
+                    className="btn btn-primary"
+                    disabled={updateState.checking}
+                    onClick={handleCheckUpdate}
+                    style={{ width: '200px', margin: 0 }}
+                  >
+                    🔍 Check Now
+                  </button>
+                  {updateState.hasUpdate && (
+                    <button
+                      className="btn btn-accent"
+                      onClick={handleApplyUpdate}
+                      disabled={isUpdatingSoftware}
+                      style={{ width: '200px', margin: 0, background: 'linear-gradient(135deg, #00C6FF 0%, #0072FF 100%)' }}
+                    >
+                      {isUpdatingSoftware ? 'Downloading...' : '🔄 Apply Latest Update'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
 
           {/* ================= VIEW 1: DASHBOARD ================= */}
           <section id="page-dashboard" className={`page-view ${activeTab === 'page-dashboard' ? 'active' : ''}`}>
@@ -3814,19 +3937,31 @@ Overall Status : ${overallStatus}
                   )}
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   <button
                     className="btn btn-primary"
                     onClick={handleDownloadCli}
                     disabled={isInstallingCli}
-                    style={{ flex: 1, margin: 0 }}
+                    style={{ flex: '1 1 100%', margin: 0 }}
                   >
                     {isInstallingCli ? '📥 Downloading toolchain...' : '📥 Download & Install Arduino CLI'}
                   </button>
                   <button
+                    className="btn btn-accent"
+                    onClick={() => {
+                      ipcRenderer.send('run-global-cli-env-installer');
+                      addCliLog('[INSTALL] Requesting UAC elevation to run global PATH environment installer batch file...');
+                    }}
+                    disabled={!cliStatus.installed}
+                    style={{ flex: '1 1 65%', margin: 0, background: 'linear-gradient(135deg, #FF007F 0%, #7F00FF 100%)', border: 'none', color: '#fff' }}
+                    title="Configures global system PATH environment variable (requires Admin privileges)"
+                  >
+                    ⚡ Register Global ENV (Admin)
+                  </button>
+                  <button
                     className="btn btn-secondary"
                     onClick={checkCliInstallation}
-                    style={{ flex: '0 0 auto', margin: 0, width: 'auto', padding: '0 15px' }}
+                    style={{ flex: '1 1 30%', margin: 0, padding: '0 15px' }}
                     title="Re-verify toolchain installation status"
                   >
                     🔄 Verify
@@ -4127,6 +4262,9 @@ Overall Status : ${overallStatus}
                           <th style={{ padding: '8px' }}>Password</th>
                           <th style={{ padding: '8px' }}>SSID Target</th>
                           <th style={{ padding: '8px' }}>Rate Interval</th>
+                          <th style={{ padding: '8px' }}>RS232</th>
+                          <th style={{ padding: '8px' }}>RS485</th>
+                          <th style={{ padding: '8px' }}>GPRS</th>
                           <th style={{ padding: '8px', textAlign: 'right' }}>Actions</th>
                         </tr>
                       </thead>
@@ -4143,6 +4281,21 @@ Overall Status : ${overallStatus}
                             <td style={{ padding: '8px', fontFamily: 'monospace' }}>{dev.password || 'admin_secure_gate'}</td>
                             <td style={{ padding: '8px' }}>{dev.routerSSID || '--'}</td>
                             <td style={{ padding: '8px', fontFamily: 'monospace' }}>{dev.telemetryInterval}ms</td>
+                            <td style={{ padding: '8px' }}>
+                              <span className={`status-tag ${dev.rs232Status === 'OK' ? 'ok' : dev.rs232Status === 'ERROR' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', minWidth: '45px', textAlign: 'center', display: 'inline-block' }}>
+                                {dev.rs232Status || 'WAITING'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '8px' }}>
+                              <span className={`status-tag ${dev.rs485Status === 'OK' ? 'ok' : dev.rs485Status === 'ERROR' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', minWidth: '45px', textAlign: 'center', display: 'inline-block' }}>
+                                {dev.rs485Status || 'WAITING'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '8px' }}>
+                              <span className={`status-tag ${dev.gprsStatus === 'OK' ? 'ok' : dev.gprsStatus === 'ERROR' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', minWidth: '45px', textAlign: 'center', display: 'inline-block' }}>
+                                {dev.gprsStatus || 'WAITING'}
+                              </span>
+                            </td>
                             <td style={{ padding: '8px', textAlign: 'right' }}>
                               <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                                 <button
@@ -6314,6 +6467,31 @@ Overall Status : ${overallStatus}
                 <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--text-dim)', textAlign: 'left', lineHeight: '1.4' }}>
                   💡 Need help? View the configuration instructions in the <a href="#" onClick={(e) => { e.preventDefault(); alert("Please refer to Documentation/SIGN_WITH_GITHUB.md for step-by-step setup details."); }} style={{ color: 'var(--accent-pink)', textDecoration: 'underline' }}>GitHub OAuth Setup Guide</a>.
                 </div>
+              </div>
+
+              {/* Hardware Performance Settings Card */}
+              <div className="glass-card">
+                <h3><span className="icon">⚡</span> Performance & System Config</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                  Enable hardware acceleration to use GPU resources for smoother transitions and rendering.
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '10px 15px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: 'bold' }}>GPU Hardware Acceleration</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>Requires application restart to take effect</div>
+                  </div>
+                  <label className="switch-toggle" style={{ margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={hwAccelInput}
+                      onChange={(e) => setHwAccelInput(e.target.checked)}
+                    />
+                    <span className="switch-slider"></span>
+                  </label>
+                </div>
+                <button className="btn btn-primary" onClick={saveAppConfigSettings} style={{ marginTop: '15px', width: '100%' }}>
+                  Save Performance Settings
+                </button>
               </div>
 
               {/* System Info Specifications Card */}

@@ -65,7 +65,7 @@ function loadConfig() {
       const data = fs.readFileSync(CONFIG_PATH, 'utf8');
       appConfig = { ...appConfig, ...JSON.parse(data) };
       console.log('[CONFIG] Settings loaded from:', CONFIG_PATH);
-      
+
       // Auto-migrate remote Atlas MongoDB URI to local IP MongoDB URI (Requirement 4)
       if (!appConfig.mongoUri || appConfig.mongoUri.includes('reactdb.d04du.mongodb.net') || appConfig.mongoUri.includes('yashacker') || appConfig.mongoUri.includes('IOT_System_Manager')) {
         console.log('[CONFIG] Migrating remote MongoDB Atlas URI to local IP MongoDB URI...');
@@ -94,6 +94,13 @@ function saveConfig(newConfig) {
 
 // Load configurations immediately
 loadConfig();
+
+if (appConfig.hardwareAcceleration === false) {
+  app.disableHardwareAcceleration();
+  console.log('[SYSTEM] Hardware Acceleration disabled by configuration.');
+} else {
+  console.log('[SYSTEM] Hardware Acceleration enabled (high performance resources).');
+}
 
 // ── Disk Cache Helpers ───────────────────────────────────────────────────────
 
@@ -1624,7 +1631,7 @@ ipcMain.on('focus-window', () => {
     }
     try {
       mainWindow.webContents.focus();
-    } catch (e) {}
+    } catch (e) { }
   }
 });
 
@@ -2574,12 +2581,12 @@ ipcMain.handle('check-arduino-cli-installed', async () => {
   const { exec } = require('child_process');
   const fs = require('fs');
   const path = require('path');
-  
+
   const localPath = path.join(app.getPath('userData'), 'arduino-cli.exe');
   if (fs.existsSync(localPath)) {
     return { installed: true, path: localPath, source: 'local' };
   }
-  
+
   return new Promise((resolve) => {
     exec('arduino-cli version', (err, stdout) => {
       if (err) {
@@ -2606,7 +2613,7 @@ ipcMain.on('install-arduino-cli', (event) => {
   const targetDir = app.getPath('userData');
 
   const file = fs.createWriteStream(targetZip);
-  
+
   const download = (url) => {
     https.get(url, (res) => {
       if (res.statusCode === 302 || res.statusCode === 301) {
@@ -2618,9 +2625,9 @@ ipcMain.on('install-arduino-cli', (event) => {
         event.reply('arduino-cli-install-status', { status: 'error', message: `Server returned status code ${res.statusCode}` });
         return;
       }
-      
+
       res.pipe(file);
-      
+
       file.on('finish', () => {
         file.close();
         event.reply('console-log', `[ARDUINO CLI INSTALL] Download finished successfully. Extracting zip contents...`);
@@ -2628,8 +2635,8 @@ ipcMain.on('install-arduino-cli', (event) => {
 
         const unzipCmd = `powershell -Command "Expand-Archive -Path '${targetZip}' -DestinationPath '${targetDir}' -Force"`;
         exec(unzipCmd, (unzipErr) => {
-          try { fs.unlinkSync(targetZip); } catch(e) {}
-          
+          try { fs.unlinkSync(targetZip); } catch (e) { }
+
           if (unzipErr) {
             event.reply('console-log', `[ARDUINO CLI INSTALL ERROR] Extraction failed: ${unzipErr.message}`);
             event.reply('arduino-cli-install-status', { status: 'error', message: `Extraction failed: ${unzipErr.message}` });
@@ -2639,6 +2646,39 @@ ipcMain.on('install-arduino-cli', (event) => {
           const localCliPath = path.join(targetDir, 'arduino-cli.exe');
           if (fs.existsSync(localCliPath)) {
             event.reply('console-log', `[ARDUINO CLI INSTALL SUCCESS] arduino-cli.exe successfully installed at: ${localCliPath}`);
+
+            // Generate the global environment installation batch file (Requirement 3)
+            const batContent = `@echo off\r\n` +
+              `:: Batch file to configure Arduino-CLI globally in the Windows system environment PATH\r\n` +
+              `:: Requires Admin rights to update system PATH.\r\n` +
+              `echo ============================================================\r\n` +
+              `echo  Arduino CLI Global Environment Configuration\r\n` +
+              `echo ============================================================\r\n` +
+              `echo.\r\n` +
+              `net session >nul 2>&1\r\n` +
+              `if %errorLevel% == 0 (\r\n` +
+              `    echo [OK] Running with Administrator privileges.\r\n` +
+              `) else (\r\n` +
+              `    echo [ERROR] This script must be run as Administrator!\r\n` +
+              `    echo Please right-click this script and select 'Run as administrator'.\r\n` +
+              `    echo.\r\n` +
+              `    pause\r\n` +
+              `    exit /b 1\r\n` +
+              `)\r\n` +
+              `set "CLI_DIR=%~dp0"\r\n` +
+              `echo CLI Directory detected: %CLI_DIR%\r\n` +
+              `echo Setting global environment path...\r\n` +
+              `setx /M PATH "%PATH%;%CLI_DIR%"\r\n` +
+              `echo.\r\n` +
+              `echo [SUCCESS] Arduino CLI directory added to global system PATH!\r\n` +
+              `echo Verify by opening a new Command Prompt and running 'arduino-cli version'.\r\n` +
+              `echo.\r\n` +
+              `pause\r\n`;
+
+            const batPath = path.join(targetDir, 'install_arduino_cli_global.bat');
+            fs.writeFileSync(batPath, batContent, 'utf8');
+            event.reply('console-log', `[ARDUINO CLI INSTALL] Created elevated batch environment installer at: ${batPath}`);
+
             exec(`"${localCliPath}" version`, (verErr, verOut) => {
               const versionInfo = verOut ? verOut.trim() : 'Installed (Version check skipped)';
               event.reply('console-log', `[ARDUINO CLI INSTALL] Version verification: ${versionInfo}`);
@@ -2659,6 +2699,77 @@ ipcMain.on('install-arduino-cli', (event) => {
   download(targetUrl);
 });
 
+// IPC Handler: Execute global batch environment configuration script elevated as Administrator (Requirement 3)
+ipcMain.on('run-global-cli-env-installer', (event) => {
+  const batPath = path.join(app.getPath('userData'), 'install_arduino_cli_global.bat');
+  if (!fs.existsSync(batPath)) {
+    event.reply('console-log', `[INSTALL ERROR] Global batch installer script not found at: ${batPath}`);
+    return;
+  }
+
+  event.reply('console-log', `[INSTALL] Launching elevated installer batch file: ${batPath}...`);
+  const execCmd = `powershell -Command "Start-Process cmd.exe -ArgumentList '/c \\\"${batPath}\\\"' -Verb RunAs"`;
+
+  const { exec } = require('child_process');
+  exec(execCmd, (err, stdout, stderr) => {
+    if (err) {
+      event.reply('console-log', `[INSTALL ERROR] Failed to elevate installer: ${err.message}`);
+    } else {
+      event.reply('console-log', `[INSTALL] UAC Elevation prompt requested for global PATH installer.`);
+    }
+  });
+});
+
+// IPC Handler: Check online software version XML from GitHub (Requirement 2)
+ipcMain.handle('check-software-update', async (event) => {
+  const https = require('https');
+  const xmlUrl = 'https://raw.githubusercontent.com/YashGajjar7017/IOT_Manger_System/main/version.xml';
+
+  return new Promise((resolve) => {
+    https.get(xmlUrl, (res) => {
+      if (res.statusCode !== 200) {
+        resolve({ success: false, message: `Version check server returned HTTP ${res.statusCode}` });
+        return;
+      }
+      let xml = '';
+      res.on('data', chunk => xml += chunk.toString());
+      res.on('end', () => {
+        try {
+          const versionMatch = xml.match(/<version>([^<]+)<\/version>/);
+          const changesMatch = xml.match(/<changes>([^<]+)<\/changes>/);
+          const downloadUrlMatch = xml.match(/<url>([^<]+)<\/url>/);
+
+          if (!versionMatch) {
+            resolve({ success: false, message: 'Invalid XML format: <version> tag not found.' });
+            return;
+          }
+
+          const onlineVersion = versionMatch[1].trim();
+          const changes = changesMatch ? changesMatch[1].trim() : 'General updates and stability improvements.';
+          const downloadUrl = downloadUrlMatch ? downloadUrlMatch[1].trim() : '';
+
+          // Read current version from package.json
+          const pjson = require('./package.json');
+          const currentVersion = pjson.version;
+
+          resolve({
+            success: true,
+            onlineVersion,
+            currentVersion,
+            hasUpdate: onlineVersion !== currentVersion,
+            changes,
+            downloadUrl
+          });
+        } catch (e) {
+          resolve({ success: false, message: `Parsing failed: ${e.message}` });
+        }
+      });
+    }).on('error', (err) => {
+      resolve({ success: false, message: err.message });
+    });
+  });
+});
+
 // IPC Handler: Sync/Update app code from GitHub without removing the wrapper .exe
 ipcMain.on('sync-code-from-github', async (event, { repoUrl, branch }) => {
   const { exec } = require('child_process');
@@ -2668,7 +2779,7 @@ ipcMain.on('sync-code-from-github', async (event, { repoUrl, branch }) => {
 
   const targetBranch = branch || 'main';
   const localDir = __dirname;
-  
+
   event.reply('console-log', `[GITHUB SYNC] Checking for local git repository in: ${localDir}...`);
 
   if (fs.existsSync(path.join(localDir, '.git'))) {
@@ -2690,7 +2801,7 @@ ipcMain.on('sync-code-from-github', async (event, { repoUrl, branch }) => {
     });
   } else {
     event.reply('console-log', `[GITHUB SYNC] Local Git not found. Downloading repository zip from GitHub...`);
-    
+
     let repoPath = "YashGajjar7017/IOT_Manger_System";
     if (repoUrl) {
       const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
@@ -2698,15 +2809,15 @@ ipcMain.on('sync-code-from-github', async (event, { repoUrl, branch }) => {
         repoPath = `${match[1]}/${match[2].replace(/\.git$/, '')}`;
       }
     }
-    
+
     const zipUrl = `https://github.com/${repoPath}/archive/refs/heads/${targetBranch}.zip`;
     event.reply('console-log', `[GITHUB SYNC] Target Zip URL: ${zipUrl}`);
-    
+
     const tempZipPath = path.join(app.getPath('userData'), 'repo-update.zip');
     const extractDir = path.join(app.getPath('userData'), 'repo-update-extract');
-    
+
     const file = fs.createWriteStream(tempZipPath);
-    
+
     const download = (url) => {
       https.get(url, (res) => {
         if (res.statusCode === 302 || res.statusCode === 301) {
@@ -2718,42 +2829,42 @@ ipcMain.on('sync-code-from-github', async (event, { repoUrl, branch }) => {
           event.reply('github-sync-result', { success: false, message: `GitHub returned status code ${res.statusCode}` });
           return;
         }
-        
+
         res.pipe(file);
-        
+
         file.on('finish', () => {
           file.close();
           event.reply('console-log', `[GITHUB SYNC] Download completed. Size: ${fs.statSync(tempZipPath).size} bytes. Extracting...`);
-          
+
           const unzipCmd = `powershell -Command "Expand-Archive -Path '${tempZipPath}' -DestinationPath '${extractDir}' -Force"`;
           event.reply('console-log', `[GITHUB SYNC] Unzipping: ${unzipCmd}`);
-          
+
           exec(unzipCmd, (unzipErr) => {
             if (unzipErr) {
               event.reply('console-log', `[GITHUB SYNC ERROR] Unzip failed: ${unzipErr.message}`);
               event.reply('github-sync-result', { success: false, message: `Unzip failed: ${unzipErr.message}` });
               return;
             }
-            
+
             event.reply('console-log', `[GITHUB SYNC] Unzipped successfully. Copying new source files...`);
-            
+
             const extractedFolders = fs.readdirSync(extractDir);
             if (extractedFolders.length === 0) {
               event.reply('console-log', `[GITHUB SYNC ERROR] No extracted folder found.`);
               event.reply('github-sync-result', { success: false, message: 'Extracted folder structure not found.' });
               return;
             }
-            
+
             const sourceFolder = path.join(extractDir, extractedFolders[0]);
             const copyCmd = `powershell -Command "Copy-Item -Path '${sourceFolder}\\*' -Destination '${localDir}' -Recurse -Force"`;
             event.reply('console-log', `[GITHUB SYNC] Copying: ${copyCmd}`);
-            
+
             exec(copyCmd, (copyErr) => {
               try {
                 fs.unlinkSync(tempZipPath);
                 fs.rmdirSync(extractDir, { recursive: true });
-              } catch(e) {}
-              
+              } catch (e) { }
+
               if (copyErr) {
                 event.reply('console-log', `[GITHUB SYNC ERROR] Copy failed: ${copyErr.message}`);
                 event.reply('github-sync-result', { success: false, message: `Copy failed: ${copyErr.message}` });
@@ -4096,7 +4207,7 @@ ipcMain.handle('github-oauth-sign-in', async (event) => {
       if (url.includes('?code=') || url.includes('&code=')) {
         const urlObj = new URL(url);
         const code = urlObj.searchParams.get('code');
-        try { authWindow.destroy(); } catch (e) {}
+        try { authWindow.destroy(); } catch (e) { }
 
         if (!code) {
           reject(new Error('GitHub auth code was not returned.'));

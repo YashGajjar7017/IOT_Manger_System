@@ -1593,8 +1593,13 @@ String getSoftAPStationsJson() {
 // ============================================================
 void dumpCertsToQcom() {
   logLn("[QCOM SYNC] Syncing certificates to QCOM over Serial1 using AT+QFUPL...");
-  String certsToSync[] = {"rootCA.pem", "client.pem",
-                          "key.pem"};
+  
+  // Explicitly disable echo on modem first to clean up responses
+  Serial1.print("ATE0\r\n");
+  delay(100);
+  drain(Serial1);
+
+  String certsToSync[] = {"rootCA.pem", "client.pem", "key.pem"};
   for (int i = 0; i < 3; i++) {
     String path = "/" + certsToSync[i];
     if (SPIFFS.exists(path)) {
@@ -1613,13 +1618,16 @@ void dumpCertsToQcom() {
         unsigned long t0 = millis();
         String connectResp = "";
         bool connected = false;
-        while (millis() - t0 < 1500) {
+        while (millis() - t0 < 3000) {
           while (Serial1.available()) {
             char c = (char)Serial1.read();
             connectResp += c;
           }
           if (connectResp.indexOf("CONNECT") != -1) {
             connected = true;
+            break;
+          }
+          if (connectResp.indexOf("ERROR") != -1) {
             break;
           }
           delay(5);
@@ -1641,7 +1649,7 @@ void dumpCertsToQcom() {
           // Wait for response (+QFUPL: <size>,<checksum> and OK)
           unsigned long t1 = millis();
           String ackResp = "";
-          while (millis() - t1 < 4000) {
+          while (millis() - t1 < 5000) {
             while (Serial1.available()) {
               char c = (char)Serial1.read();
               ackResp += c;
@@ -1658,6 +1666,9 @@ void dumpCertsToQcom() {
           }
         }
         f.close();
+        
+        // Small settling delay between files to let the modem write to flash
+        delay(500);
       }
     } else {
       // Mock / Simulation mode
@@ -2256,6 +2267,9 @@ void setupHTTPServer() {
   httpServer.on("/api/storage/delete", HTTP_POST, []() {
     if (httpServer.hasArg("filename")) {
       String fn = httpServer.arg("filename");
+      if (fn.startsWith("[QCOM] ")) {
+        fn = fn.substring(7);
+      }
       if (!fn.startsWith("/"))
         fn = "/" + fn;
       if (SPIFFS.exists(fn)) {
@@ -2270,6 +2284,9 @@ void setupHTTPServer() {
   httpServer.on("/api/storage/read", HTTP_GET, []() {
     if (httpServer.hasArg("filename")) {
       String fn = httpServer.arg("filename");
+      if (fn.startsWith("[QCOM] ")) {
+        fn = fn.substring(7);
+      }
       if (!fn.startsWith("/"))
         fn = "/" + fn;
       if (SPIFFS.exists(fn)) {
@@ -2279,8 +2296,21 @@ void setupHTTPServer() {
           f.close();
         } else
           httpServer.send(500, "text/plain", "FAILED_TO_OPEN");
-      } else
-        httpServer.send(404, "text/plain", "FILE_NOT_FOUND");
+      } else {
+        // Fallback to checking without leading slash
+        String fallbackFn = fn.substring(1);
+        if (SPIFFS.exists(fallbackFn)) {
+          File f = SPIFFS.open(fallbackFn, "r");
+          if (f) {
+            httpServer.streamFile(f, "text/plain");
+            f.close();
+          } else {
+            httpServer.send(500, "text/plain", "FAILED_TO_OPEN");
+          }
+        } else {
+          httpServer.send(404, "text/plain", "FILE_NOT_FOUND");
+        }
+      }
     } else
       httpServer.send(400, "text/plain", "MISSING_FILENAME");
   });

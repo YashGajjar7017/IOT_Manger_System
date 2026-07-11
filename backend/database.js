@@ -3,11 +3,14 @@ const fs = require('fs');
 const path = require('path');
 
 let localRegistryPath = '';
+const appName = 'iot-monitor-system';
 try {
   const { app } = require('electron');
   localRegistryPath = path.join(app.getPath('userData'), 'devices_registry.json');
 } catch (e) {
-  localRegistryPath = path.join(__dirname, 'devices_registry.json');
+  const appDataPath = process.env.APPDATA || 
+    (process.platform === 'darwin' ? path.join(process.env.HOME, 'Library/Application Support') : path.join(process.env.HOME, '.config'));
+  localRegistryPath = path.join(appDataPath, appName, 'devices_registry.json');
 }
 
 function loadLocalDevices() {
