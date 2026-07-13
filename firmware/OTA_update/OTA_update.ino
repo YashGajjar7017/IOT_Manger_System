@@ -43,6 +43,7 @@ String deviceIMEI = "866738083623502_OTA";
 WiFiServer tcpServer(9000);
 WiFiClient tcpClient;
 SemaphoreHandle_t logMutex = NULL;
+unsigned long lastTcpActivityTime = 0;
 
 void logMsg(String msg) {
   if (logMutex != NULL) {
@@ -712,6 +713,7 @@ void TaskTCPServer(void *pvParameters) {
           xSemaphoreTake(logMutex, portMAX_DELAY);
         }
         tcpClient = newClient;
+        lastTcpActivityTime = millis(); // Initialize watchdog timer on connection
         Serial.println("[TCP] Client connected to Port 9000.");
         tcpClient.println("[OTA_FW] Connected to ESP32 OTA Gateway.");
 
@@ -728,13 +730,24 @@ void TaskTCPServer(void *pvParameters) {
         }
       }
     } else {
-      // Process simple PING keepalives
-      while (tcpClient.available()) {
-        String line = tcpClient.readStringUntil('\n');
-        line.trim();
-        if (line == "PING") {
-          tcpClient.println("{\"type\":\"pong\"}");
+      // Process simple PING keepalives with thread-safety and watchdog monitoring
+      if (logMutex != NULL && xSemaphoreTake(logMutex, portMAX_DELAY) == pdTRUE) {
+        if (tcpClient && tcpClient.connected()) {
+          while (tcpClient.available() > 0) {
+            String line = tcpClient.readStringUntil('\n');
+            line.trim();
+            if (line == "PING") {
+              tcpClient.println("{\"type\":\"pong\"}");
+              lastTcpActivityTime = millis(); // Refresh watchdog activity on successful ping
+            }
+          }
+          // Watchdog: If no TCP ping/activity is received from Electron for >15 seconds, force reset socket
+          if (millis() - lastTcpActivityTime > 15000) {
+            Serial.println("[TCP WATCHDOG] No activity from server for 15s. Force closing socket.");
+            tcpClient.stop();
+          }
         }
+        xSemaphoreGive(logMutex);
       }
     }
     vTaskDelay(pdMS_TO_TICKS(100));

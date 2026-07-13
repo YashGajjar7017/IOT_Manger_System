@@ -235,6 +235,9 @@ export default function App() {
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showGprsConsole, setShowGprsConsole] = useState(false);
   const [gprsCommandInput, setGprsCommandInput] = useState('');
+  const [continuousDiagnostics, setContinuousDiagnostics] = useState(false);
+  const [troubleshootLogs, setTroubleshootLogs] = useState([]);
+  const [isSyncingXml, setIsSyncingXml] = useState(false);
 
   const handleAuth = async () => {
     setAuthError('');
@@ -331,6 +334,16 @@ export default function App() {
   const diagnosticsRef = useRef(diagnostics);
   useEffect(() => { connectionRef.current = connection; }, [connection]);
   useEffect(() => { diagnosticsRef.current = diagnostics; }, [diagnostics]);
+
+  useEffect(() => {
+    if (!continuousDiagnostics || !connection.type) return;
+    const timer = setInterval(() => {
+      // Clear status and send RE_DIAGNOSE toconnected gateway
+      resetDiagnostics();
+      sendControlCommand('RE_DIAGNOSE');
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [continuousDiagnostics, connection.type]);
 
   // Phase 3 Certificate Provisioning States
   const [imeiProvisionInput, setImeiProvisionInput] = useState('');
@@ -839,7 +852,9 @@ export default function App() {
           const updated = { ...prev };
           Object.keys(payload.diagnostics || {}).forEach(key => {
             const val = payload.diagnostics[key];
-            const nextVal = (val === 'WAITING' || val === 'PENDING') ? 'WAITING' : (val ? 'OK' : 'ERROR');
+            const nextVal = (val === 'WAITING' || val === 'PENDING')
+              ? 'WAITING'
+              : (val === true || val === 'true' || val === 'OK' || val === 'PASSED' || val === 'PASS' ? 'OK' : 'ERROR');
             if (nextVal === 'WAITING' && (prev[key] === 'OK' || prev[key] === 'ERROR')) {
               // Preserve existing OK/ERROR status
             } else {
@@ -1283,6 +1298,16 @@ export default function App() {
     }
   }, [activeTab]);
 
+  // Auto-increment device number based on registry entries
+  useEffect(() => {
+    if (!editingDeviceImei && registeredDevices && registeredDevices.length > 0) {
+      const maxNum = registeredDevices.reduce((max, d) => ((d.deviceNumber || 0) > max ? d.deviceNumber : max), 0);
+      setRegDeviceNumber(String(maxNum + 1));
+    } else if (!editingDeviceImei) {
+      setRegDeviceNumber('1');
+    }
+  }, [registeredDevices, editingDeviceImei]);
+
   // Terminal scroll handler
   useEffect(() => {
     consoleEndRef.current?.scrollIntoView({ behavior: 'auto' });
@@ -1444,11 +1469,64 @@ Overall Status : ${overallStatus}
     }
   };
 
+  const handleForceSyncActiveDeviceToDb = async () => {
+    if (!imei || imei === '--') {
+      alert('No active device IMEI found to sync. Make sure a device is connected.');
+      return;
+    }
+    try {
+      const payload = {
+        imei: imei,
+        pcbNumber: pcbNumber && pcbNumber !== '--' ? pcbNumber : '',
+        mac: mac && mac !== '--' ? mac : '',
+        connectionType: connection.type || 'tcp',
+        target: connection.target || '',
+        routerSSID: wifiRouterSsid || '',
+        routerPassword: wifiRouterPass || '',
+        telemetryInterval: telemetryRate || 1500,
+        deviceNumber: parseInt(regDeviceNumber) || 1,
+        rs232Status: diagnostics.rs232 || 'WAITING',
+        rs485Status: diagnostics.rs485 || 'WAITING',
+        gprsStatus: diagnostics.gprs || 'WAITING',
+        busStatus: diagnostics.bus || 'WAITING',
+        apStatus: diagnostics.ap || 'WAITING',
+        flashStatus: diagnostics.flash || 'WAITING',
+        diStatus: diagnostics.di || 'WAITING',
+        driverStatus: diagnostics.driver || 'WAITING',
+        rtcStatus: diagnostics.rtc || 'WAITING'
+      };
+      const res = await fetch('/api/devices/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        alert('Active device details successfully synced to database immediately!');
+        fetchRegisteredDevices();
+      } else {
+        const errData = await res.json();
+        alert(`Sync failed: ${errData.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Sync error: ${err.message}`);
+    }
+  };
+
   // REST API: Register a new device configuration
   const handleRegisterDevice = async (e) => {
     e.preventDefault();
     if (!regImei) {
       alert('IMEI is required.');
+      return;
+    }
+    const devNumVal = parseInt(regDeviceNumber);
+    if (!devNumVal || isNaN(devNumVal) || devNumVal < 1) {
+      alert('Please enter a valid Device Number.');
+      return;
+    }
+    const duplicate = registeredDevices.find(d => d.deviceNumber === devNumVal && d.imei !== editingDeviceImei);
+    if (duplicate) {
+      alert(`Device Number ${devNumVal} is already allocated to device IMEI: ${duplicate.imei}. Please use a different number.`);
       return;
     }
     setIsRegisteringDevice(true);
@@ -1837,6 +1915,55 @@ Overall Status : ${overallStatus}
       branch: 'main'
     });
   };
+
+  const handlePullGithubXml = async () => {
+    setIsSyncingXml(true);
+    try {
+      const repoUrl = gitHubRepoUrlInput || 'https://github.com/YashGajjar7017/IOT_Manger_System';
+      const branch = gitHubRepoBranchInput || 'main';
+      const result = await ipcRenderer.invoke('manual-pull-github-xml', { repoUrl, branch });
+      if (result.success) {
+        alert(result.message);
+        addLogLine(`[GITHUB XML SUCCESS] ${result.message}`, 'success');
+      } else {
+        alert(`Failed to pull XML: ${result.message}`);
+        addLogLine(`[GITHUB XML ERROR] Pull failed: ${result.message}`, 'error');
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+      addLogLine(`[GITHUB XML ERROR] Exception: ${err.message}`, 'error');
+    } finally {
+      setIsSyncingXml(false);
+    }
+  };
+
+  const fetchTroubleshootLogs = async () => {
+    try {
+      const logs = await ipcRenderer.invoke('get-troubleshoot-logs');
+      setTroubleshootLogs(logs || []);
+    } catch (err) {
+      console.error('Failed to get troubleshoot logs:', err);
+    }
+  };
+
+  const clearTroubleshootLogs = async () => {
+    if (!window.confirm('Are you sure you want to clear all troubleshoot logs?')) return;
+    try {
+      const success = await ipcRenderer.invoke('clear-troubleshoot-logs');
+      if (success) {
+        setTroubleshootLogs([]);
+        alert('Troubleshoot logs cleared successfully.');
+      }
+    } catch (err) {
+      alert(`Failed to clear troubleshoot logs: ${err.message}`);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'page-account') {
+      fetchTroubleshootLogs();
+    }
+  }, [activeTab]);
 
   // Auto-scan: refresh port list then try connecting to each one in order
   // until a successful connection is established (useful when exact COM port is unknown)
@@ -2821,39 +2948,9 @@ Overall Status : ${overallStatus}
             </div>
 
             <div className="header-account-container">
-              <button className="header-account-btn" onClick={() => setShowAccountMenu(prev => !prev)}>
-                Account ▾
+              <button className={`header-account-btn ${activeTab === 'page-account' ? 'active' : ''}`} onClick={() => setActiveTab('page-account')} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                👤 Account & Support
               </button>
-              {showAccountMenu && (
-                <div className="header-dropdown-menu">
-                  {!isLoggedIn ? (
-                    <>
-                      <button className="header-dropdown-item" onClick={() => openAuthView('login')}>
-                        🔑 Login
-                      </button>
-                      <button className="header-dropdown-item" onClick={() => openAuthView('signup')}>
-                        📝 Sign Up
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <div className="header-dropdown-item" style={{ cursor: 'default', color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase', paddingBottom: '2px' }}>
-                        👤 Admin Connected
-                      </div>
-                      <button className="header-dropdown-item" onClick={() => { setActiveTab('page-settings'); setShowAccountMenu(false); }}>
-                        ⚙️ App Settings
-                      </button>
-                      <button className="header-dropdown-item" onClick={() => { setActiveTab('page-update-check'); setShowAccountMenu(false); handleCheckUpdate(); }}>
-                        🔄 Check for Updates
-                      </button>
-                      <div className="header-dropdown-divider"></div>
-                      <button className="header-dropdown-item" onClick={() => { localStorage.removeItem('isLoggedIn'); setIsLoggedIn(false); setShowAccountMenu(false); addLogLine('[GUI] Signed out.', 'system'); }}>
-                        🚪 Sign Out
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         </header>
@@ -2946,6 +3043,15 @@ Overall Status : ${overallStatus}
                   <button className="btn btn-secondary header-btn" onClick={triggerSelfCheckReRun} disabled={controlsDisabled || !connection.type} title="Re-evaluate peripheral hardware status">
                     Recheck Hardware
                   </button>
+                  <label className="checkbox-toggle" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '11px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '0 12px', borderRadius: '20px', color: 'white', height: '36px', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={continuousDiagnostics}
+                      onChange={(e) => setContinuousDiagnostics(e.target.checked)}
+                      style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: 'var(--accent-pink)' }}
+                    />
+                    <span>Continuous Updates</span>
+                  </label>
                   <button className="btn btn-accent header-btn" onClick={() => sendControlCommand('SHIFT_TO_QCOM')} disabled={!connection.type} title="Shift communications target to QCOM">
                     Shift to QCOM
                   </button>
@@ -2958,6 +3064,9 @@ Overall Status : ${overallStatus}
                   {/* <button className="btn btn-secondary header-btn" onClick={handleDownloadReport} title="Export diagnostics report to local disk">
                     Download Report
                   </button> */}
+                  <button className="btn btn-secondary header-btn" onClick={handleForceSyncActiveDeviceToDb} disabled={!connection.type || !imei || imei === '--'} title="Immediately sync active device and current diagnostics to database">
+                    Sync to DB
+                  </button>
                   <button className="btn btn-secondary header-btn" onClick={exportTelemetryJson} title="Export telemetry history as JSON">
                     Export Telemetry
                   </button>
@@ -3020,7 +3129,7 @@ Overall Status : ${overallStatus}
                           if (val === 'custom') {
                             setPcbNumber('');
                           } else {
-                            const profile = registeredDevices.find(d => d.imei === val);
+                            const profile = registeredDevices.find(d => (d._id || d.imei || d.pcbNumber) === val);
                             if (profile) {
                               setPcbNumber(profile.pcbNumber || '');
                               if (profile.imei) {
@@ -3042,7 +3151,7 @@ Overall Status : ${overallStatus}
                       >
                         <option value="">-- Select Registered Profile --</option>
                         {[...registeredDevices].sort((a, b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((d) => (
-                          <option key={d._id || d.imei} value={d.imei}>
+                          <option key={d._id || d.imei || d.pcbNumber} value={d._id || d.imei || d.pcbNumber}>
                             Device #{d.deviceNumber || '1'} - {d.pcbNumber || d.imei}
                           </option>
                         ))}
@@ -3282,9 +3391,10 @@ Overall Status : ${overallStatus}
                         ) : (
                           [...registeredDevices].sort((a, b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((d) => (
                             <div
-                              key={d._id || d.imei}
+                              key={d._id || d.imei || d.pcbNumber}
                               onClick={() => {
-                                setSelectedRegDeviceImei(d.imei);
+                                const val = d._id || d.imei || d.pcbNumber;
+                                setSelectedRegDeviceImei(val);
                                 setPcbNumber(d.pcbNumber || '');
                                 setImei(d.imei || '');
                                 if (d.routerSSID) setWifiRouterSsid(d.routerSSID);
@@ -3295,8 +3405,8 @@ Overall Status : ${overallStatus}
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
                                 padding: '6px 8px',
-                                background: selectedRegDeviceImei === d.imei ? 'rgba(0, 240, 255, 0.08)' : 'rgba(255,255,255,0.01)',
-                                border: selectedRegDeviceImei === d.imei ? '1px solid rgba(0, 240, 255, 0.3)' : '1px solid rgba(255,255,255,0.04)',
+                                background: selectedRegDeviceImei === (d._id || d.imei || d.pcbNumber) ? 'rgba(0, 240, 255, 0.08)' : 'rgba(255,255,255,0.01)',
+                                border: selectedRegDeviceImei === (d._id || d.imei || d.pcbNumber) ? '1px solid rgba(0, 240, 255, 0.3)' : '1px solid rgba(255,255,255,0.04)',
                                 borderRadius: '4px',
                                 cursor: 'pointer',
                                 fontSize: '10.5px'
@@ -3304,7 +3414,7 @@ Overall Status : ${overallStatus}
                             >
                               <span style={{ fontWeight: 'bold', color: '#ff007f' }}>#{d.deviceNumber || '1'}</span>
                               <span style={{ color: '#fff', fontFamily: 'monospace' }}>{d.pcbNumber || d.imei.substring(0, 8)}</span>
-                              <span className={`pulse-dot ${selectedRegDeviceImei === d.imei ? 'connected' : 'idle'}`} style={{ width: '6px', height: '6px' }}></span>
+                              <span className={`pulse-dot ${selectedRegDeviceImei === (d._id || d.imei || d.pcbNumber) ? 'connected' : 'idle'}`} style={{ width: '6px', height: '6px' }}></span>
                             </div>
                           ))
                         )}
@@ -4259,45 +4369,111 @@ Overall Status : ${overallStatus}
                         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
                           <th style={{ padding: '8px' }}>Device #</th>
                           <th style={{ padding: '8px' }}>IMEI / PCB Serial</th>
-                          <th style={{ padding: '8px' }}>Password</th>
-                          <th style={{ padding: '8px' }}>SSID Target</th>
-                          <th style={{ padding: '8px' }}>Rate Interval</th>
+                          <th style={{ padding: '8px' }}>Net Status</th>
+                          <th style={{ padding: '8px' }}>Target Address</th>
+                          <th style={{ padding: '8px' }}>MAC</th>
+                          <th style={{ padding: '8px' }}>Last Online</th>
+                          <th style={{ padding: '8px' }}>Reg Method</th>
+                          <th style={{ padding: '8px' }}>Interval</th>
                           <th style={{ padding: '8px' }}>RS232</th>
                           <th style={{ padding: '8px' }}>RS485</th>
                           <th style={{ padding: '8px' }}>GPRS</th>
+                          <th style={{ padding: '8px' }}>AP</th>
+                          <th style={{ padding: '8px' }}>Bus</th>
+                          <th style={{ padding: '8px' }}>Driver</th>
                           <th style={{ padding: '8px', textAlign: 'right' }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {[...registeredDevices].sort((a, b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((dev) => (
-                          <tr key={dev._id || dev.imei} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
-                            <td style={{ padding: '8px', fontWeight: 'bold', color: 'var(--accent-blue)' }}>
-                              #{dev.deviceNumber || '1'}
-                            </td>
-                            <td style={{ padding: '8px' }}>
-                              <div style={{ fontWeight: 'bold', color: 'white' }}>{dev.imei}</div>
-                              <div style={{ fontSize: '10.5px', color: 'var(--text-dim)' }}>{dev.pcbNumber || 'No PCB Serial'}</div>
-                            </td>
-                            <td style={{ padding: '8px', fontFamily: 'monospace' }}>{dev.password || 'admin_secure_gate'}</td>
-                            <td style={{ padding: '8px' }}>{dev.routerSSID || '--'}</td>
-                            <td style={{ padding: '8px', fontFamily: 'monospace' }}>{dev.telemetryInterval}ms</td>
-                            <td style={{ padding: '8px' }}>
-                              <span className={`status-tag ${dev.rs232Status === 'OK' ? 'ok' : dev.rs232Status === 'ERROR' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', minWidth: '45px', textAlign: 'center', display: 'inline-block' }}>
-                                {dev.rs232Status || 'WAITING'}
-                              </span>
-                            </td>
-                            <td style={{ padding: '8px' }}>
-                              <span className={`status-tag ${dev.rs485Status === 'OK' ? 'ok' : dev.rs485Status === 'ERROR' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', minWidth: '45px', textAlign: 'center', display: 'inline-block' }}>
-                                {dev.rs485Status || 'WAITING'}
-                              </span>
-                            </td>
-                            <td style={{ padding: '8px' }}>
-                              <span className={`status-tag ${dev.gprsStatus === 'OK' ? 'ok' : dev.gprsStatus === 'ERROR' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', minWidth: '45px', textAlign: 'center', display: 'inline-block' }}>
-                                {dev.gprsStatus || 'WAITING'}
-                              </span>
-                            </td>
+                        {[...registeredDevices].sort((a, b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((dev) => {
+                          const isCurrentConnected = connection.type && (imei === dev.imei || connection.target.includes(dev.target) || (dev.mac && connection.target.includes(dev.mac.replace(/:/g, ''))));
+                          const inDiscoveredGateways = discoveredGateways.some(g => g.imei === dev.imei || (g.mac && dev.mac && g.mac.replace(/:/g, '').toLowerCase() === dev.mac.replace(/:/g, '').toLowerCase()));
+                          const inNearbyHotspots = dev.mac && nearbyHotspots.some(ssid => ssid.toLowerCase().includes(dev.mac.replace(/:/g, '').toLowerCase())) || (dev.routerSSID && nearbyHotspots.some(ssid => ssid.toLowerCase() === dev.routerSSID.toLowerCase()));
+                          const isFound = isCurrentConnected || inDiscoveredGateways || inNearbyHotspots;
+
+                          return (
+                            <tr key={dev._id || dev.imei || dev.pcbNumber} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
+                              <td style={{ padding: '8px', fontWeight: 'bold', color: 'var(--accent-blue)' }}>
+                                #{dev.deviceNumber || '1'}
+                              </td>
+                              <td style={{ padding: '8px' }}>
+                                <div style={{ fontWeight: 'bold', color: 'white' }}>{dev.imei || '(no IMEI)'}</div>
+                                <div style={{ fontSize: '10.5px', color: 'var(--text-dim)' }}>{dev.pcbNumber || 'No PCB Serial'}</div>
+                              </td>
+                              <td style={{ padding: '8px' }}>
+                                {isFound ? (
+                                  <span className="status-tag ok" style={{ display: 'inline-block', padding: '2px 6px', fontSize: '10px', minWidth: '55px', textAlign: 'center' }}>
+                                    ONLINE
+                                  </span>
+                                ) : (
+                                  <span className="status-tag err" style={{ display: 'inline-block', padding: '2px 6px', fontSize: '10px', minWidth: '55px', textAlign: 'center', background: 'rgba(255, 50, 50, 0.1)', border: '1px solid rgba(255, 50, 50, 0.3)', color: '#ff3333' }}>
+                                    STOP
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px', fontSize: '11px' }}>
+                                <span style={{ fontWeight: 'bold', color: '#ffbb00' }}>{dev.connectionType ? dev.connectionType.toUpperCase() : 'N/A'}</span>
+                                <div style={{ fontSize: '10.5px', color: 'var(--text-dim)', fontFamily: 'monospace' }}>{dev.target || '--'}</div>
+                              </td>
+                              <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '10.5px' }}>{dev.mac || 'N/A'}</td>
+                              <td style={{ padding: '8px', fontSize: '10.5px' }}>
+                                {dev.lastOnline ? new Date(dev.lastOnline).toLocaleString() : 'Never'}
+                              </td>
+                              <td style={{ padding: '8px', fontSize: '10.5px', textTransform: 'capitalize' }}>
+                                <span style={{ color: dev.registrationMethod === 'auto' ? 'var(--accent-pink)' : '#00ff66' }}>
+                                  {dev.registrationMethod || 'manual'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px', fontFamily: 'monospace' }}>{dev.telemetryInterval}ms</td>
+                              <td style={{ padding: '8px' }}>
+                                <span className={`status-tag ${dev.rs232Status === 'OK' ? 'ok' : dev.rs232Status === 'ERROR' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', minWidth: '45px', textAlign: 'center', display: 'inline-block' }}>
+                                  {dev.rs232Status || 'WAITING'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px' }}>
+                                <span className={`status-tag ${dev.rs485Status === 'OK' ? 'ok' : dev.rs485Status === 'ERROR' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', minWidth: '45px', textAlign: 'center', display: 'inline-block' }}>
+                                  {dev.rs485Status || 'WAITING'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px' }}>
+                                <span className={`status-tag ${dev.gprsStatus === 'OK' ? 'ok' : dev.gprsStatus === 'ERROR' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', minWidth: '45px', textAlign: 'center', display: 'inline-block' }}>
+                                  {dev.gprsStatus || 'WAITING'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px' }}>
+                                <span className={`status-tag ${dev.apStatus === 'OK' ? 'ok' : dev.apStatus === 'ERROR' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', minWidth: '45px', textAlign: 'center', display: 'inline-block' }}>
+                                  {dev.apStatus || 'WAITING'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px' }}>
+                                <span className={`status-tag ${dev.busStatus === 'OK' ? 'ok' : dev.busStatus === 'ERROR' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', minWidth: '45px', textAlign: 'center', display: 'inline-block' }}>
+                                  {dev.busStatus || 'WAITING'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px' }}>
+                                <span className={`status-tag ${dev.driverStatus === 'OK' ? 'ok' : dev.driverStatus === 'ERROR' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', minWidth: '45px', textAlign: 'center', display: 'inline-block' }}>
+                                  {dev.driverStatus || 'WAITING'}
+                                </span>
+                              </td>
                             <td style={{ padding: '8px', textAlign: 'right' }}>
-                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                                <button
+                                  className="btn btn-primary small"
+                                  style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', background: 'rgba(0, 240, 255, 0.1)', border: '1px solid rgba(0, 240, 255, 0.3)', color: '#00f0ff' }}
+                                  onClick={() => {
+                                    const val = dev._id || dev.imei || dev.pcbNumber;
+                                    setSelectedRegDeviceImei(val);
+                                    setPcbNumber(dev.pcbNumber || '');
+                                    setImei(dev.imei || '');
+                                    if (dev.mac) setMac(dev.mac);
+                                    if (dev.routerSSID) setWifiRouterSsid(dev.routerSSID);
+                                    if (dev.routerPassword) setWifiRouterPass(dev.routerPassword);
+                                    setActiveTab('page-dashboard');
+                                    addLogLine(`[GUI] Switched active controller target to Device #${dev.deviceNumber || '1'} (${dev.pcbNumber || dev.imei})`, 'success');
+                                  }}
+                                >
+                                  Control
+                                </button>
                                 <button
                                   className="btn btn-secondary small"
                                   style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', opacity: isRegistryLocked ? 0.5 : 1 }}
@@ -4431,10 +4607,16 @@ Overall Status : ${overallStatus}
                                 </div>
                                 <div>
                                   <div style={{ fontSize: '10.5px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Peripherals Status</div>
-                                  <div style={{ fontSize: '12px', lineHeight: '1.6' }}>
-                                    <div><strong>RS232 Channel:</strong> <span style={{ color: record.rs232Status === 'OK' ? '#00ff66' : record.rs232Status === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.rs232Status || 'WAITING'}</span></div>
-                                    <div><strong>RS485 Channel:</strong> <span style={{ color: record.rs485Status === 'OK' ? '#00ff66' : record.rs485Status === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.rs485Status || 'WAITING'}</span></div>
-                                    <div><strong>GPRS Cell Modem:</strong> <span style={{ color: record.gprsStatus === 'OK' ? '#00ff66' : record.gprsStatus === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.gprsStatus || 'WAITING'}</span></div>
+                                  <div style={{ fontSize: '11px', lineHeight: '1.4', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 15px' }}>
+                                    <div><strong>RS232:</strong> <span style={{ color: record.rs232Status === 'OK' ? '#00ff66' : record.rs232Status === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.rs232Status || 'WAITING'}</span></div>
+                                    <div><strong>RS485:</strong> <span style={{ color: record.rs485Status === 'OK' ? '#00ff66' : record.rs485Status === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.rs485Status || 'WAITING'}</span></div>
+                                    <div><strong>GPRS:</strong> <span style={{ color: record.gprsStatus === 'OK' ? '#00ff66' : record.gprsStatus === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.gprsStatus || 'WAITING'}</span></div>
+                                    <div><strong>AP:</strong> <span style={{ color: record.apStatus === 'OK' ? '#00ff66' : record.apStatus === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.apStatus || 'WAITING'}</span></div>
+                                    <div><strong>Bus:</strong> <span style={{ color: record.busStatus === 'OK' ? '#00ff66' : record.busStatus === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.busStatus || 'WAITING'}</span></div>
+                                    <div><strong>Driver:</strong> <span style={{ color: record.driverStatus === 'OK' ? '#00ff66' : record.driverStatus === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.driverStatus || 'WAITING'}</span></div>
+                                    <div><strong>Flash:</strong> <span style={{ color: record.flashStatus === 'OK' ? '#00ff66' : record.flashStatus === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.flashStatus || 'WAITING'}</span></div>
+                                    <div><strong>DI Pin:</strong> <span style={{ color: record.diStatus === 'OK' ? '#00ff66' : record.diStatus === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.diStatus || 'WAITING'}</span></div>
+                                    <div><strong>RTC Clock:</strong> <span style={{ color: record.rtcStatus === 'OK' ? '#00ff66' : record.rtcStatus === 'ERROR' ? '#ff3366' : '#ffaa00' }}>{record.rtcStatus || 'WAITING'}</span></div>
                                   </div>
                                 </div>
                               </div>
@@ -6535,6 +6717,206 @@ Overall Status : ${overallStatus}
             </div>
           </section>
 
+          {/* ================= VIEW 8: ACCOUNT & TROUBLESHOOT ================= */}
+          <section id="page-account" className={`page-view ${activeTab === 'page-account' ? 'active' : ''}`}>
+            <header className="view-header">
+              <div>
+                <h1>Account & Troubleshoot Center</h1>
+                <p>Manage administrator credentials, online sync connections, and review diagnostic revocation logs</p>
+              </div>
+            </header>
+
+            {!isLoggedIn ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '60px 0' }}>
+                <div className="glass-card auth-card" style={{ maxWidth: '400px', width: '100%', border: '1px solid var(--glass-border)' }}>
+                  <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                    <span style={{ fontSize: '40px' }}>🔑</span>
+                    <h2 style={{ color: 'white', marginTop: '10px' }}>Admin Authorization</h2>
+                    <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Authenticate with admin keys to modify hardware settings</p>
+                  </div>
+                  
+                  {authError && (
+                    <div style={{ padding: '10px', background: 'rgba(255, 51, 102, 0.1)', border: '1px solid rgba(255, 51, 102, 0.3)', color: '#ff3366', borderRadius: '6px', fontSize: '12px', marginBottom: '15px', textAlign: 'center' }}>
+                      ⚠️ {authError}
+                    </div>
+                  )}
+
+                  <div className="input-group">
+                    <label>Username</label>
+                    <input type="text" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} placeholder="Enter admin username" />
+                  </div>
+
+                  {authMode === 'signup' && (
+                    <div className="input-group">
+                      <label>Email Address</label>
+                      <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="admin@domain.com" />
+                    </div>
+                  )}
+
+                  <div className="input-group">
+                    <label>Password</label>
+                    <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••••••" />
+                  </div>
+
+                  {authMode === 'signup' && (
+                    <div className="input-group">
+                      <label>Confirm Password</label>
+                      <input type="password" value={authConfirmPassword} onChange={(e) => setAuthConfirmPassword(e.target.value)} placeholder="••••••••••••" />
+                    </div>
+                  )}
+
+                  <button className="btn btn-accent" onClick={handleAuth} style={{ width: '100%', marginTop: '15px' }}>
+                    {authMode === 'login' ? 'Authenticate Session' : 'Register Administrator'}
+                  </button>
+
+                  <div style={{ marginTop: '15px', textAlign: 'center', fontSize: '12px' }}>
+                    <a href="#" onClick={(e) => { e.preventDefault(); setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }} style={{ color: 'var(--accent-blue)', textDecoration: 'underline' }}>
+                      {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Log In"}
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
+                
+                {/* Admin Status & Reconnect Card */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div className="glass-card">
+                    <h3><span className="icon">👤</span> Admin Profile</h3>
+                    <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>Active administrator session details:</p>
+                    
+                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '15px' }}>
+                      <div>
+                        <span style={{ fontSize: '10px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>Username</span>
+                        <span style={{ fontSize: '14px', fontWeight: 'bold' }}>Administrator</span>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '10px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>Status</span>
+                        <span style={{ fontSize: '12px', color: 'var(--accent-emerald)', fontWeight: 'bold' }}>Connected Offline & Local</span>
+                      </div>
+                    </div>
+
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        localStorage.removeItem('isLoggedIn');
+                        setIsLoggedIn(false);
+                        addLogLine('[GUI] Logged out.', 'system');
+                      }}
+                      style={{ width: '100%', borderColor: 'rgba(239, 68, 68, 0.4)', color: '#ef4444', background: 'rgba(239, 68, 68, 0.05)', margin: 0 }}
+                    >
+                      🚪 Log Out Session
+                    </button>
+                  </div>
+
+                  {/* GitHub Repo Sync Options Card */}
+                  <div className="glass-card">
+                    <h3><span className="icon">🐙</span> GitHub Sync & XML Pull</h3>
+                    <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                      Sync online codebase files and raw repository XML update logs:
+                    </p>
+                    
+                    <div className="input-group">
+                      <label>GitHub Repository URL</label>
+                      <input
+                        type="text"
+                        value={gitHubRepoUrlInput || ''}
+                        onChange={(e) => setGitHubRepoUrlInput(e.target.value)}
+                        placeholder="https://github.com/Username/Repo"
+                      />
+                    </div>
+                    <div className="input-group">
+                      <label>Repository Branch</label>
+                      <input
+                        type="text"
+                        value={gitHubRepoBranchInput || ''}
+                        onChange={(e) => setGitHubRepoBranchInput(e.target.value)}
+                        placeholder="main"
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+                      <button
+                        className="btn btn-primary"
+                        onClick={handlePullGithubXml}
+                        disabled={isSyncingXml}
+                        style={{ margin: 0, width: '100%' }}
+                      >
+                        {isSyncingXml ? 'Syncing XML...' : 'Update XML Now'}
+                      </button>
+                      <button
+                        className="btn btn-accent"
+                        onClick={handleGitHubSync}
+                        disabled={isGitHubSyncing}
+                        style={{ margin: 0, width: '100%' }}
+                      >
+                        {isGitHubSyncing ? 'Syncing Code...' : 'Sync Code Now'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* System Troubleshoot Logs Card */}
+                <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <h3><span className="icon">🛠️</span> Revocation & Error Troubleshoot Logs</h3>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button className="btn btn-secondary small" onClick={fetchTroubleshootLogs} style={{ margin: 0, height: '26px', padding: '0 10px', fontSize: '11px' }}>
+                        🔄 Refresh
+                      </button>
+                      <button className="btn btn-danger small" onClick={clearTroubleshootLogs} style={{ margin: 0, height: '26px', padding: '0 10px', fontSize: '11px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
+                        🗑️ Clear Logs
+                      </button>
+                    </div>
+                  </div>
+                  <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                    Offline troubleshooting history: connection terminations (connection revoke events) and database writing failure records.
+                  </p>
+
+                  <div style={{ maxHeight: '420px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)', flex: 1 }}>
+                    {troubleshootLogs.length === 0 ? (
+                      <div style={{ padding: '40px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
+                        No troubleshooting reports found. Everything is running smoothly!
+                      </div>
+                    ) : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
+                            <th style={{ padding: '8px', width: '150px' }}>Timestamp</th>
+                            <th style={{ padding: '8px', width: '160px' }}>Event Type</th>
+                            <th style={{ padding: '8px' }}>Description</th>
+                            <th style={{ padding: '8px' }}>Details / Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {troubleshootLogs.map((log, idx) => (
+                            <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
+                              <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                                {new Date(log.timestamp).toLocaleString()}
+                              </td>
+                              <td style={{ padding: '8px' }}>
+                                <span className={`status-tag ${log.type === 'db_entry_failed' || log.type === 'db_connection_failed' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', textTransform: 'uppercase', display: 'inline-block' }}>
+                                  {log.type.replace(/_/g, ' ')}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px', fontWeight: 'bold' }}>{log.message}</td>
+                              <td style={{ padding: '8px', color: 'var(--text-dim)', fontSize: '11px' }}>{log.details}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  <div style={{ background: 'rgba(255, 115, 0, 0.05)', border: '1px solid rgba(255, 115, 0, 0.15)', borderRadius: '6px', padding: '10px', fontSize: '11px', marginTop: '15px', color: '#ffb74d' }}>
+                    ⚠️ <strong>Why do TCP connections get revoked?</strong> In custom gateways (Wi-Fi/Ethernet links), connection revoke events usually happen if the gateway fails to respond to keep-alive TCP probes within 60s, or if there is IP collision on the LAN network, causing socket reset.
+                  </div>
+                </div>
+
+              </div>
+            )}
+          </section>
+
         </main>
 
       </div>
@@ -6821,132 +7203,186 @@ Overall Status : ${overallStatus}
               <button className="gprs-modal-close" onClick={() => setShowGprsConsole(false)}>&times;</button>
             </div>
 
-            <div className="gprs-modal-body">
-              <div className="gprs-modal-info">
-                Sends commands to the active interface. Responses will display in the console log stream below.
+            <div className="gprs-modal-body" style={{ display: 'flex', gap: '20px', flexDirection: 'row', flexWrap: 'wrap' }}>
+              
+              {/* Left Column (60% width) */}
+              <div style={{ flex: '3 1 60%', display: 'flex', flexDirection: 'column', gap: '12px', minWidth: '350px' }}>
+                <div className="gprs-modal-info">
+                  Sends commands to the active interface. Responses will display in the console log stream below.
+                </div>
+
+                {/* Terminal Logs View */}
+                <div className="gprs-modal-terminal" style={{ flexGrow: 1, minHeight: '300px' }}>
+                  {consoleLogs.length === 0 ? (
+                    <div style={{ color: 'var(--text-dim)', fontStyle: 'italic', padding: '10px' }}>No terminal logs available.</div>
+                  ) : (
+                    consoleLogs.map((log, idx) => (
+                      <div key={idx} className={`terminal-line ${log.type}`} style={{ fontSize: '12px', margin: '3px 0' }}>
+                        [{log.time}] {log.text}
+                      </div>
+                    ))
+                  )}
+                  <div ref={(el) => { if (el) el.scrollIntoView({ behavior: 'smooth' }); }}></div>
+                </div>
+
+                {/* Quick Actions */}
+                <div className="gprs-modal-actions">
+                  <button
+                    className="btn btn-secondary small"
+                    onClick={() => {
+                      addLogLine('[CMD] Triggering GPRS diagnostics AT Command Check');
+                      sendControlCommand('TEST_GPRS');
+                    }}
+                    disabled={!connection.type}
+                  >
+                    🧪 Run GPRS AT Test
+                  </button>
+                  <button
+                    className="btn btn-accent small"
+                    onClick={() => {
+                      addLogLine('[CMD] Setting GPRS Baudrate to 1 Mbps');
+                      sendControlCommand('GPRS_SPEED');
+                    }}
+                    disabled={!connection.type}
+                  >
+                    ⚡ Set 1 Mbps Speed
+                  </button>
+                  <button
+                    className="btn btn-accent small"
+                    onClick={() => {
+                      addLogLine('[CMD] Setting GPRS Baudrate to 115200 bps');
+                      sendControlCommand('GPRS_SPEED_115200');
+                    }}
+                    disabled={!connection.type}
+                    style={{ background: 'var(--accent-blue)', borderColor: 'var(--accent-blue)' }}
+                  >
+                    ⚡ Set 115200 Baud
+                  </button>
+                  <button
+                    className="btn btn-primary small"
+                    onClick={() => {
+                      addLogLine('[CMD] Fetching IMEI via AT+CGSN');
+                      sendControlCommand('FETCH_IMEI');
+                    }}
+                    disabled={!connection.type}
+                  >
+                    📟 Fetch IMEI
+                  </button>
+                  <button
+                    className="btn btn-secondary small"
+                    onClick={() => {
+                      addLogLine('[CMD] Starting Serial Passthrough Bridge');
+                      sendControlCommand('SERIAL_BRIDGE');
+                    }}
+                    disabled={!connection.type || connection.type !== 'serial'}
+                    style={{ border: '1px solid var(--accent-emerald)', color: 'var(--accent-emerald)' }}
+                    title="Forward data between USB Serial and GPRS module"
+                  >
+                    🔗 Passthrough
+                  </button>
+                  <button
+                    className="btn btn-secondary small"
+                    onClick={() => {
+                      addLogLine('[CMD] PING');
+                      sendControlCommand('PING');
+                    }}
+                    disabled={!connection.type}
+                  >
+                    📡 Ping Modem
+                  </button>
+                  <button
+                    className="btn btn-danger small"
+                    onClick={() => setConsoleLogs([])}
+                  >
+                    🗑️ Clear Logs
+                  </button>
+                </div>
+
+                {/* Input Command Area */}
+                <form
+                  className="gprs-modal-input-group"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const cmd = gprsCommandInput.trim();
+                    if (!cmd) return;
+                    if (!connection.type) {
+                      alert('No active connection. Gateway offline.');
+                      return;
+                    }
+                    addLogLine(`[CMD] ${cmd}`);
+                    sendControlCommand(cmd);
+                    setGprsCommandInput('');
+                  }}
+                >
+                  <input
+                    type="text"
+                    className="gprs-modal-input"
+                    value={gprsCommandInput}
+                    onChange={(e) => setGprsCommandInput(e.target.value)}
+                    placeholder="Type AT or control command (e.g. AT+CSQ, PING) and press Enter..."
+                    disabled={!connection.type}
+                  />
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    style={{ height: '38px', margin: 0, padding: '0 20px', minWidth: '80px' }}
+                    disabled={!connection.type}
+                  >
+                    Send
+                  </button>
+                </form>
               </div>
 
-              {/* Terminal Logs View */}
-              <div className="gprs-modal-terminal">
-                {consoleLogs.length === 0 ? (
-                  <div style={{ color: 'var(--text-dim)', fontStyle: 'italic', padding: '10px' }}>No terminal logs available.</div>
-                ) : (
-                  consoleLogs.map((log, idx) => (
-                    <div key={idx} className={`terminal-line ${log.type}`} style={{ fontSize: '12px', margin: '3px 0' }}>
-                      [{log.time}] {log.text}
+              {/* Right Column (40% width) - Live Debug Checklist Box */}
+              <div className="debug-checklist-box" style={{ flex: '2 1 35%', minWidth: '250px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', padding: '15px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h4 style={{ margin: 0, color: 'var(--accent-pink)', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Real-Time Diagnostics</h4>
+                <p style={{ fontSize: '11px', color: 'var(--text-dim)', margin: 0 }}>
+                  Active gateway telemetry parameter self-checks and debug testing triggers:
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '5px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+                  {[
+                    { key: 'rs232', name: 'RS232 Interface' },
+                    { key: 'rs485', name: 'RS485 Interface' },
+                    { key: 'gprs', name: 'GPRS GSM Modem' },
+                    { key: 'ap', name: 'AP Module' },
+                    { key: 'bus', name: 'BUS Module' },
+                    { key: 'driver', name: 'Driver Pin' },
+                    { key: 'flash', name: 'SPIFFS Flash' },
+                    { key: 'di', name: 'Digital Input' },
+                    { key: 'rtc', name: 'RTC Clock' }
+                  ].map((m) => {
+                    const status = diagnostics[m.key] || 'WAITING';
+                    const color = (status === 'OK' || status === 'PASSED' || status === 'PASS') 
+                      ? 'var(--accent-emerald)' 
+                      : ((status === 'ERROR' || status === 'FAILED' || status === 'FAIL') ? 'var(--accent-pink)' : 'orange');
+                    return (
+                      <div key={m.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: 'bold' }}>{m.name}</div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>Status: <span style={{ color, fontWeight: 'bold' }}>{status}</span></div>
+                        </div>
+                        <button className="btn btn-secondary small" style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px' }} onClick={() => testModule(m.key)} disabled={!connection.type}>Test</button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                  {/* ESP32 Heartbeat State */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div>
+                      <div style={{ fontSize: '12px', fontWeight: 'bold' }}>ESP32 System Clock</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>Uptime: {systemInfo.uptime || 'N/A'} s</div>
                     </div>
-                  ))
-                )}
-                {/* Auto Scroll Anchor */}
-                <div ref={(el) => { if (el) el.scrollIntoView({ behavior: 'smooth' }); }}></div>
+                    <button className="btn btn-secondary small" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)', margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px' }} onClick={() => { addLogLine('[CMD] Triggering ESP32 reboot...'); sendControlCommand('REBOOT'); }} disabled={!connection.type}>Reboot</button>
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(112,0,255,0.05)', border: '1px solid rgba(112,0,255,0.15)', borderRadius: '6px', padding: '10px', fontSize: '11px', marginTop: '10px' }}>
+                  💡 <strong>Hardware Self-Check:</strong> Triggering self-checks updates parameters directly in the main console and logs test operations to the active system logs.
+                </div>
               </div>
 
-              {/* Quick Actions */}
-              <div className="gprs-modal-actions">
-                <button
-                  className="btn btn-secondary small"
-                  onClick={() => {
-                    addLogLine('[CMD] Triggering GPRS diagnostics AT Command Check');
-                    sendControlCommand('TEST_GPRS');
-                  }}
-                  disabled={!connection.type}
-                >
-                  🧪 Run GPRS AT Test
-                </button>
-                <button
-                  className="btn btn-accent small"
-                  onClick={() => {
-                    addLogLine('[CMD] Setting GPRS Baudrate to 1 Mbps');
-                    sendControlCommand('GPRS_SPEED');
-                  }}
-                  disabled={!connection.type}
-                >
-                  ⚡ Set 1 Mbps Speed
-                </button>
-                <button
-                  className="btn btn-accent small"
-                  onClick={() => {
-                    addLogLine('[CMD] Setting GPRS Baudrate to 115200 bps');
-                    sendControlCommand('GPRS_SPEED_115200');
-                  }}
-                  disabled={!connection.type}
-                  style={{ background: 'var(--accent-blue)', borderColor: 'var(--accent-blue)' }}
-                >
-                  ⚡ Set 115200 Baud
-                </button>
-                <button
-                  className="btn btn-primary small"
-                  onClick={() => {
-                    addLogLine('[CMD] Fetching IMEI via AT+CGSN');
-                    sendControlCommand('FETCH_IMEI');
-                  }}
-                  disabled={!connection.type}
-                >
-                  📟 Fetch IMEI
-                </button>
-                <button
-                  className="btn btn-secondary small"
-                  onClick={() => {
-                    addLogLine('[CMD] Starting Serial Passthrough Bridge');
-                    sendControlCommand('SERIAL_BRIDGE');
-                  }}
-                  disabled={!connection.type || connection.type !== 'serial'}
-                  style={{ border: '1px solid var(--accent-emerald)', color: 'var(--accent-emerald)' }}
-                  title="Forward data between USB Serial and GPRS module"
-                >
-                  🔗 Passthrough
-                </button>
-                <button
-                  className="btn btn-secondary small"
-                  onClick={() => {
-                    addLogLine('[CMD] PING');
-                    sendControlCommand('PING');
-                  }}
-                  disabled={!connection.type}
-                >
-                  📡 Ping Modem
-                </button>
-                <button
-                  className="btn btn-danger small"
-                  onClick={() => setConsoleLogs([])}
-                >
-                  🗑️ Clear Logs
-                </button>
-              </div>
-
-              {/* Input Command Area */}
-              <form
-                className="gprs-modal-input-group"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const cmd = gprsCommandInput.trim();
-                  if (!cmd) return;
-                  if (!connection.type) {
-                    alert('No active connection. Gateway offline.');
-                    return;
-                  }
-                  addLogLine(`[CMD] ${cmd}`);
-                  sendControlCommand(cmd);
-                  setGprsCommandInput('');
-                }}
-              >
-                <input
-                  type="text"
-                  className="gprs-modal-input"
-                  value={gprsCommandInput}
-                  onChange={(e) => setGprsCommandInput(e.target.value)}
-                  placeholder="Type AT or control command (e.g. AT+CSQ, PING) and press Enter..."
-                  disabled={!connection.type}
-                />
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  style={{ height: '38px', margin: 0, padding: '0 20px', minWidth: '80px' }}
-                  disabled={!connection.type}
-                >
-                  Send
-                </button>
-              </form>
             </div>
           </div>
         </div>

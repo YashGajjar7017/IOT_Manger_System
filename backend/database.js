@@ -37,6 +37,40 @@ function saveLocalDevices(devices) {
   }
 }
 
+let localTroubleshootPath = '';
+try {
+  const { app } = require('electron');
+  localTroubleshootPath = path.join(app.getPath('userData'), 'troubleshoot_logs.json');
+} catch (e) {
+  const appDataPath = process.env.APPDATA || 
+    (process.platform === 'darwin' ? path.join(process.env.HOME, 'Library/Application Support') : path.join(process.env.HOME, '.config'));
+  localTroubleshootPath = path.join(appDataPath, appName, 'troubleshoot_logs.json');
+}
+
+function loadLocalTroubleshootLogs() {
+  try {
+    if (fs.existsSync(localTroubleshootPath)) {
+      const data = fs.readFileSync(localTroubleshootPath, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error('[DATABASE] Failed to read local troubleshoot logs:', e);
+  }
+  return [];
+}
+
+function saveLocalTroubleshootLogs(logs) {
+  try {
+    const dir = path.dirname(localTroubleshootPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(localTroubleshootPath, JSON.stringify(logs, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[DATABASE] Failed to write local troubleshoot logs:', e);
+  }
+}
+
 // Schema Definition
 const TelemetrySchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now },
@@ -52,9 +86,27 @@ const TelemetrySchema = new mongoose.Schema({
   rs232Status: { type: String, default: 'WAITING' },
   rs485Status: { type: String, default: 'WAITING' },
   gprsStatus: { type: String, default: 'WAITING' },
+  diStatus: { type: String, default: 'WAITING' },
+  psramStatus: { type: String, default: 'WAITING' },
+  rtcStatus: { type: String, default: 'WAITING' },
+  flashStatus: { type: String, default: 'WAITING' },
+  frStatus: { type: String, default: 'WAITING' },
+  switchStatus: { type: String, default: 'WAITING' },
+  apStatus: { type: String, default: 'WAITING' },
+  busStatus: { type: String, default: 'WAITING' },
+  driverStatus: { type: String, default: 'WAITING' },
   rs232Log: { type: String, default: '' },
   rs485Log: { type: String, default: '' },
-  gprsLog: { type: String, default: '' }
+  gprsLog: { type: String, default: '' },
+  diLog: { type: String, default: '' },
+  psramLog: { type: String, default: '' },
+  rtcLog: { type: String, default: '' },
+  flashLog: { type: String, default: '' },
+  frLog: { type: String, default: '' },
+  switchLog: { type: String, default: '' },
+  apLog: { type: String, default: '' },
+  busLog: { type: String, default: '' },
+  driverLog: { type: String, default: '' }
 });
 
 const TelemetryModel = mongoose.model('Telemetry', TelemetrySchema);
@@ -129,6 +181,7 @@ function connectDatabase(customURI) {
       mongodbConnected = false;
       console.warn('[DATABASE] MongoDB connection failed. Falling back to In-Memory Logging.');
       console.warn(`[DATABASE] Error details: ${err.message}`);
+      saveTroubleshootLog('db_connection_failed', `MongoDB connection failed at ${mongoURI}`, err.message);
       return null;
     });
 }
@@ -164,9 +217,27 @@ async function saveTelemetrySnapshot(data) {
     rs232Status: (device && device.rs232Status) || data.rs232Status || 'WAITING',
     rs485Status: (device && device.rs485Status) || data.rs485Status || 'WAITING',
     gprsStatus: (device && device.gprsStatus) || data.gprsStatus || 'WAITING',
+    diStatus: (device && device.diStatus) || data.diStatus || 'WAITING',
+    psramStatus: (device && device.psramStatus) || data.psramStatus || 'WAITING',
+    rtcStatus: (device && device.rtcStatus) || data.rtcStatus || 'WAITING',
+    flashStatus: (device && device.flashStatus) || data.flashStatus || 'WAITING',
+    frStatus: (device && device.frStatus) || data.frStatus || 'WAITING',
+    switchStatus: (device && device.switchStatus) || data.switchStatus || 'WAITING',
+    apStatus: (device && device.apStatus) || data.apStatus || 'WAITING',
+    busStatus: (device && device.busStatus) || data.busStatus || 'WAITING',
+    driverStatus: (device && device.driverStatus) || data.driverStatus || 'WAITING',
     rs232Log: (device && device.rs232Log) || data.rs232Log || '',
     rs485Log: (device && device.rs485Log) || data.rs485Log || '',
-    gprsLog: (device && device.gprsLog) || data.gprsLog || ''
+    gprsLog: (device && device.gprsLog) || data.gprsLog || '',
+    diLog: (device && device.diLog) || data.diLog || '',
+    psramLog: (device && device.psramLog) || data.psramLog || '',
+    rtcLog: (device && device.rtcLog) || data.rtcLog || '',
+    flashLog: (device && device.flashLog) || data.flashLog || '',
+    frLog: (device && device.frLog) || data.frLog || '',
+    switchLog: (device && device.switchLog) || data.switchLog || '',
+    apLog: (device && device.apLog) || data.apLog || '',
+    busLog: (device && device.busLog) || data.busLog || '',
+    driverLog: (device && device.driverLog) || data.driverLog || ''
   };
 
   if (mongodbConnected) {
@@ -182,6 +253,7 @@ async function saveTelemetrySnapshot(data) {
       }
     } catch (err) {
       console.error('[DATABASE] Failed to write telemetry record to MongoDB:', err);
+      await saveTroubleshootLog('db_entry_failed', `Failed to write telemetry record to MongoDB for IMEI: ${snapshot.imei || '(none)'}`, err.message);
     }
   } else {
     memoryHistoryBuffer.push(snapshot);
@@ -205,7 +277,6 @@ const CertificateLogSchema = new mongoose.Schema({
 
 const CertificateLogModel = mongoose.model('CertificateLog', CertificateLogSchema);
 
-// DeviceIdentification Schema Definition
 const DeviceIdentificationSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now },
   pcbNumber: { type: String, default: '' },
@@ -221,12 +292,108 @@ const DeviceIdentificationSchema = new mongoose.Schema({
   rs232Status: { type: String, default: 'WAITING' },
   rs485Status: { type: String, default: 'WAITING' },
   gprsStatus: { type: String, default: 'WAITING' },
+  diStatus: { type: String, default: 'WAITING' },
+  psramStatus: { type: String, default: 'WAITING' },
+  rtcStatus: { type: String, default: 'WAITING' },
+  flashStatus: { type: String, default: 'WAITING' },
+  frStatus: { type: String, default: 'WAITING' },
+  switchStatus: { type: String, default: 'WAITING' },
+  apStatus: { type: String, default: 'WAITING' },
+  busStatus: { type: String, default: 'WAITING' },
+  driverStatus: { type: String, default: 'WAITING' },
   rs232Log: { type: String, default: '' },
   rs485Log: { type: String, default: '' },
-  gprsLog: { type: String, default: '' }
+  gprsLog: { type: String, default: '' },
+  diLog: { type: String, default: '' },
+  psramLog: { type: String, default: '' },
+  rtcLog: { type: String, default: '' },
+  flashLog: { type: String, default: '' },
+  frLog: { type: String, default: '' },
+  switchLog: { type: String, default: '' },
+  apLog: { type: String, default: '' },
+  busLog: { type: String, default: '' },
+  driverLog: { type: String, default: '' },
+  lastOnline: { type: Date, default: Date.now },
+  registrationMethod: { type: String, default: 'manual' }
 });
 
 const DeviceIdentificationModel = mongoose.model('DeviceIdentification', DeviceIdentificationSchema, 'Device_Name');
+
+// Troubleshoot Schema Definition
+const TroubleshootSchema = new mongoose.Schema({
+  timestamp: { type: Date, default: Date.now },
+  type: { type: String, default: 'info' },
+  message: { type: String, default: '' },
+  details: { type: String, default: '' }
+});
+
+const TroubleshootModel = mongoose.model('Troubleshoot', TroubleshootSchema, 'Troubleshoot_Logs');
+
+async function saveTroubleshootLog(type, message, details) {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    type: type || 'info',
+    message: message || '',
+    details: details || ''
+  };
+
+  // 1. Write locally
+  try {
+    const localLogs = loadLocalTroubleshootLogs();
+    localLogs.unshift(logEntry);
+    if (localLogs.length > 200) {
+      localLogs.pop(); // keep last 200 logs
+    }
+    saveLocalTroubleshootLogs(localLogs);
+  } catch (e) {
+    console.error('[DATABASE] Error saving local troubleshoot log:', e);
+  }
+
+  // 2. Write to MongoDB if connected
+  if (mongodbConnected) {
+    try {
+      await TroubleshootModel.create(logEntry);
+      // clean up old records in mongo as well
+      const count = await TroubleshootModel.countDocuments();
+      if (count > 200) {
+        const oldest = await TroubleshootModel.find().sort({ timestamp: 1 }).limit(1);
+        if (oldest.length > 0) {
+          await TroubleshootModel.deleteOne({ _id: oldest[0]._id });
+        }
+      }
+    } catch (err) {
+      console.error('[DATABASE] Failed to write troubleshoot record to MongoDB:', err);
+    }
+  }
+}
+
+async function getTroubleshootLogs() {
+  if (mongodbConnected) {
+    try {
+      return await TroubleshootModel.find().sort({ timestamp: -1 }).limit(100);
+    } catch (err) {
+      console.error('[DATABASE] Failed to read troubleshoot logs from MongoDB, using local fallback:', err);
+    }
+  }
+  return loadLocalTroubleshootLogs();
+}
+
+async function clearTroubleshootLogs() {
+  try {
+    saveLocalTroubleshootLogs([]);
+  } catch (e) {
+    console.error('[DATABASE] Failed to clear local troubleshoot logs:', e);
+  }
+
+  if (mongodbConnected) {
+    try {
+      await TroubleshootModel.deleteMany({});
+    } catch (err) {
+      console.error('[DATABASE] Failed to clear troubleshoot logs in MongoDB:', err);
+    }
+  }
+  return true;
+}
 
 let memoryCertificateLogs = [];
 
@@ -337,6 +504,16 @@ async function registerOrUpdateDevice(data) {
   try {
     const localDevices = loadLocalDevices();
     let foundIdx = localDevices.findIndex(d => d.imei === data.imei);
+    let targetDeviceNumber = parseInt(data.deviceNumber);
+    let hasDuplicate = false;
+    if (targetDeviceNumber) {
+      hasDuplicate = localDevices.some((d, idx) => d.deviceNumber === targetDeviceNumber && idx !== foundIdx);
+    }
+    if (!targetDeviceNumber || isNaN(targetDeviceNumber) || hasDuplicate) {
+      const maxNum = localDevices.reduce((max, d) => ((d.deviceNumber || 0) > max ? d.deviceNumber : max), 0);
+      targetDeviceNumber = maxNum + 1;
+    }
+
     let updatedObj = {};
     if (foundIdx !== -1) {
       updatedObj = {
@@ -349,13 +526,33 @@ async function registerOrUpdateDevice(data) {
         routerSSID: data.routerSSID !== undefined ? data.routerSSID : localDevices[foundIdx].routerSSID,
         routerPassword: data.routerPassword !== undefined ? data.routerPassword : localDevices[foundIdx].routerPassword,
         telemetryInterval: data.telemetryInterval !== undefined ? data.telemetryInterval : localDevices[foundIdx].telemetryInterval,
-        deviceNumber: data.deviceNumber !== undefined ? data.deviceNumber : localDevices[foundIdx].deviceNumber,
+        deviceNumber: targetDeviceNumber,
         rs232Status: data.rs232Status !== undefined ? data.rs232Status : localDevices[foundIdx].rs232Status,
         rs485Status: data.rs485Status !== undefined ? data.rs485Status : localDevices[foundIdx].rs485Status,
         gprsStatus: data.gprsStatus !== undefined ? data.gprsStatus : localDevices[foundIdx].gprsStatus,
+        diStatus: data.diStatus !== undefined ? data.diStatus : localDevices[foundIdx].diStatus,
+        psramStatus: data.psramStatus !== undefined ? data.psramStatus : localDevices[foundIdx].psramStatus,
+        rtcStatus: data.rtcStatus !== undefined ? data.rtcStatus : localDevices[foundIdx].rtcStatus,
+        flashStatus: data.flashStatus !== undefined ? data.flashStatus : localDevices[foundIdx].flashStatus,
+        frStatus: data.frStatus !== undefined ? data.frStatus : localDevices[foundIdx].frStatus,
+        switchStatus: data.switchStatus !== undefined ? data.switchStatus : localDevices[foundIdx].switchStatus,
+        apStatus: data.apStatus !== undefined ? data.apStatus : localDevices[foundIdx].apStatus,
+        busStatus: data.busStatus !== undefined ? data.busStatus : localDevices[foundIdx].busStatus,
+        driverStatus: data.driverStatus !== undefined ? data.driverStatus : localDevices[foundIdx].driverStatus,
         rs232Log: data.rs232Log !== undefined ? data.rs232Log : localDevices[foundIdx].rs232Log,
         rs485Log: data.rs485Log !== undefined ? data.rs485Log : localDevices[foundIdx].rs485Log,
-        gprsLog: data.gprsLog !== undefined ? data.gprsLog : localDevices[foundIdx].gprsLog
+        gprsLog: data.gprsLog !== undefined ? data.gprsLog : localDevices[foundIdx].gprsLog,
+        diLog: data.diLog !== undefined ? data.diLog : localDevices[foundIdx].diLog,
+        psramLog: data.psramLog !== undefined ? data.psramLog : localDevices[foundIdx].psramLog,
+        rtcLog: data.rtcLog !== undefined ? data.rtcLog : localDevices[foundIdx].rtcLog,
+        flashLog: data.flashLog !== undefined ? data.flashLog : localDevices[foundIdx].flashLog,
+        frLog: data.frLog !== undefined ? data.frLog : localDevices[foundIdx].frLog,
+        switchLog: data.switchLog !== undefined ? data.switchLog : localDevices[foundIdx].switchLog,
+        apLog: data.apLog !== undefined ? data.apLog : localDevices[foundIdx].apLog,
+        busLog: data.busLog !== undefined ? data.busLog : localDevices[foundIdx].busLog,
+        driverLog: data.driverLog !== undefined ? data.driverLog : localDevices[foundIdx].driverLog,
+        lastOnline: new Date().toISOString(),
+        registrationMethod: data.registrationMethod || localDevices[foundIdx].registrationMethod || 'manual'
       };
       localDevices[foundIdx] = updatedObj;
     } else {
@@ -369,13 +566,33 @@ async function registerOrUpdateDevice(data) {
         routerSSID: data.routerSSID || '',
         routerPassword: data.routerPassword || '',
         telemetryInterval: data.telemetryInterval || 1500,
-        deviceNumber: data.deviceNumber || 1,
+        deviceNumber: targetDeviceNumber,
         rs232Status: data.rs232Status || 'WAITING',
         rs485Status: data.rs485Status || 'WAITING',
         gprsStatus: data.gprsStatus || 'WAITING',
+        diStatus: data.diStatus || 'WAITING',
+        psramStatus: data.psramStatus || 'WAITING',
+        rtcStatus: data.rtcStatus || 'WAITING',
+        flashStatus: data.flashStatus || 'WAITING',
+        frStatus: data.frStatus || 'WAITING',
+        switchStatus: data.switchStatus || 'WAITING',
+        apStatus: data.apStatus || 'WAITING',
+        busStatus: data.busStatus || 'WAITING',
+        driverStatus: data.driverStatus || 'WAITING',
         rs232Log: data.rs232Log || '',
         rs485Log: data.rs485Log || '',
         gprsLog: data.gprsLog || '',
+        diLog: data.diLog || '',
+        psramLog: data.psramLog || '',
+        rtcLog: data.rtcLog || '',
+        flashLog: data.flashLog || '',
+        frLog: data.frLog || '',
+        switchLog: data.switchLog || '',
+        apLog: data.apLog || '',
+        busLog: data.busLog || '',
+        driverLog: data.driverLog || '',
+        lastOnline: new Date().toISOString(),
+        registrationMethod: data.registrationMethod || 'manual',
         timestamp: new Date().toISOString()
       };
       localDevices.push(updatedObj);
@@ -389,6 +606,20 @@ async function registerOrUpdateDevice(data) {
   if (mongodbConnected && data.imei) {
     try {
       let doc = await DeviceIdentificationModel.findOne({ imei: data.imei });
+      
+      let dbDeviceNumber = parseInt(data.deviceNumber);
+      let dbDuplicate = false;
+      if (dbDeviceNumber) {
+        dbDuplicate = await DeviceIdentificationModel.findOne({
+          deviceNumber: dbDeviceNumber,
+          imei: { $ne: data.imei }
+        });
+      }
+      if (!dbDeviceNumber || isNaN(dbDeviceNumber) || dbDuplicate) {
+        const maxDev = await DeviceIdentificationModel.findOne().sort({ deviceNumber: -1 });
+        dbDeviceNumber = maxDev && maxDev.deviceNumber ? maxDev.deviceNumber + 1 : 1;
+      }
+
       if (doc) {
         doc.pcbNumber = data.pcbNumber || doc.pcbNumber;
         doc.connectionType = data.connectionType || doc.connectionType;
@@ -398,14 +629,35 @@ async function registerOrUpdateDevice(data) {
         doc.routerSSID = data.routerSSID !== undefined ? data.routerSSID : doc.routerSSID;
         doc.routerPassword = data.routerPassword !== undefined ? data.routerPassword : doc.routerPassword;
         doc.telemetryInterval = data.telemetryInterval !== undefined ? data.telemetryInterval : doc.telemetryInterval;
-        doc.deviceNumber = data.deviceNumber !== undefined ? data.deviceNumber : doc.deviceNumber;
+        doc.deviceNumber = dbDeviceNumber;
 
         doc.rs232Status = data.rs232Status !== undefined ? data.rs232Status : doc.rs232Status;
         doc.rs485Status = data.rs485Status !== undefined ? data.rs485Status : doc.rs485Status;
         doc.gprsStatus = data.gprsStatus !== undefined ? data.gprsStatus : doc.gprsStatus;
+        doc.diStatus = data.diStatus !== undefined ? data.diStatus : doc.diStatus;
+        doc.psramStatus = data.psramStatus !== undefined ? data.psramStatus : doc.psramStatus;
+        doc.rtcStatus = data.rtcStatus !== undefined ? data.rtcStatus : doc.rtcStatus;
+        doc.flashStatus = data.flashStatus !== undefined ? data.flashStatus : doc.flashStatus;
+        doc.frStatus = data.frStatus !== undefined ? data.frStatus : doc.frStatus;
+        doc.switchStatus = data.switchStatus !== undefined ? data.switchStatus : doc.switchStatus;
+        doc.apStatus = data.apStatus !== undefined ? data.apStatus : doc.apStatus;
+        doc.busStatus = data.busStatus !== undefined ? data.busStatus : doc.busStatus;
+        doc.driverStatus = data.driverStatus !== undefined ? data.driverStatus : doc.driverStatus;
+
         doc.rs232Log = data.rs232Log !== undefined ? data.rs232Log : doc.rs232Log;
         doc.rs485Log = data.rs485Log !== undefined ? data.rs485Log : doc.rs485Log;
         doc.gprsLog = data.gprsLog !== undefined ? data.gprsLog : doc.gprsLog;
+        doc.diLog = data.diLog !== undefined ? data.diLog : doc.diLog;
+        doc.psramLog = data.psramLog !== undefined ? data.psramLog : doc.psramLog;
+        doc.rtcLog = data.rtcLog !== undefined ? data.rtcLog : doc.rtcLog;
+        doc.flashLog = data.flashLog !== undefined ? data.flashLog : doc.flashLog;
+        doc.frLog = data.frLog !== undefined ? data.frLog : doc.frLog;
+        doc.switchLog = data.switchLog !== undefined ? data.switchLog : doc.switchLog;
+        doc.apLog = data.apLog !== undefined ? data.apLog : doc.apLog;
+        doc.busLog = data.busLog !== undefined ? data.busLog : doc.busLog;
+        doc.driverLog = data.driverLog !== undefined ? data.driverLog : doc.driverLog;
+        doc.lastOnline = new Date();
+        doc.registrationMethod = data.registrationMethod || doc.registrationMethod || 'manual';
 
         await doc.save();
         console.log(`[DATABASE] Device updated in MongoDB for IMEI: ${data.imei}`);
@@ -421,19 +673,40 @@ async function registerOrUpdateDevice(data) {
           routerSSID: data.routerSSID || '',
           routerPassword: data.routerPassword || '',
           telemetryInterval: data.telemetryInterval || 1500,
-          deviceNumber: data.deviceNumber || 1,
+          deviceNumber: dbDeviceNumber,
           rs232Status: data.rs232Status || 'WAITING',
           rs485Status: data.rs485Status || 'WAITING',
           gprsStatus: data.gprsStatus || 'WAITING',
+          diStatus: data.diStatus || 'WAITING',
+          psramStatus: data.psramStatus || 'WAITING',
+          rtcStatus: data.rtcStatus || 'WAITING',
+          flashStatus: data.flashStatus || 'WAITING',
+          frStatus: data.frStatus || 'WAITING',
+          switchStatus: data.switchStatus || 'WAITING',
+          apStatus: data.apStatus || 'WAITING',
+          busStatus: data.busStatus || 'WAITING',
+          driverStatus: data.driverStatus || 'WAITING',
           rs232Log: data.rs232Log || '',
           rs485Log: data.rs485Log || '',
-          gprsLog: data.gprsLog || ''
+          gprsLog: data.gprsLog || '',
+          diLog: data.diLog || '',
+          psramLog: data.psramLog || '',
+          rtcLog: data.rtcLog || '',
+          flashLog: data.flashLog || '',
+          frLog: data.frLog || '',
+          switchLog: data.switchLog || '',
+          apLog: data.apLog || '',
+          busLog: data.busLog || '',
+          driverLog: data.driverLog || '',
+          lastOnline: new Date(),
+          registrationMethod: data.registrationMethod || 'manual'
         });
         console.log(`[DATABASE] Device registered in MongoDB for IMEI: ${data.imei}`);
         return doc;
       }
     } catch (err) {
       console.error('[DATABASE] Failed to register/update device in MongoDB:', err);
+      await saveTroubleshootLog('db_entry_failed', `Failed to register/update device in MongoDB for IMEI: ${data.imei || '(none)'}`, err.message);
       return savedDoc;
     }
   }
@@ -486,16 +759,21 @@ async function syncDeviceConfig(imei, bootData) {
         password: bootData.password || 'admin_secure_gate',
         routerSSID: (bootData.wifi && bootData.wifi.ssid) || '',
         routerPassword: (bootData.wifi && bootData.wifi.password) || '',
-        telemetryInterval: bootData.interval || 1500
+        telemetryInterval: bootData.interval || 1500,
+        registrationMethod: 'auto',
+        lastOnline: new Date()
       });
       console.log(`[DATABASE] Auto-registered new device IMEI: ${imei}`);
       return { action: 'registered', config: device };
     } else {
       console.log(`[DATABASE] Found registered device config for IMEI: ${imei}`);
+      device.lastOnline = new Date();
+      await device.save().catch(e => console.error('[DATABASE] Failed to update lastOnline on sync:', e));
       return { action: 'sync', config: device };
     }
   } catch (err) {
     console.error('[DATABASE] syncDeviceConfig error:', err);
+    await saveTroubleshootLog('db_entry_failed', `syncDeviceConfig failed for IMEI: ${imei}`, err.message);
     return null;
   }
 }
@@ -515,6 +793,9 @@ module.exports = {
   registerOrUpdateDevice,
   deleteDeviceByImei,
   syncDeviceConfig,
+  saveTroubleshootLog,
+  getTroubleshootLogs,
+  clearTroubleshootLogs,
   isDbConnected: () => mongodbConnected,
   getMemoryHistoryBuffer: () => memoryHistoryBuffer,
   clearMemoryHistoryBuffer: () => { memoryHistoryBuffer = []; }

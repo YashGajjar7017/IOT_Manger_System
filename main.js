@@ -1368,18 +1368,24 @@ app.whenReady().then(async () => {
               target: activeTcpSocket ? `${activeTcpSocket.remoteAddress}:${activeTcpSocket.remotePort}` : (activeSerialPort ? activeSerialPort.path : '')
             };
 
-            if (diag.rs232) {
-              updateFields.rs232Status = diag.rs232.status || diag.rs232;
-              updateFields.rs232Log = diag.rs232.detail || '';
-            }
-            if (diag.rs485) {
-              updateFields.rs485Status = diag.rs485.status || diag.rs485;
-              updateFields.rs485Log = diag.rs485.detail || '';
-            }
-            if (diag.gprs) {
-              updateFields.gprsStatus = diag.gprs.status || diag.gprs;
-              updateFields.gprsLog = diag.gprs.detail || '';
-            }
+            const mapStatus = (val) => {
+              if (val === true || val === 'true' || val === 'OK' || val === 'PASSED' || val === 'PASS') return 'OK';
+              if (val === false || val === 'false' || val === 'ERROR' || val === 'FAILED' || val === 'FAIL') return 'ERROR';
+              if (val === 'WAITING' || val === 'PENDING') return 'WAITING';
+              return val;
+            };
+
+            const diagKeys = ['rs232', 'rs485', 'gprs', 'flash', 'di', 'rtc', 'psram', 'switch', 'fr', 'ap', 'bus', 'driver'];
+            diagKeys.forEach(key => {
+              if (diag[key] !== undefined) {
+                const statusKey = `${key}Status`;
+                const logKey = `${key}Log`;
+                const val = diag[key];
+                
+                updateFields[statusKey] = (val && typeof val === 'object') ? mapStatus(val.status) : mapStatus(val);
+                updateFields[logKey] = (val && typeof val === 'object') ? (val.detail || '') : '';
+              }
+            });
 
             db.registerOrUpdateDevice(updateFields)
               .then(doc => {
@@ -1876,10 +1882,16 @@ ipcMain.on('connect-serial', (event, { portPath, baudRate, pcbNumber }) => {
       });
 
       activeSerialPort.on('close', () => {
+        if (!isExplicitlyDisconnected) {
+          db.saveTroubleshootLog('connection_revoke', 'Serial port connection closed unexpectedly', 'The USB COM port connection was terminated by host OS or USB cable disconnected.');
+        }
         event.reply('connection-status', { status: 'disconnected' });
       });
 
       activeSerialPort.on('error', (err) => {
+        if (!isExplicitlyDisconnected) {
+          db.saveTroubleshootLog('connection_revoke', 'Serial port error (connection revoked)', err.message);
+        }
         event.reply('console-log', `[SERIAL ERROR] ${err.message}`);
       });
     });
@@ -2047,6 +2059,9 @@ function startTcpTelemetryServer() {
 
     socket.on('close', () => {
       console.log('[TCP SERVER] ESP32 client disconnected.');
+      if (!isExplicitlyDisconnected) {
+        db.saveTroubleshootLog('connection_revoke', 'TCP client connection disconnected unexpectedly', 'ESP32 client socket was closed by the remote side or lost Wi-Fi link.');
+      }
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('connection-status', { status: 'disconnected' });
         mainWindow.webContents.send('console-log', '[TCP SERVER] ESP32 client socket closed.');
@@ -2058,6 +2073,9 @@ function startTcpTelemetryServer() {
 
     socket.on('error', (err) => {
       console.error('[TCP SERVER] Socket error:', err.message);
+      if (!isExplicitlyDisconnected) {
+        db.saveTroubleshootLog('connection_revoke', 'TCP socket error occurred', err.message);
+      }
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('connection-status', { status: 'error', message: `TCP Socket Error: ${err.message}` });
         mainWindow.webContents.send('console-log', `[TCP SERVER ERROR] ${err.message}`);
@@ -2718,6 +2736,98 @@ ipcMain.on('run-global-cli-env-installer', (event) => {
       event.reply('console-log', `[INSTALL] UAC Elevation prompt requested for global PATH installer.`);
     }
   });
+});
+
+// Function: Pull/download XML file from GitHub and save to local workspace folder (Requirement 2)
+function pullGithubXml(repoUrl, branch) {
+  const https = require('https');
+  const fs = require('fs');
+  const path = require('path');
+
+  const targetBranch = branch || 'main';
+  let repoPath = "YashGajjar7017/IOT_Manger_System";
+  if (repoUrl) {
+    const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    if (match) {
+      repoPath = `${match[1]}/${match[2].replace(/\.git$/, '')}`;
+    }
+  }
+
+  const xmlUrl = `https://raw.githubusercontent.com/${repoPath}/${targetBranch}/version.xml`;
+  const githubXmlFolder = path.join(__dirname, 'github-xml');
+  const localXmlPath = path.join(githubXmlFolder, 'version.xml');
+
+  if (!fs.existsSync(githubXmlFolder)) {
+    fs.mkdirSync(githubXmlFolder, { recursive: true });
+  }
+
+  return new Promise((resolve, reject) => {
+    https.get(xmlUrl, (res) => {
+      if (res.statusCode !== 200) {
+        reject(new Error(`Failed to download XML: HTTP Status ${res.statusCode}`));
+        return;
+      }
+      const fileStream = fs.createWriteStream(localXmlPath);
+      res.pipe(fileStream);
+      fileStream.on('finish', () => {
+        fileStream.close();
+        console.log(`[GITHUB XML SYNC] Successfully updated XML locally at: ${localXmlPath}`);
+        resolve({ success: true, localPath: localXmlPath });
+      });
+    }).on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+// Schedule hourly XML sync (Requirement 2)
+setInterval(() => {
+  const repoUrl = appConfig.githubRepoUrl || 'https://github.com/YashGajjar7017/IOT_Manger_System';
+  const branch = appConfig.githubBranch || 'main';
+  pullGithubXml(repoUrl, branch)
+    .then((res) => {
+      console.log(`[CRON] Automated hourly XML check completed. Local path: ${res.localPath}`);
+    })
+    .catch((err) => {
+      console.error('[CRON ERROR] Automated hourly XML pull failed:', err.message);
+    });
+}, 3600000);
+
+// Initial pull on startup
+setTimeout(() => {
+  const repoUrl = appConfig.githubRepoUrl || 'https://github.com/YashGajjar7017/IOT_Manger_System';
+  const branch = appConfig.githubBranch || 'main';
+  pullGithubXml(repoUrl, branch)
+    .then((res) => {
+      console.log(`[STARTUP] Initial Github XML pull completed: ${res.localPath}`);
+    })
+    .catch((err) => {
+      console.warn('[STARTUP WARNING] Initial Github XML pull failed on boot:', err.message);
+    });
+}, 5000);
+
+// Troubleshoot Log IPC Handlers
+ipcMain.handle('get-troubleshoot-logs', async () => {
+  return await db.getTroubleshootLogs();
+});
+
+ipcMain.handle('clear-troubleshoot-logs', async () => {
+  return await db.clearTroubleshootLogs();
+});
+
+ipcMain.handle('manual-pull-github-xml', async (event, { repoUrl, branch }) => {
+  try {
+    const result = await pullGithubXml(repoUrl, branch);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('console-log', `[GITHUB XML SUCCESS] Manually pulled XML file successfully: ${result.localPath}`);
+    }
+    return { success: true, message: 'XML updated successfully from GitHub!' };
+  } catch (err) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('console-log', `[GITHUB XML ERROR] Manual pull failed: ${err.message}`);
+    }
+    return { success: false, message: err.message };
+  }
 });
 
 // IPC Handler: Check online software version XML from GitHub (Requirement 2)
