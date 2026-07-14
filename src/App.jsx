@@ -305,6 +305,19 @@ export default function App() {
   const [selectedRegDeviceImei, setSelectedRegDeviceImei] = useState('');
   const [isRegisteringDevice, setIsRegisteringDevice] = useState(false);
   const [provisioningLogs, setProvisioningLogs] = useState([]);
+  const [regDeviceMode, setRegDeviceMode] = useState('solaryan inverter');
+  const [modbusStartReg, setModbusStartReg] = useState(3333);
+  const [modbusCount, setModbusCount] = useState(100);
+  const [modbusData, setModbusData] = useState([]);
+  const [isReadingModbus, setIsReadingModbus] = useState(false);
+  const [modbusError, setModbusError] = useState(null);
+
+  // Inverter & Meter Partition Config States
+  const [inverterMeterType, setInverterMeterType] = useState('solar_yan_inverter_single');
+  const [busDataId, setBusDataId] = useState(1);
+  const [busBaudRate, setBusBaudRate] = useState(9600);
+  const [isUploadingConfigPartition, setIsUploadingConfigPartition] = useState(false);
+  const [configPartitionProgress, setConfigPartitionProgress] = useState(0);
 
   // OTA Updates State
   const [otaIp, setOtaIp] = useState('192.168.0.1');
@@ -370,6 +383,8 @@ export default function App() {
   const [gitHubRepoBranchInput, setGitHubRepoBranchInput] = useState('main');
   const [isGitHubSyncing, setIsGitHubSyncing] = useState(false);
   const [gitHubRepoUrlInput, setGitHubRepoUrlInput] = useState(() => localStorage.getItem('github_repo_url') || 'https://github.com/YashGajjar7017/IOT_Manger_System');
+  const [gitHubTargetAccount, setGitHubTargetAccount] = useState('regular_update');
+  const [showUpdatePopup, setShowUpdatePopup] = useState(false);
   const [updateState, setUpdateState] = useState({
     checking: false,
     checked: false,
@@ -804,6 +819,15 @@ export default function App() {
 
       if (payload.switch_pin !== undefined) {
         setTesterSwitch(payload.switch_pin);
+      }
+
+      if (payload.status === 'MODBUS_DATA') {
+        setModbusData(payload.values || []);
+        setIsReadingModbus(false);
+        setModbusError(null);
+      } else if (payload.status === 'MODBUS_ERROR') {
+        setIsReadingModbus(false);
+        setModbusError(payload.msg || 'Modbus communication error');
       }
 
       if (bootManualStopped && (payload.status === 'BOOT_PROGRESS' || payload.status === 'BOOT_SUCCESS' || payload.step === 'QCOM_SHIFT')) {
@@ -1541,7 +1565,8 @@ Overall Status : ${overallStatus}
           routerSSID: regSsid,
           routerPassword: regWifiPass,
           telemetryInterval: parseInt(regInterval) || 1500,
-          deviceNumber: parseInt(regDeviceNumber) || 1
+          deviceNumber: parseInt(regDeviceNumber) || 1,
+          deviceMode: regDeviceMode
         })
       });
       if (res.ok) {
@@ -1553,6 +1578,7 @@ Overall Status : ${overallStatus}
         setRegWifiPass('');
         setRegInterval('1500');
         setRegDeviceNumber('1');
+        setRegDeviceMode('solaryan inverter');
         setEditingDeviceImei(null);
         fetchRegisteredDevices();
       } else {
@@ -1686,6 +1712,17 @@ Overall Status : ${overallStatus}
     } else if (connection.type === 'tcp') {
       ipcRenderer.send('send-tcp-command', cmd);
     }
+  };
+
+  const triggerModbusRead = () => {
+    if (!connection.type) {
+      alert('Gateway must be connected via TCP or Serial to read registers.');
+      return;
+    }
+    setIsReadingModbus(true);
+    setModbusError(null);
+    sendControlCommand(`READ_MODBUS:${modbusStartReg}:${modbusCount}`);
+    addLogLine(`[GUI] Requested Modbus read of ${modbusCount} registers starting at ${modbusStartReg}...`, 'system');
   };
 
   // Apply IMEI and Password dynamic updates to firmware
@@ -1874,20 +1911,24 @@ Overall Status : ${overallStatus}
   };
 
   const handleGitHubSync = () => {
-    if (!gitHubRepoUrlInput) {
+    const targetUrl = gitHubTargetAccount === 'regular_update' ? 'https://github.com/YashGajjar7017/IOT_Manger_System' : gitHubRepoUrlInput;
+    const targetBranch = gitHubTargetAccount === 'regular_update' ? 'main' : gitHubRepoBranchInput;
+    if (!targetUrl) {
       alert('Please enter a valid GitHub repository URL.');
       return;
     }
-    localStorage.setItem('github_repo_url', gitHubRepoUrlInput);
+    localStorage.setItem('github_repo_url', targetUrl);
     setIsGitHubSyncing(true);
-    addLogLine(`[GITHUB SYNC] Starting sync trigger for repository: ${gitHubRepoUrlInput} (branch: ${gitHubRepoBranchInput})...`);
-    ipcRenderer.send('sync-code-from-github', { repoUrl: gitHubRepoUrlInput, branch: gitHubRepoBranchInput });
+    addLogLine(`[GITHUB SYNC] Starting sync trigger for repository: ${targetUrl} (branch: ${targetBranch})...`);
+    ipcRenderer.send('sync-code-from-github', { repoUrl: targetUrl, branch: targetBranch });
   };
 
   const handleCheckUpdate = async () => {
     setUpdateState(prev => ({ ...prev, checking: true, error: null }));
     try {
-      const res = await ipcRenderer.invoke('check-software-update');
+      const targetUrl = gitHubTargetAccount === 'regular_update' ? 'https://github.com/YashGajjar7017/IOT_Manger_System' : gitHubRepoUrlInput;
+      const targetBranch = gitHubTargetAccount === 'regular_update' ? 'main' : gitHubRepoBranchInput;
+      const res = await ipcRenderer.invoke('check-software-update', { repoUrl: targetUrl, branch: targetBranch });
       if (res.success) {
         setUpdateState({
           checking: false,
@@ -1910,17 +1951,19 @@ Overall Status : ${overallStatus}
   const handleApplyUpdate = () => {
     setIsUpdatingSoftware(true);
     addLogLine('[GITHUB SYNC] Applying update trigger downloaded from GitHub script...');
+    const targetUrl = gitHubTargetAccount === 'regular_update' ? 'https://github.com/YashGajjar7017/IOT_Manger_System' : gitHubRepoUrlInput;
+    const targetBranch = gitHubTargetAccount === 'regular_update' ? 'main' : gitHubRepoBranchInput;
     ipcRenderer.send('sync-code-from-github', {
-      repoUrl: 'https://github.com/YashGajjar7017/IOT_Manger_System',
-      branch: 'main'
+      repoUrl: targetUrl,
+      branch: targetBranch
     });
   };
 
   const handlePullGithubXml = async () => {
     setIsSyncingXml(true);
     try {
-      const repoUrl = gitHubRepoUrlInput || 'https://github.com/YashGajjar7017/IOT_Manger_System';
-      const branch = gitHubRepoBranchInput || 'main';
+      const repoUrl = gitHubTargetAccount === 'regular_update' ? 'https://github.com/YashGajjar7017/IOT_Manger_System' : (gitHubRepoUrlInput || 'https://github.com/YashGajjar7017/IOT_Manger_System');
+      const branch = gitHubTargetAccount === 'regular_update' ? 'main' : (gitHubRepoBranchInput || 'main');
       const result = await ipcRenderer.invoke('manual-pull-github-xml', { repoUrl, branch });
       if (result.success) {
         alert(result.message);
@@ -1934,6 +1977,67 @@ Overall Status : ${overallStatus}
       addLogLine(`[GITHUB XML ERROR] Exception: ${err.message}`, 'error');
     } finally {
       setIsSyncingXml(false);
+    }
+  };
+
+  const handleUploadConfigPartition = async () => {
+    if (!connection.type || connection.type === 'failed') {
+      alert('Gateway must be connected to upload configuration.');
+      return;
+    }
+
+    setIsUploadingConfigPartition(true);
+    setConfigPartitionProgress(10);
+    addLogLine(`[CONFIG PARTITION] Compiling configuration for: ${inverterMeterType}...`);
+
+    try {
+      const deviceConfigPayload = {
+        inverterMeterType,
+        busId: parseInt(busDataId) || 1,
+        baudRate: parseInt(busBaudRate) || 9600,
+        timestamp: new Date().toISOString()
+      };
+      const deviceConfigContent = JSON.stringify(deviceConfigPayload, null, 2);
+
+      const uuidConfigPayload = {
+        uuid: uuidToken.trim() || 'nebula-secure-uuid',
+        bus_id: parseInt(busDataId) || 1
+      };
+      const uuidConfigContent = JSON.stringify(uuidConfigPayload, null, 2);
+
+      addLogLine(`[CONFIG PARTITION] Uploading /device_config.json to ESP32 config partition (SPIFFS)...`);
+      ipcRenderer.send('update-spiffs-file', {
+        ip: otaIp,
+        port: otaPort,
+        filename: '/device_config.json',
+        content: deviceConfigContent
+      });
+
+      setConfigPartitionProgress(40);
+
+      setTimeout(() => {
+        addLogLine(`[CONFIG PARTITION] Uploading /uuid.json (bus_id: ${busDataId}) to ESP32 config partition (SPIFFS)...`);
+        ipcRenderer.send('update-spiffs-file', {
+          ip: otaIp,
+          port: otaPort,
+          filename: '/uuid.json',
+          content: uuidConfigContent
+        });
+        setConfigPartitionProgress(80);
+
+        setTimeout(() => {
+          setConfigPartitionProgress(100);
+          setIsUploadingConfigPartition(false);
+          addLogLine(`[CONFIG PARTITION SUCCESS] Partition configuration successfully uploaded and stored forever!`, 'success');
+          alert('Configuration uploaded to spiffs/psram config partition successfully! Reboot gateway to apply settings.');
+        }, 500);
+      }, 600);
+
+    } catch (err) {
+      setIsUploadingConfigPartition(false);
+      setConfigPartitionProgress(0);
+      addLogLine(`[ERROR] Failed to compile or upload configuration: ${err.message}`, 'error');
+      alert(`Upload failed: ${err.message}`);
     }
   };
 
@@ -2909,7 +3013,18 @@ Overall Status : ${overallStatus}
                 <polyline points="4 17 10 11 4 5" />
                 <line x1="12" y1="19" x2="20" y2="19" />
               </svg>
-              <span>Debug Console</span>
+              <span>Console Terminal</span>
+            </button>
+
+            <button className={`header-nav-item ${activeTab === 'page-modbus' ? 'active' : ''}`} onClick={() => setActiveTab('page-modbus')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <line x1="9" y1="3" x2="9" y2="21" />
+                <line x1="15" y1="3" x2="15" y2="21" />
+                <line x1="3" y1="9" x2="21" y2="9" />
+                <line x1="3" y1="15" x2="21" y2="15" />
+              </svg>
+              <span>Modbus Viewer</span>
             </button>
 
             <button className={`header-nav-item ${activeTab === 'page-circuit' ? 'active' : ''}`} onClick={() => setActiveTab('page-circuit')}>
@@ -2942,10 +3057,10 @@ Overall Status : ${overallStatus}
           <div className="header-right">
             {/* Header status indicator removed as requested */}
 
-            <div className="header-status-pill" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)', fontSize: '11px' }}>
-              <span className="ping-label" style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dim)' }}>Socket Ping:</span>
+            {/* <div className="header-status-pill" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)', fontSize: '11px' }}>
+            <span className="ping-label" style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dim)' }}>Socket Ping:</span>
               <span className={`ping-result ${pingLatency.status}`} style={{ fontSize: '11px', fontWeight: 'bold' }}>{pingLatency.value}</span>
-            </div>
+            </div> */}
 
             <div className="header-account-container">
               <button className={`header-account-btn ${activeTab === 'page-account' ? 'active' : ''}`} onClick={() => setActiveTab('page-account')} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -3035,46 +3150,46 @@ Overall Status : ${overallStatus}
           {/* ================= VIEW 1: DASHBOARD ================= */}
           <section id="page-dashboard" className={`page-view ${activeTab === 'page-dashboard' ? 'active' : ''}`}>
             <header className="view-header glass-header unified-color-bar">
-              <div className="header-actions-wrapper" style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
-                <div className="header-left-actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', flex: '1 1 auto' }}>
-                  <button className="btn btn-primary header-btn" onClick={triggerSelfCheckReRun} disabled={controlsDisabled || !connection.type} title="Run diagnostics checking on all modules">
-                    Run All Tests
+              <div className="header-actions-wrapper" style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'nowrap', gap: '10px' }}>
+                <div className="header-left-actions" style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', flex: '1 1 auto', alignItems: 'center' }}>
+                  <button className="btn btn-primary header-btn" onClick={triggerSelfCheckReRun} disabled={controlsDisabled || !connection.type} title="Run diagnostics checking on all modules" style={{ height: '28px', fontSize: '10.5px', padding: '0 8px', margin: 0, minWidth: 'auto' }}>
+                    🧪 Run Tests
                   </button>
-                  <button className="btn btn-secondary header-btn" onClick={triggerSelfCheckReRun} disabled={controlsDisabled || !connection.type} title="Re-evaluate peripheral hardware status">
-                    Recheck Hardware
+                  <button className="btn btn-secondary header-btn" onClick={triggerSelfCheckReRun} disabled={controlsDisabled || !connection.type} title="Re-evaluate peripheral hardware status" style={{ height: '28px', fontSize: '10.5px', padding: '0 8px', margin: 0, minWidth: 'auto' }}>
+                    ↺ Recheck HW
                   </button>
-                  <label className="checkbox-toggle" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '11px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '0 12px', borderRadius: '20px', color: 'white', height: '36px', userSelect: 'none' }}>
+                  <label className="checkbox-toggle" style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '10.5px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '0 8px', borderRadius: '14px', color: 'white', height: '28px', userSelect: 'none', margin: 0 }}>
                     <input
                       type="checkbox"
                       checked={continuousDiagnostics}
                       onChange={(e) => setContinuousDiagnostics(e.target.checked)}
-                      style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: 'var(--accent-pink)' }}
+                      style={{ cursor: 'pointer', width: '12px', height: '12px', accentColor: 'var(--accent-pink)' }}
                     />
-                    <span>Continuous Updates</span>
+                    <span>DB Update</span>
                   </label>
-                  <button className="btn btn-accent header-btn" onClick={() => sendControlCommand('SHIFT_TO_QCOM')} disabled={!connection.type} title="Shift communications target to QCOM">
-                    Shift to QCOM
+                  <button className="btn btn-accent header-btn" onClick={() => sendControlCommand('SHIFT_TO_QCOM')} disabled={!connection.type} title="Shift communications target to QCOM" style={{ height: '28px', fontSize: '10.5px', padding: '0 8px', margin: 0, minWidth: 'auto' }}>
+                    Shift QCOM
                   </button>
-                  <button className="btn btn-accent header-btn" onClick={() => sendControlCommand('FORMAT_SPIFFS')} disabled={!connection.type} title="Format ESP32 flash partition storage">
-                    Format SPIFFS
+                  <button className="btn btn-accent header-btn" onClick={() => sendControlCommand('FORMAT_SPIFFS')} disabled={!connection.type} title="Format ESP32 flash partition storage" style={{ height: '28px', fontSize: '10.5px', padding: '0 8px', margin: 0, minWidth: 'auto' }}>
+                    Format
                   </button>
-                  <button className="btn btn-accent header-btn" onClick={() => sendControlCommand('SYNC_CERTS_TO_QCOM')} disabled={!connection.type} title="Sync certificates from ESP32 to QCOM">
+                  <button className="btn btn-accent header-btn" onClick={() => sendControlCommand('SYNC_CERTS_TO_QCOM')} disabled={!connection.type} title="Sync certificates from ESP32 to QCOM" style={{ height: '28px', fontSize: '10.5px', padding: '0 8px', margin: 0, minWidth: 'auto' }}>
                     Sync Certs
                   </button>
                   {/* <button className="btn btn-secondary header-btn" onClick={handleDownloadReport} title="Export diagnostics report to local disk">
                     Download Report
                   </button> */}
-                  <button className="btn btn-secondary header-btn" onClick={handleForceSyncActiveDeviceToDb} disabled={!connection.type || !imei || imei === '--'} title="Immediately sync active device and current diagnostics to database">
-                    Sync to DB
+                  <button className="btn btn-secondary header-btn" onClick={handleForceSyncActiveDeviceToDb} disabled={!connection.type || !imei || imei === '--'} title="Immediately sync active device and current diagnostics to database" style={{ height: '28px', fontSize: '10.5px', padding: '0 8px', margin: 0, minWidth: 'auto' }}>
+                    Save DB
                   </button>
-                  <button className="btn btn-secondary header-btn" onClick={exportTelemetryJson} title="Export telemetry history as JSON">
-                    Export Telemetry
+                  <button className="btn btn-secondary header-btn" onClick={exportTelemetryJson} title="Export telemetry history as JSON" style={{ height: '28px', fontSize: '10.5px', padding: '0 8px', margin: 0, minWidth: 'auto' }}>
+                    Export
                   </button>
-                  <button className="btn btn-secondary header-btn" onClick={() => setConsoleLogs([])} title="Clear live console logs">
-                    Clear Console
+                  <button className="btn btn-secondary header-btn" onClick={() => setConsoleLogs([])} title="Clear live console logs" style={{ height: '28px', fontSize: '10.5px', padding: '0 8px', margin: 0, minWidth: 'auto' }}>
+                    Clear
                   </button>
-                  <button className="btn btn-danger header-btn" onClick={() => sendControlCommand('REBOOT')} disabled={!connection.type} title="Force soft reboot of connected gateway">
-                    Reboot Gateway
+                  <button className="btn btn-danger header-btn" onClick={() => sendControlCommand('REBOOT')} disabled={!connection.type} title="Force soft reboot of connected gateway" style={{ height: '28px', fontSize: '10.5px', padding: '0 8px', margin: 0, minWidth: 'auto', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#ff4d4d' }}>
+                    Reboot
                   </button>
                 </div>
 
@@ -4014,6 +4129,138 @@ Overall Status : ${overallStatus}
 
           </section>
 
+          {/* ================= VIEW: MODBUS REGISTER VIEWER ================= */}
+          <section id="page-modbus" className={`page-view ${activeTab === 'page-modbus' ? 'active' : ''}`}>
+            <header className="view-header glass-header">
+              <div>
+                <h1>Modbus Register Viewer</h1>
+                <p>Read holding/input registers dynamically from Modbus slave devices via RS485 bus.</p>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <span className="status-tag ok" style={{ background: 'rgba(0, 240, 255, 0.1)', color: '#00f0ff', borderColor: 'rgba(0, 240, 255, 0.3)' }}>
+                  UUID: {imei && registeredDevices.find(d => d.imei === imei)?.uuid || 'N/A'}
+                </span>
+                <span className="status-tag info" style={{ background: 'rgba(255, 187, 0, 0.1)', color: '#ffbb00', borderColor: 'rgba(255, 187, 0, 0.3)' }}>
+                  Bus ID: {imei && registeredDevices.find(d => d.imei === imei)?.busId || '1'}
+                </span>
+              </div>
+            </header>
+
+            <div className="glass-card" style={{ marginBottom: '20px', padding: '20px' }}>
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: '150px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Starting Register Address</label>
+                  <input
+                    type="number"
+                    value={modbusStartReg}
+                    onChange={(e) => setModbusStartReg(Math.max(0, parseInt(e.target.value) || 0))}
+                    placeholder="e.g. 3333"
+                    style={{
+                      width: '100%',
+                      height: '38px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '6px',
+                      color: 'white',
+                      padding: '0 12px',
+                      fontSize: '14px',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                <div style={{ flex: 1, minWidth: '150px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Number of Registers (Max 125)</label>
+                  <input
+                    type="number"
+                    value={modbusCount}
+                    onChange={(e) => setModbusCount(Math.min(125, Math.max(1, parseInt(e.target.value) || 1)))}
+                    placeholder="e.g. 100"
+                    style={{
+                      width: '100%',
+                      height: '38px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '6px',
+                      color: 'white',
+                      padding: '0 12px',
+                      fontSize: '14px',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <button
+                    className="btn btn-primary"
+                    onClick={triggerModbusRead}
+                    disabled={isReadingModbus || !connection.type}
+                    style={{ margin: 0, height: '38px', display: 'flex', alignItems: 'center', gap: '8px', minWidth: '160px', justifyContent: 'center' }}
+                  >
+                    {isReadingModbus ? (
+                      <>
+                        <span style={{ width: '12px', height: '12px', border: '2px solid white', borderRightColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.75s linear infinite' }}></span>
+                        Reading Bus...
+                      </>
+                    ) : (
+                      <>⚡ Query Registers</>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {modbusError && (
+                <div style={{ marginTop: '15px', background: 'rgba(255, 77, 77, 0.1)', border: '1px solid rgba(255, 77, 77, 0.3)', color: '#ff4d4d', padding: '12px', borderRadius: '6px', fontSize: '13px' }}>
+                  ⚠️ Error: {modbusError}
+                </div>
+              )}
+            </div>
+
+            <div className="glass-card" style={{ padding: '20px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', color: 'white' }}>Register Data Grid ({modbusData.length} active registers)</h3>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                  Format: Address [Decimal | Hex | Binary]
+                </div>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', maxHeight: '500px', paddingRight: '5px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' }}>
+                  {modbusData.map((val, idx) => {
+                    const regAddr = modbusStartReg + idx;
+                    const hexStr = '0x' + val.toString(16).toUpperCase().padStart(4, '0');
+                    const binStr = val.toString(2).padStart(16, '0').replace(/(.{4})/g, '$1 ').trim();
+                    return (
+                      <div key={regAddr} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px', transition: 'all 0.2s ease' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)', fontWeight: 'bold' }}>
+                            REG {regAddr}
+                          </span>
+                          <span style={{ fontSize: '10px', color: 'var(--text-dim)', background: 'rgba(255,255,255,0.04)', padding: '1px 5px', borderRadius: '4px', fontFamily: 'var(--font-mono)' }}>
+                            {hexStr}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
+                          {val}
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', opacity: 0.8 }}>
+                          BIN: {binStr}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {modbusData.length === 0 && (
+                    <div style={{ gridColumn: '1 / -1', padding: '60px 0', textAlign: 'center', color: 'var(--text-dim)' }}>
+                      <div style={{ fontSize: '2rem', marginBottom: '10px' }}>📊</div>
+                      No register data read yet. Select a range above and click "Query Registers".
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* ================= VIEW 2: MONGODB DATABASE LOGS ================= */}
           {/* ================= VIEW 2: USB FIRMWARE COMPILER & INSTALLER ================= */}
           <section id="page-firmware-flash" className={`page-view ${activeTab === 'page-firmware-flash' ? 'active' : ''}`}>
@@ -4309,6 +4556,32 @@ Overall Status : ${overallStatus}
                   </div>
 
                   <div className="input-group">
+                    <label>Device Mode / Protocol</label>
+                    <select
+                      value={regDeviceMode}
+                      onChange={(e) => setRegDeviceMode(e.target.value)}
+                      disabled={isRegistryLocked}
+                      style={{
+                        width: '100%',
+                        height: '38px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid var(--glass-border)',
+                        color: 'white',
+                        borderRadius: '8px',
+                        padding: '0 10px',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="solaryan inverter">SolarYan Inverter</option>
+                      <option value="solaryan inverter + 3 phase meter">SolarYan Inverter + 3 Phase Meter</option>
+                      <option value="solaryan 3 phase inverter + meter">SolarYan 3 Phase Inverter + Meter</option>
+                      <option value="solaryan 3 phase inverter + 3 phase meter">SolarYan 3 Phase Inverter + 3 Phase Meter</option>
+                      <option value="DLMS">DLMS</option>
+                    </select>
+                  </div>
+
+                  <div className="input-group">
                     <label>Telemetry Interval (ms)</label>
                     <input
                       type="number"
@@ -4369,6 +4642,7 @@ Overall Status : ${overallStatus}
                         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
                           <th style={{ padding: '8px' }}>Device #</th>
                           <th style={{ padding: '8px' }}>IMEI / PCB Serial</th>
+                          <th style={{ padding: '8px' }}>Mode</th>
                           <th style={{ padding: '8px' }}>Net Status</th>
                           <th style={{ padding: '8px' }}>Target Address</th>
                           <th style={{ padding: '8px' }}>MAC</th>
@@ -4399,6 +4673,9 @@ Overall Status : ${overallStatus}
                               <td style={{ padding: '8px' }}>
                                 <div style={{ fontWeight: 'bold', color: 'white' }}>{dev.imei || '(no IMEI)'}</div>
                                 <div style={{ fontSize: '10.5px', color: 'var(--text-dim)' }}>{dev.pcbNumber || 'No PCB Serial'}</div>
+                              </td>
+                              <td style={{ padding: '8px', fontSize: '11px', textTransform: 'capitalize' }}>
+                                <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold' }}>{dev.deviceMode || 'solaryan inverter'}</span>
                               </td>
                               <td style={{ padding: '8px' }}>
                                 {isFound ? (
@@ -4455,61 +4732,63 @@ Overall Status : ${overallStatus}
                                   {dev.driverStatus || 'WAITING'}
                                 </span>
                               </td>
-                            <td style={{ padding: '8px', textAlign: 'right' }}>
-                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                                <button
-                                  className="btn btn-primary small"
-                                  style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', background: 'rgba(0, 240, 255, 0.1)', border: '1px solid rgba(0, 240, 255, 0.3)', color: '#00f0ff' }}
-                                  onClick={() => {
-                                    const val = dev._id || dev.imei || dev.pcbNumber;
-                                    setSelectedRegDeviceImei(val);
-                                    setPcbNumber(dev.pcbNumber || '');
-                                    setImei(dev.imei || '');
-                                    if (dev.mac) setMac(dev.mac);
-                                    if (dev.routerSSID) setWifiRouterSsid(dev.routerSSID);
-                                    if (dev.routerPassword) setWifiRouterPass(dev.routerPassword);
-                                    setActiveTab('page-dashboard');
-                                    addLogLine(`[GUI] Switched active controller target to Device #${dev.deviceNumber || '1'} (${dev.pcbNumber || dev.imei})`, 'success');
-                                  }}
-                                >
-                                  Control
-                                </button>
-                                <button
-                                  className="btn btn-secondary small"
-                                  style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', opacity: isRegistryLocked ? 0.5 : 1 }}
-                                  disabled={isRegistryLocked}
-                                  onClick={() => {
-                                    setRegImei(dev.imei);
-                                    setRegPcb(dev.pcbNumber || '');
-                                    setRegPass(dev.password || 'admin_secure_gate');
-                                    setRegSsid(dev.routerSSID || '');
-                                    setRegWifiPass(dev.routerPassword || '');
-                                    setRegInterval(String(dev.telemetryInterval || 1500));
-                                    setRegDeviceNumber(String(dev.deviceNumber || 1));
-                                    setEditingDeviceImei(dev.imei);
-                                  }}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  className="btn btn-accent small"
-                                  style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto' }}
-                                  onClick={() => handlePushDeviceConfig(dev)}
-                                >
-                                  Push
-                                </button>
-                                <button
-                                  className="btn btn-danger small"
-                                  style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', background: 'rgba(255, 0, 85, 0.1)', border: '1px solid rgba(255, 0, 85, 0.3)', color: '#ff0055', opacity: isRegistryLocked ? 0.5 : 1 }}
-                                  disabled={isRegistryLocked}
-                                  onClick={() => handleDeleteDevice(dev._id || dev.imei, dev.imei || dev.pcbNumber || 'Unnamed Device')}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                              <td style={{ padding: '8px', textAlign: 'right' }}>
+                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                                  <button
+                                    className="btn btn-primary small"
+                                    style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', background: 'rgba(0, 240, 255, 0.1)', border: '1px solid rgba(0, 240, 255, 0.3)', color: '#00f0ff' }}
+                                    onClick={() => {
+                                      const val = dev._id || dev.imei || dev.pcbNumber;
+                                      setSelectedRegDeviceImei(val);
+                                      setPcbNumber(dev.pcbNumber || '');
+                                      setImei(dev.imei || '');
+                                      if (dev.mac) setMac(dev.mac);
+                                      if (dev.routerSSID) setWifiRouterSsid(dev.routerSSID);
+                                      if (dev.routerPassword) setWifiRouterPass(dev.routerPassword);
+                                      setActiveTab('page-dashboard');
+                                      addLogLine(`[GUI] Switched active controller target to Device #${dev.deviceNumber || '1'} (${dev.pcbNumber || dev.imei})`, 'success');
+                                    }}
+                                  >
+                                    Control
+                                  </button>
+                                  <button
+                                    className="btn btn-secondary small"
+                                    style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', opacity: isRegistryLocked ? 0.5 : 1 }}
+                                    disabled={isRegistryLocked}
+                                    onClick={() => {
+                                      setRegImei(dev.imei);
+                                      setRegPcb(dev.pcbNumber || '');
+                                      setRegPass(dev.password || 'admin_secure_gate');
+                                      setRegSsid(dev.routerSSID || '');
+                                      setRegWifiPass(dev.routerPassword || '');
+                                      setRegInterval(String(dev.telemetryInterval || 1500));
+                                      setRegDeviceNumber(String(dev.deviceNumber || 1));
+                                      setRegDeviceMode(dev.deviceMode || 'solaryan inverter');
+                                      setEditingDeviceImei(dev.imei);
+                                    }}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    className="btn btn-accent small"
+                                    style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto' }}
+                                    onClick={() => handlePushDeviceConfig(dev)}
+                                  >
+                                    Push
+                                  </button>
+                                  <button
+                                    className="btn btn-danger small"
+                                    style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', background: 'rgba(255, 0, 85, 0.1)', border: '1px solid rgba(255, 0, 85, 0.3)', color: '#ff0055', opacity: isRegistryLocked ? 0.5 : 1 }}
+                                    disabled={isRegistryLocked}
+                                    onClick={() => handleDeleteDevice(dev._id || dev.imei, dev.imei || dev.pcbNumber || 'Unnamed Device')}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   )}
@@ -5285,6 +5564,82 @@ Overall Status : ${overallStatus}
                     )}
                   </div>
                 </div>
+
+                {/* Drag & Drop Upload Zone (merged) */}
+                <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '15px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--accent-blue)', fontWeight: 'bold', display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    📁 Certificate File Upload (Drag & Drop):
+                  </span>
+                  <div
+                    className="drag-drop-zone"
+                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
+                    onDragLeave={(e) => e.currentTarget.classList.remove('dragover')}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.remove('dragover');
+                      if (e.dataTransfer.files.length > 0) handleCertificateSelection(e.dataTransfer.files[0]);
+                    }}
+                    onClick={() => {
+                      if (connection.type && connection.type !== 'failed') {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = '.pem,.crt,.key,.json';
+                        input.onchange = (e) => {
+                          if (e.target.files.length > 0) handleCertificateSelection(e.target.files[0]);
+                        };
+                        input.click();
+                      } else {
+                        alert('Gateway must be connected to upload certificates.');
+                      }
+                    }}
+                    style={{
+                      padding: '20px 15px',
+                      borderColor: (isCertUploading || isUploadingUuid) ? 'var(--accent-blue)' : 'var(--glass-border)',
+                      opacity: (connection.type && connection.type !== 'failed') ? 1 : 0.5,
+                      cursor: (connection.type && connection.type !== 'failed') ? 'pointer' : 'not-allowed',
+                      textAlign: 'center',
+                      border: '2px dashed var(--glass-border)',
+                      borderRadius: '8px',
+                      background: 'rgba(3, 0, 10, 0.4)'
+                    }}
+                  >
+                    <div className="drop-icon" style={{ fontSize: '20px', marginBottom: '6px' }}>&#128228;</div>
+                    <h4 style={{ fontSize: '12px' }}>Drag & Drop Certificate or JSON here</h4>
+                    <p style={{ fontSize: '10px', color: 'var(--text-dim)' }}>Supports .pem, .crt, .key, .json</p>
+                  </div>
+                </div>
+
+                {/* UUID Token Input Area */}
+                <div style={{ marginTop: '15px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                  <label className="control-title" style={{ fontSize: '11px', color: 'var(--accent-blue)', fontWeight: 'bold' }}>UUID Token Input</label>
+                  <p style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '4px', marginBottom: '10px' }}>
+                    Type a token below before selecting/dropping <code>uuid.json</code> to dynamically inject it.
+                  </p>
+                  <div className="input-group" style={{ marginBottom: 0 }}>
+                    <input
+                      type="text"
+                      value={uuidToken}
+                      onChange={(e) => setUuidToken(e.target.value)}
+                      placeholder="Enter token to inject (e.g. secure_client_token)"
+                      style={{ fontSize: '12px', padding: '8px' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Uploading progress indicator */}
+                {(isCertUploading || isUploadingUuid) && (
+                  <div className="ota-progress-pane" style={{ marginTop: '15px' }}>
+                    <div className="progress-details">
+                      <span className="progress-status" style={{ fontSize: '11px' }}>
+                        {isUploadingUuid ? 'Syncing uuid.json to ESP32 SPIFFS...' : 'Syncing to ESP32 SPIFFS & QCOM...'}
+                      </span>
+                      <span className="progress-percent" style={{ fontSize: '11px' }}>{certUploadProgress}%</span>
+                    </div>
+                    <div className="progress-bar-bg" style={{ height: '6px' }}>
+                      <div className="progress-bar-fill" style={{ width: `${certUploadProgress}%`, background: 'var(--grad-emerald-cyan)' }}></div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Provisioning Verification Stepper */}
@@ -5361,191 +5716,74 @@ Overall Status : ${overallStatus}
 
             </div>
 
-            {/* Middle Grid: WiFi settings and Storage manager */}
-            <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '20px', marginTop: '20px' }}>
-
-              {/* WiFi Router Credentials Configuration Card */}
-              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <h3><span className="icon">📶</span> WiFi Router Credentials</h3>
+            {/* Middle Section: Inverter & Meter Partition Config */}
+            <div style={{ marginTop: '20px' }}>
+              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
+                <h3><span className="icon">📟</span> Inverter & Meter Partition Configuration</h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
-                  Update the SSID and Passphrase for the external wireless router. Gateway will store credentials to SPIFFS and auto-reboot to apply.
+                  Select the physical hardware layout for the SCADA node. Pushing configurations will write device profiles to the SPIFFS/PSRAM config partition and persist bus settings forever.
                 </p>
 
-                <div className="input-group">
-                  <label>Router SSID</label>
-                  <input
-                    type="text"
-                    value={wifiRouterSsid}
-                    onChange={(e) => setWifiRouterSsid(e.target.value)}
-                    placeholder="SSID of Wireless Router"
-                  />
-                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+                  <div className="input-group">
+                    <label>Selected Device Layout</label>
+                    <select
+                      value={inverterMeterType}
+                      onChange={(e) => setInverterMeterType(e.target.value)}
+                      style={{ width: '100%', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
+                    >
+                      <option value="solar_yan_inverter_single">Solar Yan Inverter (Single)</option>
+                      <option value="inverter_single_meter_single">Inverter (Single) + Meter (Single)</option>
+                      <option value="inverter_3phase_meter_single">Inverter (3-Phase) + Meter (Single)</option>
+                      <option value="inverter_3phase_meter_3phase">Inverter (3-Phase) + Meter (3-Phase)</option>
+                      <option value="dlms_meter">DLMS Meter</option>
+                    </select>
+                  </div>
 
-                <div className="input-group">
-                  <label>Router Password</label>
-                  <input
-                    type="password"
-                    value={wifiRouterPass}
-                    onChange={(e) => setWifiRouterPass(e.target.value)}
-                    placeholder="Router WPA2 Passphrase"
-                  />
+                  <div className="input-group">
+                    <label>Device Bus ID (Modbus Slave ID)</label>
+                    <input
+                      type="number"
+                      value={busDataId}
+                      onChange={(e) => setBusDataId(Math.max(1, parseInt(e.target.value) || 1))}
+                      placeholder="e.g. 1"
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label>Bus Baud Rate (bps)</label>
+                    <select
+                      value={busBaudRate}
+                      onChange={(e) => setBusBaudRate(parseInt(e.target.value))}
+                      style={{ width: '100%', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
+                    >
+                      <option value="9600">9600</option>
+                      <option value="115200">115200</option>
+                    </select>
+                  </div>
                 </div>
 
                 <button
                   className="btn btn-accent"
-                  onClick={applyWifiRouterSettings}
-                  disabled={!connection.type}
-                  style={{ marginTop: 'auto', width: '100%', height: '40px' }}
+                  onClick={handleUploadConfigPartition}
+                  disabled={!connection.type || isUploadingConfigPartition}
+                  style={{ width: '100%', height: '40px' }}
                 >
-                  Apply & Reboot Gateway
+                  {isUploadingConfigPartition ? 'Uploading Config to Partition...' : '💾 Upload Config Partition & Bus Data'}
                 </button>
-              </div>
 
-              {/* SPIFFS & QCOM Certificates Manager Card */}
-              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
-                <h3><span className="icon">💾</span> SPIFFS & QCOM Certificates Manager</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
-                  Inspect space utilization and manage active configuration / certificate files stored directly in the ESP32 SPIFFS filesystem.
-                </p>
-
-                {spiffsStorage.totalBytes > 0 && (
-                  <div className="storage-utilization" style={{
-                    background: 'rgba(255,255,255,0.02)',
-                    padding: '12px 15px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--glass-border)',
-                    marginBottom: '15px'
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}>
-                      <span style={{ color: 'var(--text-dim)' }}>Used Storage: <strong style={{ color: '#fff' }}>{Math.round(spiffsStorage.usedBytes / 1024)} KB</strong> / {Math.round(spiffsStorage.totalBytes / 1024)} KB</span>
-                      <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold' }}>{Math.round((spiffsStorage.totalBytes - spiffsStorage.usedBytes) / 1024)} KB Free</span>
-                    </div>
-                    <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden' }}>
-                      <div style={{
-                        height: '100%',
-                        width: `${Math.min(100, (spiffsStorage.usedBytes * 100) / spiffsStorage.totalBytes)}%`,
-                        background: 'linear-gradient(90deg, var(--accent-blue), var(--accent-pink))',
-                        boxShadow: '0 0 8px rgba(0, 240, 255, 0.4)'
-                      }}></div>
-                    </div>
-                  </div>
-                )}
-
-                {storageError && (
-                  <div style={{ color: 'var(--accent-pink)', fontSize: '11px', marginBottom: '10px', fontFamily: 'var(--font-mono)' }}>
-                    Failed to communicate with storage API: {storageError}
-                  </div>
-                )}
-
-                <div className="cert-list-container" style={{ maxHeight: '180px', overflowY: 'auto', marginBottom: '15px' }}>
-                  {spiffsStorage.files.length === 0 ? (
-                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
-                      No SPIFFS data queried yet. Use the refresh button below to scan ESP32.
-                    </div>
-                  ) : (
-                    spiffsStorage.files.map((file, idx) => {
-                      const cleanName = file.name.startsWith('/') ? file.name.substring(1) : file.name;
-                      return (
-                        <div key={idx} className="cert-item-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'rgba(255,255,255,0.01)', borderBottom: '1px solid rgba(255,255,255,0.03)', borderRadius: '6px', marginBottom: '4px' }}>
-                          <div className="cert-item-details" style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span className="cert-item-name" style={{ fontWeight: 'bold', color: 'white', fontSize: '12px' }}>{cleanName}</span>
-                            <span className="cert-item-size" style={{ fontSize: '10px', color: 'var(--text-dim)' }}>{file.size} bytes</span>
-                          </div>
-                          <button
-                            className="btn btn-secondary"
-                            onClick={() => handleDeleteSpiffsFile(file.name)}
-                            style={{
-                              padding: '4px 8px',
-                              fontSize: '10px',
-                              height: '24px',
-                              background: 'rgba(255, 0, 85, 0.1)',
-                              border: '1px solid rgba(255, 0, 85, 0.3)',
-                              color: '#ff0055',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-                  <button className="btn btn-secondary" onClick={refreshSpiffsStorage} disabled={isFetchingStorage} style={{ flex: 1, height: '36px', fontSize: '12px' }}>
-                    {isFetchingStorage ? 'Querying Filesystem...' : 'Refresh Storage Inspector'}
-                  </button>
-                </div>
-
-                {/* Certificate drag & drop zone */}
-                <div
-                  className="drag-drop-zone"
-                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
-                  onDragLeave={(e) => e.currentTarget.classList.remove('dragover')}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.currentTarget.classList.remove('dragover');
-                    if (e.dataTransfer.files.length > 0) handleCertificateSelection(e.dataTransfer.files[0]);
-                  }}
-                  onClick={() => {
-                    if (connection.type && connection.type !== 'failed') {
-                      const input = document.createElement('input');
-                      input.type = 'file';
-                      input.accept = '.pem,.crt,.key,.json';
-                      input.onchange = (e) => {
-                        if (e.target.files.length > 0) handleCertificateSelection(e.target.files[0]);
-                      };
-                      input.click();
-                    } else {
-                      alert('Gateway must be connected to upload certificates.');
-                    }
-                  }}
-                  style={{
-                    padding: '25px 20px',
-                    borderColor: (isCertUploading || isUploadingUuid) ? 'var(--accent-blue)' : '',
-                    opacity: (connection.type && connection.type !== 'failed') ? 1 : 0.5,
-                    cursor: (connection.type && connection.type !== 'failed') ? 'pointer' : 'not-allowed'
-                  }}
-                >
-                  <div className="drop-icon" style={{ fontSize: '24px', marginBottom: '8px' }}>&#128228;</div>
-                  <h4 style={{ fontSize: '13px' }}>Drag & Drop Certificate or JSON config here</h4>
-                  <p style={{ fontSize: '11px' }}>Supports .pem, .crt, .key, .json formats</p>
-                </div>
-
-                {/* UUID Token Input Area */}
-                <div style={{ marginTop: '15px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)', marginBottom: '15px' }}>
-                  <label className="control-title" style={{ fontSize: '11px', color: 'var(--accent-blue)', fontWeight: 'bold' }}>UUID Token Input</label>
-                  <p style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '4px', marginBottom: '10px' }}>
-                    Type a token below before selecting/dropping <code>uuid.json</code> to dynamically inject it.
-                  </p>
-                  <div className="input-group" style={{ marginBottom: 0 }}>
-                    <input
-                      type="text"
-                      value={uuidToken}
-                      onChange={(e) => setUuidToken(e.target.value)}
-                      placeholder="Enter token to inject (e.g. secure_client_token)"
-                      style={{ fontSize: '12px', padding: '8px' }}
-                    />
-                  </div>
-                </div>
-
-                {/* Uploading progress indicator */}
-                {(isCertUploading || isUploadingUuid) && (
+                {isUploadingConfigPartition && (
                   <div className="ota-progress-pane" style={{ marginTop: '15px' }}>
                     <div className="progress-details">
-                      <span className="progress-status" style={{ fontSize: '12px' }}>
-                        {isUploadingUuid ? 'Syncing uuid.json to ESP32 SPIFFS...' : 'Syncing to ESP32 SPIFFS & QCOM...'}
-                      </span>
-                      <span className="progress-percent" style={{ fontSize: '12px' }}>{certUploadProgress}%</span>
+                      <span className="progress-status" style={{ fontSize: '12px' }}>Uploading config blocks to SPIFFS/PSRAM config partition...</span>
+                      <span className="progress-percent" style={{ fontSize: '12px' }}>{configPartitionProgress}%</span>
                     </div>
-                    <div className="progress-bar-bg">
-                      <div className="progress-bar-fill" style={{ width: `${certUploadProgress}%`, background: 'var(--grad-emerald-cyan)' }}></div>
+                    <div className="progress-bar-bg" style={{ height: '6px' }}>
+                      <div className="progress-bar-fill" style={{ width: `${configPartitionProgress}%`, background: 'var(--grad-cyan-purple)' }}></div>
                     </div>
                   </div>
                 )}
               </div>
-
             </div>
 
             {/* Bottom Section: MERN history audit logs */}
@@ -6734,7 +6972,7 @@ Overall Status : ${overallStatus}
                     <h2 style={{ color: 'white', marginTop: '10px' }}>Admin Authorization</h2>
                     <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Authenticate with admin keys to modify hardware settings</p>
                   </div>
-                  
+
                   {authError && (
                     <div style={{ padding: '10px', background: 'rgba(255, 51, 102, 0.1)', border: '1px solid rgba(255, 51, 102, 0.3)', color: '#ff3366', borderRadius: '6px', fontSize: '12px', marginBottom: '15px', textAlign: 'center' }}>
                       ⚠️ {authError}
@@ -6778,13 +7016,13 @@ Overall Status : ${overallStatus}
               </div>
             ) : (
               <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
-                
+
                 {/* Admin Status & Reconnect Card */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   <div className="glass-card">
                     <h3><span className="icon">👤</span> Admin Profile</h3>
                     <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>Active administrator session details:</p>
-                    
+
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '15px' }}>
                       <div>
                         <span style={{ fontSize: '10px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>Username</span>
@@ -6815,7 +7053,7 @@ Overall Status : ${overallStatus}
                     <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
                       Sync online codebase files and raw repository XML update logs:
                     </p>
-                    
+
                     <div className="input-group">
                       <label>GitHub Repository URL</label>
                       <input
@@ -7204,7 +7442,7 @@ Overall Status : ${overallStatus}
             </div>
 
             <div className="gprs-modal-body" style={{ display: 'flex', gap: '20px', flexDirection: 'row', flexWrap: 'wrap' }}>
-              
+
               {/* Left Column (60% width) */}
               <div style={{ flex: '3 1 60%', display: 'flex', flexDirection: 'column', gap: '12px', minWidth: '350px' }}>
                 <div className="gprs-modal-info">
@@ -7353,8 +7591,8 @@ Overall Status : ${overallStatus}
                     { key: 'rtc', name: 'RTC Clock' }
                   ].map((m) => {
                     const status = diagnostics[m.key] || 'WAITING';
-                    const color = (status === 'OK' || status === 'PASSED' || status === 'PASS') 
-                      ? 'var(--accent-emerald)' 
+                    const color = (status === 'OK' || status === 'PASSED' || status === 'PASS')
+                      ? 'var(--accent-emerald)'
                       : ((status === 'ERROR' || status === 'FAILED' || status === 'FAIL') ? 'var(--accent-pink)' : 'orange');
                     return (
                       <div key={m.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -7368,22 +7606,21 @@ Overall Status : ${overallStatus}
                   })}
                 </div>
 
-                  {/* ESP32 Heartbeat State */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div>
-                      <div style={{ fontSize: '12px', fontWeight: 'bold' }}>ESP32 System Clock</div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>Uptime: {systemInfo.uptime || 'N/A'} s</div>
-                    </div>
-                    <button className="btn btn-secondary small" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)', margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px' }} onClick={() => { addLogLine('[CMD] Triggering ESP32 reboot...'); sendControlCommand('REBOOT'); }} disabled={!connection.type}>Reboot</button>
+                {/* ESP32 Heartbeat State */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: 'bold' }}>ESP32 System Clock</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>Uptime: {systemInfo.uptime || 'N/A'} s</div>
                   </div>
-                </div>
-
-                <div style={{ background: 'rgba(112,0,255,0.05)', border: '1px solid rgba(112,0,255,0.15)', borderRadius: '6px', padding: '10px', fontSize: '11px', marginTop: '10px' }}>
-                  💡 <strong>Hardware Self-Check:</strong> Triggering self-checks updates parameters directly in the main console and logs test operations to the active system logs.
+                  <button className="btn btn-secondary small" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)', margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px' }} onClick={() => { addLogLine('[CMD] Triggering ESP32 reboot...'); sendControlCommand('REBOOT'); }} disabled={!connection.type}>Reboot</button>
                 </div>
               </div>
 
+              <div style={{ background: 'rgba(112,0,255,0.05)', border: '1px solid rgba(112,0,255,0.15)', borderRadius: '6px', padding: '10px', fontSize: '11px', marginTop: '10px' }}>
+                💡 <strong>Hardware Self-Check:</strong> Triggering self-checks updates parameters directly in the main console and logs test operations to the active system logs.
+              </div>
             </div>
+
           </div>
         </div>
       )}

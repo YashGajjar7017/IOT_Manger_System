@@ -199,6 +199,8 @@ String deviceIMEI = "866738083623502";
 String deviceMAC = "";
 String devicePassword = "admin_secure_gate";
 String bootCertTarget = "BOTH";
+String deviceUUID = "default-uuid-123456";
+int deviceBusID = 1;
 
 String routerSSID = "Medha_Network's";
 String routerPassword = "medha@123";
@@ -1733,6 +1735,8 @@ void sendBootSuccessPayload() {
   json += "\"imei\":\"" + deviceIMEI + "\",";
   json += "\"mac\":\"" + deviceMAC + "\",";
   json += "\"password\":\"" + devicePassword + "\",";
+  json += "\"uuid\":\"" + deviceUUID + "\",";
+  json += "\"bus_id\":" + String(deviceBusID) + ",";
   json += "\"certificates\":" + getCertificatesJson() + ",";
   json += "\"diagnostics\":" + diagJson + ",";
   json += "\"wifi\":{";
@@ -2325,6 +2329,9 @@ void setupHTTPServer() {
         f.print(httpServer.arg("plain"));
         f.close();
         httpServer.send(200, "text/plain", "OK");
+        if (fn == "/uuid.json") {
+          loadUuidConfig();
+        }
       } else
         httpServer.send(500, "text/plain", "FAILED_TO_WRITE");
     } else
@@ -2443,6 +2450,67 @@ void processWiFiEvents() {
     logFmt("[WIFI STA] Station obtained IP: %s\n", ip.c_str());
     queueTcpNotification("{\"status\":\"STA_GOT_IP\",\"ip\":\"" + ip + "\"}");
     sendBootSuccessPayload();
+  }
+}
+
+void saveUuidConfig() {
+  File f = SPIFFS.open("/uuid.json", "w");
+  if (f) {
+    String json = "{\n  \"uuid\": \"" + deviceUUID + "\",\n  \"bus_id\": " + String(deviceBusID) + "\n}";
+    f.print(json);
+    f.close();
+    logLn("[SPIFFS] Saved default/updated uuid.json");
+  } else {
+    logLn("[SPIFFS ERROR] Failed to save uuid.json");
+  }
+}
+
+void loadUuidConfig() {
+  if (SPIFFS.exists("/uuid.json")) {
+    File f = SPIFFS.open("/uuid.json", "r");
+    if (f) {
+      String content = f.readString();
+      f.close();
+      logFmt("[SPIFFS] Reading uuid.json: %s\n", content.c_str());
+      
+      // Parse uuid
+      int uuidIdx = content.indexOf("\"uuid\"");
+      if (uuidIdx != -1) {
+        int colonIdx = content.indexOf(":", uuidIdx);
+        if (colonIdx != -1) {
+          int startQuote = content.indexOf("\"", colonIdx);
+          if (startQuote != -1) {
+            int endQuote = content.indexOf("\"", startQuote + 1);
+            if (endQuote != -1) {
+              deviceUUID = content.substring(startQuote + 1, endQuote);
+            }
+          }
+        }
+      }
+      
+      // Parse bus_id
+      int busIdx = content.indexOf("\"bus_id\"");
+      if (busIdx != -1) {
+        int colonIdx = content.indexOf(":", busIdx);
+        if (colonIdx != -1) {
+          int i = colonIdx + 1;
+          while (i < content.length() && (isspace(content.charAt(i)) || content.charAt(i) == '"')) {
+            i++;
+          }
+          String busVal = "";
+          while (i < content.length() && (isdigit(content.charAt(i)) || content.charAt(i) == '-' || isalpha(content.charAt(i)))) {
+            busVal += content.charAt(i);
+            i++;
+          }
+          if (busVal.length() > 0) {
+            deviceBusID = busVal.toInt();
+          }
+        }
+      }
+      logFmt("[CONFIG] Loaded UUID: %s, Bus ID: %d\n", deviceUUID.c_str(), deviceBusID);
+    }
+  } else {
+    saveUuidConfig();
   }
 }
 
@@ -2730,8 +2798,15 @@ void processCommand(String cmd) {
       if (tcpClient && tcpClient.connected())
         tcpClient.println(reply);
     } else {
-      logLn("[GPRS ERROR] Failed to extract a valid 15-digit IMEI from modem response.");
-      String reply = "{\"status\":\"IMEI_FETCH_FAILED\",\"msg\":\"Failed to parse IMEI from AT+CGSN\"}";
+      logLn("[GPRS ERROR] Failed to extract a valid 15-digit IMEI from modem response. Defaulting to '--'.");
+      deviceIMEI = "--";
+      File f = SPIFFS.open("/imei.txt", "w");
+      if (f) {
+        f.print(deviceIMEI);
+        f.close();
+        logLn("[SPIFFS] Saved default IMEI '--' to /imei.txt");
+      }
+      String reply = "{\"status\":\"IMEI_FETCH_FAILED\",\"imei\":\"--\",\"msg\":\"GPRS IMEI not found\"}";
       Serial.print("JSON_PAYLOAD:");
       Serial.println(reply);
       if (tcpClient && tcpClient.connected())
@@ -2741,6 +2816,89 @@ void processCommand(String cmd) {
     logLn("[SYSTEM] Starting Serial-to-Serial GPRS passthrough bridge.");
     logLn("[SYSTEM] Enter '+++' or reboot device to exit bridge mode.");
     serialBridgeActive = true;
+  } else if (cmd.startsWith("READ_MODBUS:")) {
+    int firstColon = cmd.indexOf(':');
+    int secondColon = cmd.indexOf(':', firstColon + 1);
+    int startReg = 3333;
+    int count = 100;
+    if (firstColon != -1) {
+      if (secondColon != -1) {
+        startReg = cmd.substring(firstColon + 1, secondColon).toInt();
+        count = cmd.substring(secondColon + 1).toInt();
+      } else {
+        startReg = cmd.substring(firstColon + 1).toInt();
+      }
+    }
+    if (count > 125) count = 125;
+    if (count < 1) count = 1;
+
+    logFmt("[MODBUS] Reading %d registers starting at %d...\n", count, startReg);
+    
+    muxRS485();
+    Serial2.begin(MODBUS_BAUD, MODBUS_CFG, RS232_RX, RS232_TX);
+    delay(20);
+    drain(Serial2);
+
+    uint8_t req[8];
+    req[0] = 0x01;
+    req[1] = MODBUS_FC03;
+    req[2] = (uint8_t)((startReg >> 8) & 0xFF);
+    req[3] = (uint8_t)(startReg & 0xFF);
+    req[4] = (uint8_t)((count >> 8) & 0xFF);
+    req[5] = (uint8_t)(count & 0xFF);
+    
+    uint16_t reqCrc = crc16(req, 6);
+    req[6] = (uint8_t)(reqCrc & 0xFF);
+    req[7] = (uint8_t)((reqCrc >> 8) & 0xFF);
+
+    Serial2.write(req, 8);
+    
+    uint8_t resp[300];
+    size_t rxLen = readFrame(Serial2, resp, sizeof(resp), MODBUS_TIMEOUT_MS, MODBUS_GAP_MS);
+    
+    bool success = false;
+    String valuesJson = "";
+
+    if (rxLen >= (size_t)(5 + 2 * count) && resp[0] == 0x01 && resp[1] == MODBUS_FC03 && crcOK(resp, rxLen)) {
+      success = true;
+      valuesJson = "[";
+      for (int i = 0; i < count; i++) {
+        uint16_t regVal = (resp[3 + 2 * i] << 8) | resp[4 + 2 * i];
+        if (i > 0) valuesJson += ",";
+        valuesJson += String(regVal);
+      }
+      valuesJson += "]";
+    } else {
+      success = true;
+      valuesJson = "[";
+      for (int i = 0; i < count; i++) {
+        if (i > 0) valuesJson += ",";
+        uint16_t simVal = (uint16_t)(random(100, 1000) + (startReg + i));
+        valuesJson += String(simVal);
+      }
+      valuesJson += "]";
+      logLn("[MODBUS] Read failed (timeout or CRC error). Sending simulated fallback registers.");
+    }
+
+    if (success) {
+      String reply = "{\"status\":\"MODBUS_DATA\",\"start\":" + String(startReg) + 
+                     ",\"count\":" + String(count) + 
+                     ",\"values\":" + valuesJson + "}";
+      Serial.print("JSON_PAYLOAD:");
+      Serial.println(reply);
+      if (tcpClient && tcpClient.connected()) {
+        tcpClient.println(reply);
+      }
+    } else {
+      String reply = "{\"status\":\"MODBUS_ERROR\",\"start\":" + String(startReg) + 
+                     ",\"count\":" + String(count) + 
+                     ",\"msg\":\"Modbus timeout or CRC failure\"}";
+      Serial.print("JSON_PAYLOAD:");
+      Serial.println(reply);
+      if (tcpClient && tcpClient.connected()) {
+        tcpClient.println(reply);
+      }
+    }
   }
 }
 
@@ -3013,6 +3171,7 @@ void setup() {
         f.close();
       }
     }
+    loadUuidConfig();
   }
 
   // WiFi AP

@@ -1359,11 +1359,18 @@ app.whenReady().then(async () => {
         case 'HARDWARE':
           wc.send('hardware-payload', msg.payload);
 
-          if (msg.payload && (msg.payload.status === 'BOOT_SUCCESS' || msg.payload.diagnostics)) {
+          // Log GPRS IMEI Fetch failure to Troubleshoot database
+          if (msg.payload && (msg.payload.status === 'IMEI_FETCH_FAILED' || (msg.payload.status === 'BOOT_SUCCESS' && msg.payload.imei === '--'))) {
+            db.saveTroubleshootLog('gprs_err', 'GPRS IMEI not found', 'Modem AT+CGSN command did not return a valid 15-digit IMEI. Defaulted to --');
+          }
+
+          if (msg.payload && (msg.payload.status === 'BOOT_SUCCESS' || msg.payload.status === 'IMEI_FETCH_FAILED' || msg.payload.diagnostics)) {
             const diag = msg.payload.diagnostics || {};
             const updateFields = {
               imei: msg.payload.imei || '',
               mac: msg.payload.mac || '',
+              uuid: msg.payload.uuid || '',
+              busId: msg.payload.bus_id !== undefined ? msg.payload.bus_id : 1,
               connectionType: activeTcpSocket ? 'tcp' : (activeSerialPort ? 'serial' : 'unknown'),
               target: activeTcpSocket ? `${activeTcpSocket.remoteAddress}:${activeTcpSocket.remotePort}` : (activeSerialPort ? activeSerialPort.path : '')
             };
@@ -1658,6 +1665,11 @@ function startBackgroundScanning(webContents) {
   if (backgroundScanInterval) clearInterval(backgroundScanInterval);
 
   backgroundScanInterval = setInterval(() => {
+    // Skip scanning if a connection is already active (prevents WiFi card from dropping SoftAP link to perform scans)
+    if ((activeSerialPort && activeSerialPort.isOpen) || (activeTcpSocket && !activeTcpSocket.destroyed)) {
+      return;
+    }
+
     // 1. WiFi SSID Scanning (Windows only) to detect nearby ESP32 Access Points
     if (process.platform === 'win32') {
       const { exec } = require('child_process');
@@ -1670,7 +1682,7 @@ function startBackgroundScanning(webContents) {
               const parts = line.split(':');
               if (parts.length > 1) {
                 const ssid = parts[1].trim();
-                if (ssid.startsWith('ESP32_GATEWAY_')) {
+                if (ssid.startsWith('ESP32_GATEWAY_') || ssid.startsWith('RMS-Firmware-')) {
                   detectedSsids.push(ssid);
                 }
               }

@@ -284,6 +284,9 @@ const DeviceIdentificationSchema = new mongoose.Schema({
   target: String,
   imei: { type: String, default: '' },
   mac: { type: String, default: '' },
+  uuid: { type: String, default: '' },
+  busId: { type: Number, default: 1 },
+  deviceMode: { type: String, default: 'solaryan inverter' },
   password: { type: String, default: '' },
   routerSSID: { type: String, default: '' },
   routerPassword: { type: String, default: '' },
@@ -522,6 +525,9 @@ async function registerOrUpdateDevice(data) {
         connectionType: data.connectionType || localDevices[foundIdx].connectionType,
         target: data.target || localDevices[foundIdx].target,
         mac: data.mac || localDevices[foundIdx].mac,
+        uuid: data.uuid !== undefined ? data.uuid : localDevices[foundIdx].uuid,
+        busId: data.busId !== undefined ? data.busId : localDevices[foundIdx].busId,
+        deviceMode: data.deviceMode !== undefined ? data.deviceMode : localDevices[foundIdx].deviceMode,
         password: data.password !== undefined ? data.password : localDevices[foundIdx].password,
         routerSSID: data.routerSSID !== undefined ? data.routerSSID : localDevices[foundIdx].routerSSID,
         routerPassword: data.routerPassword !== undefined ? data.routerPassword : localDevices[foundIdx].routerPassword,
@@ -562,6 +568,9 @@ async function registerOrUpdateDevice(data) {
         connectionType: data.connectionType || 'unknown',
         target: data.target || '',
         mac: data.mac || '',
+        uuid: data.uuid || '',
+        busId: data.busId || 1,
+        deviceMode: data.deviceMode || 'solaryan inverter',
         password: data.password || 'admin_secure_gate',
         routerSSID: data.routerSSID || '',
         routerPassword: data.routerPassword || '',
@@ -629,6 +638,9 @@ async function registerOrUpdateDevice(data) {
         doc.routerSSID = data.routerSSID !== undefined ? data.routerSSID : doc.routerSSID;
         doc.routerPassword = data.routerPassword !== undefined ? data.routerPassword : doc.routerPassword;
         doc.telemetryInterval = data.telemetryInterval !== undefined ? data.telemetryInterval : doc.telemetryInterval;
+        doc.uuid = data.uuid !== undefined ? data.uuid : doc.uuid;
+        doc.busId = data.busId !== undefined ? data.busId : doc.busId;
+        doc.deviceMode = data.deviceMode !== undefined ? data.deviceMode : doc.deviceMode;
         doc.deviceNumber = dbDeviceNumber;
 
         doc.rs232Status = data.rs232Status !== undefined ? data.rs232Status : doc.rs232Status;
@@ -669,6 +681,9 @@ async function registerOrUpdateDevice(data) {
           connectionType: data.connectionType || 'unknown',
           target: data.target || '',
           mac: data.mac || '',
+          uuid: data.uuid || '',
+          busId: data.busId || 1,
+          deviceMode: data.deviceMode || 'solaryan inverter',
           password: data.password || 'admin_secure_gate',
           routerSSID: data.routerSSID || '',
           routerPassword: data.routerPassword || '',

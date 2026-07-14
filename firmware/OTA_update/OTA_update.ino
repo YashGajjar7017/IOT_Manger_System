@@ -186,7 +186,7 @@ void setup() {
 
   // Get MAC Address
   deviceMAC = WiFi.macAddress();
-  String apSsid = "ESP32_OTA_GATEWAY_" + deviceMAC;
+  String apSsid = "RMS-Firmware-" + deviceMAC;
   apSsid.replace(":", "");
 
   // Configure SoftAP starting IP address 192.168.4.1 explicitly
