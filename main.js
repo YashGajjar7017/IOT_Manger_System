@@ -11,15 +11,17 @@ const dgram = require('dgram');
 const { Worker } = require('worker_threads');
 
 // ── Auto copy generated logo image ──────────────────────────────────────────
-const sourcePath = 'C:\\Users\\Admin\\.gemini\\antigravity-ide\\brain\\c5591f27-1aa6-4b08-8885-b4f916706020\\logo_1783427356532.png';
+const sourcePath = 'C:\\Users\\Admin\\.gemini\\antigravity-ide\\brain\\10703818-80cf-474b-997e-2cad2a0e3934\\glowing_star_logo_1784014066976.png';
 const destPath = path.join(__dirname, 'icon', 'logo.png');
+const destPath1 = path.join(__dirname, 'icon', 'logo1.png');
 if (fs.existsSync(sourcePath)) {
   try {
     if (!fs.existsSync(path.dirname(destPath))) {
       fs.mkdirSync(path.dirname(destPath), { recursive: true });
     }
     fs.copyFileSync(sourcePath, destPath);
-    console.log('[LOGO-AUTO-COPY] Logo updated successfully!');
+    fs.copyFileSync(sourcePath, destPath1);
+    console.log('[LOGO-AUTO-COPY] Glowing Star logo updated successfully!');
   } catch (err) {
     console.error('[LOGO-AUTO-COPY] Error:', err);
   }
@@ -1869,7 +1871,47 @@ ipcMain.on('connect-serial', (event, { portPath, baudRate, pcbNumber }) => {
                   db.saveTelemetrySnapshot(payload);
                 } else {
                   event.reply('hardware-payload', payload);
-                  if (currentDeviceDbId && (payload.imei || payload.mac)) {
+                  
+                  if (payload.status === 'BOOT_SUCCESS' || payload.diagnostics) {
+                    const diag = payload.diagnostics || {};
+                    const updateFields = {
+                      imei: payload.imei || '',
+                      mac: payload.mac || '',
+                      uuid: payload.uuid || '',
+                      busId: payload.bus_id !== undefined ? payload.bus_id : 1,
+                      connectionType: 'serial',
+                      target: activeSerialPort ? activeSerialPort.path : ''
+                    };
+
+                    const mapStatus = (val) => {
+                      if (val === true || val === 'true' || val === 'OK' || val === 'PASSED' || val === 'PASS') return 'OK';
+                      if (val === false || val === 'false' || val === 'ERROR' || val === 'FAILED' || val === 'FAIL') return 'ERROR';
+                      if (val === 'WAITING' || val === 'PENDING') return 'WAITING';
+                      return val;
+                    };
+
+                    const diagKeys = ['rs232', 'rs485', 'gprs', 'flash', 'di', 'rtc', 'psram', 'switch', 'fr', 'ap', 'bus', 'driver'];
+                    diagKeys.forEach(key => {
+                      if (diag[key] !== undefined) {
+                        const statusKey = `${key}Status`;
+                        const logKey = `${key}Log`;
+                        const val = diag[key];
+                        updateFields[statusKey] = (val && typeof val === 'object') ? mapStatus(val.status) : mapStatus(val);
+                        updateFields[logKey] = (val && typeof val === 'object') ? (val.detail || '') : '';
+                      }
+                    });
+
+                    db.registerOrUpdateDevice(updateFields)
+                      .then(doc => {
+                        if (doc) {
+                          currentDeviceDbId = doc._id;
+                          event.reply('refresh-registered-devices');
+                        }
+                      })
+                      .catch(err => {
+                        console.error('[DATABASE] Fallback serial error auto-saving device:', err);
+                      });
+                  } else if (currentDeviceDbId && (payload.imei || payload.mac)) {
                     db.updateDeviceIdentification(currentDeviceDbId, {
                       imei: payload.imei || '',
                       mac: payload.mac || ''
@@ -1983,7 +2025,7 @@ function startTcpTelemetryServer() {
     }
 
     activeTcpSocket = socket;
-    activeTcpSocket.setTimeout(60000);
+    activeTcpSocket.setTimeout(0);
     activeTcpSocket.setKeepAlive(true, 5000);
 
     const remoteAddress = socket.remoteAddress;
@@ -2046,7 +2088,49 @@ function startTcpTelemetryServer() {
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('hardware-payload', payload);
               }
-              if (currentDeviceDbId && (payload.imei || payload.mac)) {
+              
+              if (payload.status === 'BOOT_SUCCESS' || payload.diagnostics) {
+                const diag = payload.diagnostics || {};
+                const updateFields = {
+                  imei: payload.imei || '',
+                  mac: payload.mac || '',
+                  uuid: payload.uuid || '',
+                  busId: payload.bus_id !== undefined ? payload.bus_id : 1,
+                  connectionType: 'tcp',
+                  target: activeTcpSocket ? `${activeTcpSocket.remoteAddress}:${activeTcpSocket.remotePort}` : ''
+                };
+
+                const mapStatus = (val) => {
+                  if (val === true || val === 'true' || val === 'OK' || val === 'PASSED' || val === 'PASS') return 'OK';
+                  if (val === false || val === 'false' || val === 'ERROR' || val === 'FAILED' || val === 'FAIL') return 'ERROR';
+                  if (val === 'WAITING' || val === 'PENDING') return 'WAITING';
+                  return val;
+                };
+
+                const diagKeys = ['rs232', 'rs485', 'gprs', 'flash', 'di', 'rtc', 'psram', 'switch', 'fr', 'ap', 'bus', 'driver'];
+                diagKeys.forEach(key => {
+                  if (diag[key] !== undefined) {
+                    const statusKey = `${key}Status`;
+                    const logKey = `${key}Log`;
+                    const val = diag[key];
+                    updateFields[statusKey] = (val && typeof val === 'object') ? mapStatus(val.status) : mapStatus(val);
+                    updateFields[logKey] = (val && typeof val === 'object') ? (val.detail || '') : '';
+                  }
+                });
+
+                db.registerOrUpdateDevice(updateFields)
+                  .then(doc => {
+                    if (doc) {
+                      currentDeviceDbId = doc._id;
+                      if (mainWindow && !mainWindow.isDestroyed()) {
+                        mainWindow.webContents.send('refresh-registered-devices');
+                      }
+                    }
+                  })
+                  .catch(err => {
+                    console.error('[DATABASE] Fallback tcp error auto-saving device:', err);
+                  });
+              } else if (currentDeviceDbId && (payload.imei || payload.mac)) {
                 db.updateDeviceIdentification(currentDeviceDbId, {
                   imei: payload.imei || '',
                   mac: payload.mac || ''
@@ -2843,9 +2927,22 @@ ipcMain.handle('manual-pull-github-xml', async (event, { repoUrl, branch }) => {
 });
 
 // IPC Handler: Check online software version XML from GitHub (Requirement 2)
-ipcMain.handle('check-software-update', async (event) => {
+ipcMain.handle('check-software-update', async (event, params) => {
   const https = require('https');
-  const xmlUrl = 'https://raw.githubusercontent.com/YashGajjar7017/IOT_Manger_System/main/version.xml';
+  const { repoUrl, branch } = params || {};
+
+  const targetRepoUrl = repoUrl || appConfig.githubRepoUrl || 'https://github.com/YashGajjar7017/IOT_Manger_System';
+  const targetBranch = branch || appConfig.githubBranch || 'main';
+
+  let repoPath = "YashGajjar7017/IOT_Manger_System";
+  if (targetRepoUrl) {
+    const match = targetRepoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    if (match) {
+      repoPath = `${match[1]}/${match[2].replace(/\.git$/, '')}`;
+    }
+  }
+
+  const xmlUrl = `https://raw.githubusercontent.com/${repoPath}/${targetBranch}/version.xml`;
 
   return new Promise((resolve) => {
     https.get(xmlUrl, (res) => {

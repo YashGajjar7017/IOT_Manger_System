@@ -160,14 +160,58 @@ function sanitizeMongoURI(uri) {
   return protocol + hostPart + pathOnly + queryPart;
 }
 
+// Monitor connection states dynamically
+mongoose.connection.on('connected', () => {
+  mongodbConnected = true;
+  console.log('[DATABASE] MongoDB connection event: CONNECTED');
+});
+mongoose.connection.on('disconnected', () => {
+  mongodbConnected = false;
+  console.log('[DATABASE] MongoDB connection event: DISCONNECTED');
+});
+mongoose.connection.on('error', (err) => {
+  mongodbConnected = false;
+  console.error('[DATABASE] MongoDB connection event: ERROR -', err.message);
+});
+
+// Auto reconnection heartbeat
+let reconnectTimer = null;
+let lastUsedURI = 'mongodb://127.0.0.1:27017/IOT_Monitor_System';
+
+function startHeartbeatReconnection(uri) {
+  if (uri) {
+    lastUsedURI = uri;
+  }
+  if (reconnectTimer) return;
+  reconnectTimer = setInterval(() => {
+    if (mongoose.connection.readyState === 0 || !mongodbConnected) {
+      console.log('[DATABASE MONITOR] Connection lost or inactive. Re-connecting to MongoDB...');
+      const targetURI = sanitizeMongoURI(lastUsedURI);
+      mongoose.connect(targetURI, {
+        serverSelectionTimeoutMS: 3000
+      })
+      .then(() => {
+        mongodbConnected = true;
+      })
+      .catch((err) => {
+        mongodbConnected = false;
+        console.warn('[DATABASE MONITOR] Automatic reconnection attempt failed:', err.message);
+      });
+    }
+  }, 10000);
+}
+
 function connectDatabase(customURI) {
   const rawURI = customURI || process.env.MONOGDB_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/IOT_Monitor_System';
   const mongoURI = sanitizeMongoURI(rawURI);
+  lastUsedURI = rawURI;
   console.log(`[DATABASE] Connecting to MongoDB at ${mongoURI}...`);
 
   if (mongoose.connection.readyState !== 0) {
     mongoose.disconnect();
   }
+
+  startHeartbeatReconnection(rawURI);
 
   return mongoose.connect(mongoURI, {
     serverSelectionTimeoutMS: 3000
@@ -612,16 +656,26 @@ async function registerOrUpdateDevice(data) {
     console.error('[DATABASE] Failed to update local devices registry:', e);
   }
 
-  if (mongodbConnected && data.imei) {
+  if (mongodbConnected && (data.imei || data.pcbNumber || data.mac)) {
     try {
-      let doc = await DeviceIdentificationModel.findOne({ imei: data.imei });
+      let doc = null;
+      if (data.imei && data.imei !== '--') {
+        doc = await DeviceIdentificationModel.findOne({ imei: data.imei });
+      }
+      if (!doc && data.pcbNumber) {
+        doc = await DeviceIdentificationModel.findOne({ pcbNumber: data.pcbNumber });
+      }
+      if (!doc && data.mac) {
+        doc = await DeviceIdentificationModel.findOne({ mac: data.mac });
+      }
       
       let dbDeviceNumber = parseInt(data.deviceNumber);
       let dbDuplicate = false;
+      const currentImei = data.imei || (doc ? doc.imei : '');
       if (dbDeviceNumber) {
         dbDuplicate = await DeviceIdentificationModel.findOne({
           deviceNumber: dbDeviceNumber,
-          imei: { $ne: data.imei }
+          imei: { $ne: currentImei }
         });
       }
       if (!dbDeviceNumber || isNaN(dbDeviceNumber) || dbDuplicate) {

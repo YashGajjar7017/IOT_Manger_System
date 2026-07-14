@@ -164,6 +164,17 @@ export default function App() {
     driver: 'WAITING',
     rtc: 'WAITING'
   });
+  const [diagnosticsDetails, setDiagnosticsDetails] = useState({
+    rs232: '',
+    rs485: '',
+    gprs: '',
+    bus: '',
+    ap: '',
+    flash: '',
+    di: '',
+    driver: '',
+    rtc: ''
+  });
   const [diPinsSimulated, setDiPinsSimulated] = useState([false, false, false, false]);
   const [diPinsHardware, setDiPinsHardware] = useState([false, false, false, false]);
   const [testerSwitch, setTesterSwitch] = useState(false);
@@ -876,13 +887,23 @@ export default function App() {
           const updated = { ...prev };
           Object.keys(payload.diagnostics || {}).forEach(key => {
             const val = payload.diagnostics[key];
-            const nextVal = (val === 'WAITING' || val === 'PENDING')
+            let statusVal = val;
+            let detailVal = '';
+            
+            if (val && typeof val === 'object') {
+              statusVal = val.status;
+              detailVal = val.detail || '';
+            }
+            
+            const nextVal = (statusVal === 'WAITING' || statusVal === 'PENDING')
               ? 'WAITING'
-              : (val === true || val === 'true' || val === 'OK' || val === 'PASSED' || val === 'PASS' ? 'OK' : 'ERROR');
+              : (statusVal === true || statusVal === 'true' || statusVal === 'OK' || statusVal === 'PASSED' || statusVal === 'PASS' ? 'OK' : 'ERROR');
+            
             if (nextVal === 'WAITING' && (prev[key] === 'OK' || prev[key] === 'ERROR')) {
               // Preserve existing OK/ERROR status
             } else {
               updated[key] = nextVal;
+              setDiagnosticsDetails(prevDetails => ({ ...prevDetails, [key]: detailVal }));
             }
           });
           return updated;
@@ -1408,7 +1429,7 @@ Connection    : ${connection.type ? connection.type.toUpperCase() : 'DISCONNECTE
 
 PERIPHERAL MODULE TEST RESULTS:
 -----------------------------------------
-${Object.keys(diagnostics).map(key => `- ${key.toUpperCase().padEnd(17)}: ${diagnostics[key]}`).join('\n')}
+${Object.keys(diagnostics).map(key => `- ${key.toUpperCase().padEnd(17)}: ${diagnostics[key]}${diagnosticsDetails[key] ? ' (' + diagnosticsDetails[key] + ')' : ''}`).join('\n')}
 
 SUMMARY:
 -----------------------------------------
@@ -1451,6 +1472,17 @@ Overall Status : ${overallStatus}
       di: 'WAITING',
       driver: 'WAITING',
       rtc: 'WAITING'
+    });
+    setDiagnosticsDetails({
+      rs232: '',
+      rs485: '',
+      gprs: '',
+      bus: '',
+      ap: '',
+      flash: '',
+      di: '',
+      driver: '',
+      rtc: ''
     });
   };
 
@@ -3560,7 +3592,7 @@ Overall Status : ${overallStatus}
 
                 <div className="diag-checklist">
                   {Object.keys(diagnostics).map(key => (
-                    <div key={key} className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : diagnostics[key] === 'TESTING' ? 'warning' : ''}`}>
+                    <div key={key} className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : diagnostics[key] === 'TESTING' ? 'warning' : ''}`} title={diagnosticsDetails[key] || ''}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                         <div className="diag-indicator" style={{ marginRight: '8px' }}></div>
                         <div className="diag-label" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>

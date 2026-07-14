@@ -50,6 +50,9 @@
 #include <WiFiUdp.h>
 #include <Wire.h>
 #include <queue>
+#include <lwip/sockets.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 
 // ============================================================
 //  BOARD PIN MAP
@@ -313,15 +316,49 @@ void setResult(TestID id, TestStatus status, const String &detail) {
   logFmt("[%s] %s: %s\n", statusStr(status), results[id].name, detail.c_str());
 }
 
+void enableKeepAlive(WiFiClient& client) {
+  int fd = client.fd();
+  if (fd >= 0) {
+    int keepAlive = 1;     // Enable keep-alive
+    int keepIdle = 10;     // 10 seconds idle before sending first probe
+    int keepInterval = 5;  // 5 seconds between probes
+    int keepCount = 3;     // 3 failed probes before dropping connection
+
+    setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(keepAlive));
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(keepIdle));
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(keepInterval));
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(keepCount));
+  }
+}
+
 String testStatusJson(TestID id) {
+  String statusStr;
   switch (results[id].status) {
   case S_PASS:
-    return "true";
+    statusStr = "PASS";
+    break;
   case S_PENDING:
-    return "\"WAITING\"";
+    statusStr = "WAITING";
+    break;
+  case S_WARN:
+    statusStr = "WARN";
+    break;
+  case S_FAIL:
+    statusStr = "FAIL";
+    break;
+  case S_SKIP:
+    statusStr = "SKIP";
+    break;
   default:
-    return "false";
+    statusStr = "WAITING";
+    break;
   }
+  
+  // Escape potential double quotes in detail string
+  String cleanDetail = results[id].detail;
+  cleanDetail.replace("\"", "\\\"");
+  
+  return "{\"status\":\"" + statusStr + "\",\"detail\":\"" + cleanDetail + "\"}";
 }
 
 // ============================================================
@@ -2981,7 +3018,7 @@ void handleHaltState() {
                electronServerIP.toString().c_str());
         if (tcpClient.connect(electronServerIP, 9000)) {
           logLn("[TCP] Connected to Electron in HALT mode!");
-          resetDiagnosticsResults();
+          enableKeepAlive(tcpClient);
           sendBootSuccessPayload(); // Sync diagnostics with MERN app on connect
           sendControlStatus();
           lastFail = 0;
@@ -3057,7 +3094,7 @@ void handleRunningState() {
              electronServerIP.toString().c_str());
       if (tcpClient.connect(electronServerIP, 9000)) {
         logLn("[TCP] Connected to Electron in RUNNING mode!");
-        resetDiagnosticsResults();
+        enableKeepAlive(tcpClient);
         sendBootSuccessPayload(); // Sync diagnostics with MERN app on connect
         sendControlStatus();
       }
