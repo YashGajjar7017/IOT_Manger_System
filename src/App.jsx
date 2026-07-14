@@ -344,6 +344,7 @@ export default function App() {
   const [otaProgress, setOtaProgress] = useState(null); // { status, progress, message }
   const [otaTarget, setOtaTarget] = useState('esp32'); // 'esp32' or 'qcom'
   const fileInputRef = useRef(null);
+  const accountContainerRef = useRef(null);
 
   // Sync refs to bypass stale React closures in async/event listener callbacks
   const otaIpRef = useRef(otaIp);
@@ -894,16 +895,16 @@ export default function App() {
             const val = payload.diagnostics[key];
             let statusVal = val;
             let detailVal = '';
-            
+
             if (val && typeof val === 'object') {
               statusVal = val.status;
               detailVal = val.detail || '';
             }
-            
+
             const nextVal = (statusVal === 'WAITING' || statusVal === 'PENDING')
               ? 'WAITING'
               : (statusVal === true || statusVal === 'true' || statusVal === 'OK' || statusVal === 'PASSED' || statusVal === 'PASS' ? 'OK' : 'ERROR');
-            
+
             if (nextVal === 'WAITING' && (prev[key] === 'OK' || prev[key] === 'ERROR')) {
               // Preserve existing OK/ERROR status
             } else {
@@ -2114,14 +2115,14 @@ Overall Status : ${overallStatus}
       const content = event.target.result;
       setConfigFileContent(content);
       setConfigFileName(file.name);
-      
+
       const fileExt = file.name.split('.').pop().toLowerCase();
       if (fileExt === 'json') {
         setConfigSourceType('file_json');
       } else if (fileExt === 'csv') {
         setConfigSourceType('file_csv');
       }
-      
+
       addLogLine(`[GUI] Successfully imported local config file: ${file.name} (${file.size} bytes)`);
     };
     reader.onerror = (err) => {
@@ -2156,6 +2157,20 @@ Overall Status : ${overallStatus}
     if (showAccountModal) {
       fetchTroubleshootLogs();
     }
+  }, [showAccountModal]);
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (accountContainerRef.current && !accountContainerRef.current.contains(e.target)) {
+        setShowAccountModal(false);
+      }
+    };
+    if (showAccountModal) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
   }, [showAccountModal]);
 
   // Auto-scan: refresh port list then try connecting to each one in order
@@ -3144,6 +3159,14 @@ Overall Status : ${overallStatus}
               </svg>
               <span>Storage</span>
             </button>
+
+            <button className={`header-nav-item ${(activeTab === 'page-settings' || activeTab === 'settings') ? 'active' : ''}`} onClick={() => setActiveTab('page-settings')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              <span>Settings</span>
+            </button>
           </nav>
 
           <div className="header-right">
@@ -3154,10 +3177,213 @@ Overall Status : ${overallStatus}
               <span className={`ping-result ${pingLatency.status}`} style={{ fontSize: '11px', fontWeight: 'bold' }}>{pingLatency.value}</span>
             </div> */}
 
-            <div className="header-account-container">
-              <button className={`header-account-btn ${showAccountModal ? 'active' : ''}`} onClick={() => setShowAccountModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div className="header-account-container" ref={accountContainerRef} style={{ position: 'relative' }}>
+              <button className={`header-account-btn ${showAccountModal ? 'active' : ''}`} onClick={() => setShowAccountModal(!showAccountModal)} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 👤 Account & Support
               </button>
+              {showAccountModal && (
+                <div style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 'calc(100% + 8px)',
+                  width: '450px',
+                  background: 'rgba(10, 14, 28, 0.97)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '14px',
+                  boxShadow: '0 24px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 240, 255, 0.08)',
+                  backdropFilter: 'blur(28px)',
+                  padding: '16px',
+                  zIndex: 9999,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  textAlign: 'left'
+                }} onClick={(e) => e.stopPropagation()}>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: '8px' }}>
+                    <h3 style={{ margin: 0, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', color: 'white' }}>
+                      👤 Support & Admin Desk
+                    </h3>
+                    <button
+                      onClick={() => setShowAccountModal(false)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--text-dim)',
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                        padding: '2px'
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {!isLoggedIn ? (
+                    <div className="glass-card auth-card" style={{ border: 'none', background: 'none', boxShadow: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '24px' }}>🔑</span>
+                        <h4 style={{ color: 'white', margin: '4px 0 2px 0', fontSize: '13px' }}>Admin Authorization</h4>
+                        <p style={{ fontSize: '11px', color: 'var(--text-dim)', margin: 0 }}>Unlock profiles & settings</p>
+                      </div>
+
+                      {authError && (
+                        <div style={{ padding: '6px', background: 'rgba(255, 51, 102, 0.1)', border: '1px solid rgba(255, 51, 102, 0.3)', color: '#ff3366', borderRadius: '4px', fontSize: '11px', textAlign: 'center' }}>
+                          ⚠️ {authError}
+                        </div>
+                      )}
+
+                      <div className="input-group" style={{ marginBottom: '4px' }}>
+                        <label style={{ fontSize: '10px' }}>Username</label>
+                        <input style={{ padding: '6px', fontSize: '11px', height: '28px' }} type="text" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} placeholder="Enter admin username" />
+                      </div>
+
+                      {authMode === 'signup' && (
+                        <div className="input-group" style={{ marginBottom: '4px' }}>
+                          <label style={{ fontSize: '10px' }}>Email Address</label>
+                          <input style={{ padding: '6px', fontSize: '11px', height: '28px' }} type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="admin@domain.com" />
+                        </div>
+                      )}
+
+                      <div className="input-group" style={{ marginBottom: '8px' }}>
+                        <label style={{ fontSize: '10px' }}>Password</label>
+                        <input style={{ padding: '6px', fontSize: '11px', height: '28px' }} type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••••••" />
+                      </div>
+
+                      {authMode === 'signup' && (
+                        <div className="input-group" style={{ marginBottom: '8px' }}>
+                          <label style={{ fontSize: '10px' }}>Confirm Password</label>
+                          <input style={{ padding: '6px', fontSize: '11px', height: '28px' }} type="password" value={authConfirmPassword} onChange={(e) => setAuthConfirmPassword(e.target.value)} placeholder="••••••••••••" />
+                        </div>
+                      )}
+
+                      <button className="btn btn-accent" onClick={handleAuth} style={{ width: '100%', margin: 0, height: '30px', padding: '0 10px', fontSize: '11px' }}>
+                        {authMode === 'login' ? 'Authenticate Session' : 'Register Administrator'}
+                      </button>
+
+                      <div style={{ marginTop: '8px', textAlign: 'center', fontSize: '11px' }}>
+                        <a href="#" onClick={(e) => { e.preventDefault(); setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }} style={{ color: 'var(--accent-blue)', textDecoration: 'underline' }}>
+                          {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Log In"}
+                        </a>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '10px' }}>
+                        {/* Admin Profile */}
+                        <div className="glass-card" style={{ padding: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                          <div>
+                            <h4 style={{ color: 'white', margin: '0 0 6px 0', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>👤 Profile</h4>
+                            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px', borderRadius: '4px', border: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '10px' }}>
+                              <div>
+                                <span style={{ color: 'var(--accent-pink)', textTransform: 'uppercase', fontSize: '7px', display: 'block' }}>User</span>
+                                <strong>Admin</strong>
+                              </div>
+                              <div>
+                                <span style={{ color: 'var(--accent-pink)', textTransform: 'uppercase', fontSize: '7px', display: 'block' }}>Status</span>
+                                <strong style={{ color: 'var(--accent-emerald)' }}>Connected</strong>
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            className="btn btn-primary"
+                            onClick={() => {
+                              setActiveTab('page-settings');
+                              setShowAccountModal(false);
+                            }}
+                            style={{ width: '100%', padding: '4px 8px', fontSize: '10px', margin: '8px 0 0 0', height: '24px' }}
+                          >
+                            ⚙️ App Settings
+                          </button>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => {
+                              localStorage.removeItem('isLoggedIn');
+                              setIsLoggedIn(false);
+                              addLogLine('[GUI] Logged out.', 'system');
+                            }}
+                            style={{ width: '100%', borderColor: 'rgba(239, 68, 68, 0.4)', color: '#ef4444', background: 'rgba(239, 68, 68, 0.05)', padding: '4px 8px', fontSize: '10px', margin: '8px 0 0 0', height: '24px' }}
+                          >
+                            🚪 Log Out
+                          </button>
+                        </div>
+
+                        {/* GitHub Sync */}
+                        <div className="glass-card" style={{ padding: '10px' }}>
+                          <h4 style={{ color: 'white', margin: '0 0 6px 0', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🐙 GitHub</h4>
+                          <div className="input-group" style={{ marginBottom: '4px' }}>
+                            <label style={{ fontSize: '8px' }}>Repo URL</label>
+                            <input
+                              type="text"
+                              value={gitHubRepoUrlInput || ''}
+                              onChange={(e) => setGitHubRepoUrlInput(e.target.value)}
+                              placeholder="https://github.com/..."
+                              style={{ padding: '4px 6px', fontSize: '10px', height: '22px' }}
+                            />
+                          </div>
+                          <div className="input-group" style={{ marginBottom: '6px' }}>
+                            <label style={{ fontSize: '8px' }}>Branch</label>
+                            <input
+                              type="text"
+                              value={gitHubRepoBranchInput || ''}
+                              onChange={(e) => setGitHubRepoBranchInput(e.target.value)}
+                              placeholder="main"
+                              style={{ padding: '4px 6px', fontSize: '10px', height: '22px' }}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button
+                              className="btn btn-primary"
+                              onClick={handlePullGithubXml}
+                              disabled={isSyncingXml}
+                              style={{ flex: 1, padding: '4px', fontSize: '9px', margin: 0, height: '22px' }}
+                            >
+                              XML Pull
+                            </button>
+                            <button
+                              className="btn btn-accent"
+                              onClick={handleGitHubSync}
+                              disabled={isGitHubSyncing}
+                              style={{ flex: 1, padding: '4px', fontSize: '9px', margin: 0, height: '22px' }}
+                            >
+                              Code Pull
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Revocation Logs */}
+                      <div className="glass-card" style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <h4 style={{ color: 'white', margin: 0, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🛠️ Troubleshoot Logs</h4>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button className="btn btn-secondary small" onClick={fetchTroubleshootLogs} style={{ margin: 0, height: '18px', padding: '0 6px', fontSize: '9px' }}>
+                              🔄 Refresh
+                            </button>
+                            <button className="btn btn-danger small" onClick={clearTroubleshootLogs} style={{ margin: 0, height: '18px', padding: '0 6px', fontSize: '9px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{ maxHeight: '110px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '6px', borderRadius: '4px', border: '1px solid var(--glass-border)', fontSize: '10px', fontFamily: 'monospace' }}>
+                          {troubleshootLogs.length === 0 ? (
+                            <div style={{ padding: '10px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
+                              No troubleshoot logs found.
+                            </div>
+                          ) : (
+                            troubleshootLogs.map((log, idx) => (
+                              <div key={idx} style={{ marginBottom: '4px', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${log.event || log.type}: ${log.details || log.message}`}>
+                                <span style={{ color: 'var(--accent-pink)' }}>[{new Date(log.timestamp).toLocaleTimeString()}]</span>{' '}
+                                <span style={{ color: 'var(--accent-blue)' }}>{log.event || log.type}</span>: {log.details || log.message}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </header>
@@ -5492,7 +5718,7 @@ Overall Status : ${overallStatus}
                     <div class="step-num">2</div>
                     <div class="step-desc">
                       <strong>Join Access Point</strong>
-                      <p>Connect PC WiFi to `ESP32_GATEWAY_XXXX` softAP network.</p>
+                      <p>Connect PC WiFi to the `RMS-FIRMWARE-XXXXXX` SoftAP network.</p>
                     </div>
                   </li>
                   <li>
@@ -6364,7 +6590,7 @@ Overall Status : ${overallStatus}
                 <div style={{ marginTop: '15px' }}>
                   <div className="spec-list-item">
                     <span className="spec-label">Hotspot SSID</span>
-                    <span className="spec-value highlight-blue">{wifiDetails.mac_ap && wifiDetails.mac_ap !== '--' ? `ESP32_GATEWAY_${wifiDetails.mac_ap.replace(/:/g, '')}` : `ESP32_GATEWAY_${mac.replace(/:/g, '')}`}</span>
+                    <span className="spec-value highlight-blue">{wifiDetails.ap_ssid && wifiDetails.ap_ssid !== '--' ? wifiDetails.ap_ssid : `RMS-FIRMWARE-${(wifiDetails.mac_ap || mac || '').replace(/:/g, '').slice(-6).toUpperCase()}`}</span>
                   </div>
                   <div className="spec-list-item">
                     <span className="spec-label">Hotspot IP Address</span>
@@ -6773,7 +6999,7 @@ Overall Status : ${overallStatus}
           </section>
 
           {/* ================= VIEW 5: APP SETTINGS (Requirement 6) ================= */}
-          <section id="page-settings" className={`page-view ${activeTab === 'page-settings' ? 'active' : ''}`}>
+          <section id="page-settings" className={`page-view ${(activeTab === 'page-settings' || activeTab === 'settings') ? 'active' : ''}`}>
             <header className="view-header">
               <div>
                 <h1>Application Settings</h1>
@@ -7290,8 +7516,8 @@ Overall Status : ${overallStatus}
                                 {new Date(log.timestamp).toLocaleString()}
                               </td>
                               <td style={{ padding: '8px' }}>
-                                <span className={`status-tag ${log.type === 'db_entry_failed' || log.type === 'db_connection_failed' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', textTransform: 'uppercase', display: 'inline-block' }}>
-                                  {log.type.replace(/_/g, ' ')}
+                                <span className={`status-tag ${(log.type || log.event) === 'db_entry_failed' || (log.type || log.event) === 'db_connection_failed' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', textTransform: 'uppercase', display: 'inline-block' }}>
+                                  {(log.type || log.event || 'troubleshoot').replace(/_/g, ' ')}
                                 </span>
                               </td>
                               <td style={{ padding: '8px', fontWeight: 'bold' }}>{log.message}</td>
@@ -7781,7 +8007,8 @@ Overall Status : ${overallStatus}
           </div>
         </div>
       )}
-      {showAccountModal && (
+
+      {/* {showAccountModal && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -7882,7 +8109,7 @@ Overall Status : ${overallStatus}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '15px' }}>
                   {/* Admin Profile */}
-                  <div className="glass-card" style={{ padding: '16px' }}>
+      {/* <div className="glass-card" style={{ padding: '16px' }}>
                     <h4 style={{ color: 'white', marginBottom: '10px', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>👤 Admin Profile</h4>
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px', fontSize: '11px' }}>
                       <div>
@@ -7905,10 +8132,10 @@ Overall Status : ${overallStatus}
                     >
                       🚪 Log Out Session
                     </button>
-                  </div>
+                  </div> 
 
-                  {/* GitHub Sync */}
-                  <div className="glass-card" style={{ padding: '16px' }}>
+      {/* GitHub Sync */}
+      {/* <div className="glass-card" style={{ padding: '16px' }}>
                     <h4 style={{ color: 'white', marginBottom: '10px', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🐙 GitHub Sync</h4>
                     <div className="input-group" style={{ marginBottom: '6px' }}>
                       <label style={{ fontSize: '8px' }}>Repository URL</label>
@@ -7949,10 +8176,10 @@ Overall Status : ${overallStatus}
                       </button>
                     </div>
                   </div>
-                </div>
+                </div> */}
 
-                {/* Revocation Logs */}
-                <div className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {/* Revocation Logs */}
+      {/* <div className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h4 style={{ color: 'white', margin: 0, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🛠️ Troubleshoot Logs</h4>
                     <div style={{ display: 'flex', gap: '6px' }}>
@@ -7983,7 +8210,8 @@ Overall Status : ${overallStatus}
             )}
           </div>
         </div>
-      )}
+      )} */}
+
     </>
   );
 }

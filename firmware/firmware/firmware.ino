@@ -205,6 +205,7 @@ String devicePassword = "admin_secure_gate";
 String bootCertTarget = "BOTH";
 String deviceUUID = "default-uuid-123456";
 int deviceBusID = 1;
+bool diPinsSimulated[DI_COUNT] = {false};
 
 String routerSSID = "Medha_Network's";
 String routerPassword = "medha@123";
@@ -963,7 +964,9 @@ void testDI() {
 
   String d;
   for (int i = 0; i < DI_COUNT; i++) {
-    pinMode(DI_PINS[i], INPUT_PULLUP);
+    if (!diPinsSimulated[i]) {
+      pinMode(DI_PINS[i], INPUT_PULLUP);
+    }
     delay(5);
     int v = digitalRead(DI_PINS[i]);
     if (i)
@@ -1901,8 +1904,9 @@ void handleCertUploadDirectOta(String filename, String certType) {
   Serial.println("\n--- START OF CERTIFICATE FILE CONTENT ---");
   Serial.print(content);
   Serial.println("\n--- END OF CERTIFICATE FILE CONTENT ---\n");
-  dumpCertsToQcom();
   Server.send(200, "text/plain", "OK");
+  delay(50);
+  dumpCertsToQcom();
 }
 
 void handleCertUploadDirect(String filename, String certType) {
@@ -1942,8 +1946,9 @@ void handleCertUploadDirect(String filename, String certType) {
   Serial.println(reply);
   if (tcpClient && tcpClient.connected())
     tcpClient.println(reply);
-  dumpCertsToQcom();
   httpServer.send(200, "text/plain", "OK");
+  delay(50);
+  dumpCertsToQcom();
 }
 
 // ============================================================
@@ -2563,16 +2568,23 @@ void setupWiFi() {
 
   WiFi.onEvent(onWiFiAPEvent);
   WiFi.mode(WIFI_AP);
-  WiFi.setHostname("RMS-FIRMWARE-A530");
   WiFi.setAutoReconnect(false);
-  deviceMAC = WiFi.macAddress();
+
+  deviceMAC = WiFi.softAPmacAddress();
+  if (deviceMAC.length() == 0 || deviceMAC == "00:00:00:00:00:00") {
+    deviceMAC = WiFi.macAddress();
+  }
 
   String macClean = deviceMAC;
   macClean.replace(":", "");
   if (macClean.length() >= 6) {
     customApSSID = "RMS-FIRMWARE-" + macClean.substring(macClean.length() - 6);
     customApSSID.toUpperCase();
+  } else {
+    customApSSID = "RMS-FIRMWARE-A530";
   }
+
+  WiFi.setHostname(customApSSID.c_str());
 
   // Configure SoftAP to match MERN/Electron expected IP subnet 192.168.0.x
   IPAddress local_IP(192, 168, 0, 1);
@@ -2582,6 +2594,7 @@ void setupWiFi() {
 
   // SoftAP — use dynamic unique SSID
   WiFi.softAP(customApSSID.c_str(), AP_PASS);
+  WiFi.setSleep(false); // Disable WiFi modem sleep to guarantee stable persistent TCP connection
   IPAddress apIP = WiFi.softAPIP();
 
   logFmt("[WIFI AP] SSID : %s\n", customApSSID.c_str());
@@ -2669,6 +2682,7 @@ void processCommand(String cmd) {
   } else if (cmd.startsWith("SIM_DI_ON:")) {
     int pinIndex = cmd.substring(10).toInt();
     if (pinIndex >= 0 && pinIndex < DI_COUNT) {
+      diPinsSimulated[pinIndex] = true;
       pinMode(DI_PINS[pinIndex], OUTPUT);
       digitalWrite(DI_PINS[pinIndex], LOW);
       logFmt("[CMD] SIM_DI_ON: Shorted DI%d (GPIO%d) to GND\n", pinIndex + 1, DI_PINS[pinIndex]);
@@ -2676,6 +2690,7 @@ void processCommand(String cmd) {
   } else if (cmd.startsWith("SIM_DI_OFF:")) {
     int pinIndex = cmd.substring(11).toInt();
     if (pinIndex >= 0 && pinIndex < DI_COUNT) {
+      diPinsSimulated[pinIndex] = false;
       pinMode(DI_PINS[pinIndex], INPUT_PULLUP);
       logFmt("[CMD] SIM_DI_OFF: Released DI%d (GPIO%d) to HIGH\n", pinIndex + 1, DI_PINS[pinIndex]);
     }

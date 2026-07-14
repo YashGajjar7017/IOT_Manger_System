@@ -980,6 +980,14 @@ function createWindow() {
 
   // Maximize the window automatically on load
   mainWindow.maximize();
+
+  // Toggle DevTools when F12 key is pressed
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12' && input.type === 'keyDown') {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
 }
 
 let otaLocalServer = null;
