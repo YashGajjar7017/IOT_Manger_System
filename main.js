@@ -2026,7 +2026,7 @@ function startTcpTelemetryServer() {
 
     activeTcpSocket = socket;
     activeTcpSocket.setTimeout(0);
-    activeTcpSocket.setKeepAlive(true, 5000);
+    activeTcpSocket.setKeepAlive(true, 30000);
 
     const remoteAddress = socket.remoteAddress;
     const remotePort = socket.remotePort;

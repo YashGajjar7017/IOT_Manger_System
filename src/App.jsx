@@ -244,6 +244,7 @@ export default function App() {
   const [authConfirmPassword, setAuthConfirmPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
   const [showGprsConsole, setShowGprsConsole] = useState(false);
   const [gprsCommandInput, setGprsCommandInput] = useState('');
   const [continuousDiagnostics, setContinuousDiagnostics] = useState(false);
@@ -317,6 +318,10 @@ export default function App() {
   const [isRegisteringDevice, setIsRegisteringDevice] = useState(false);
   const [provisioningLogs, setProvisioningLogs] = useState([]);
   const [regDeviceMode, setRegDeviceMode] = useState('solaryan inverter');
+  const [regRemarks, setRegRemarks] = useState('');
+  const [configSourceType, setConfigSourceType] = useState('wizard');
+  const [configFileName, setConfigFileName] = useState('');
+  const [configFileContent, setConfigFileContent] = useState('');
   const [modbusStartReg, setModbusStartReg] = useState(3333);
   const [modbusCount, setModbusCount] = useState(100);
   const [modbusData, setModbusData] = useState([]);
@@ -1593,6 +1598,7 @@ Overall Status : ${overallStatus}
         body: JSON.stringify({
           imei: regImei,
           pcbNumber: regPcb,
+          remarks: regRemarks,
           password: regPass,
           routerSSID: regSsid,
           routerPassword: regWifiPass,
@@ -1611,6 +1617,7 @@ Overall Status : ${overallStatus}
         setRegInterval('1500');
         setRegDeviceNumber('1');
         setRegDeviceMode('solaryan inverter');
+        setRegRemarks('');
         setEditingDeviceImei(null);
         fetchRegisteredDevices();
       } else {
@@ -1637,6 +1644,7 @@ Overall Status : ${overallStatus}
         body: JSON.stringify({
           imei: device.imei,
           pcbNumber: device.pcbNumber || device.pcb || '',
+          remarks: device.remarks || '',
           password: device.password || 'admin_secure_gate',
           routerSSID: '',
           routerPassword: '',
@@ -2023,13 +2031,24 @@ Overall Status : ${overallStatus}
     addLogLine(`[CONFIG PARTITION] Compiling configuration for: ${inverterMeterType}...`);
 
     try {
-      const deviceConfigPayload = {
-        inverterMeterType,
-        busId: parseInt(busDataId) || 1,
-        baudRate: parseInt(busBaudRate) || 9600,
-        timestamp: new Date().toISOString()
-      };
-      const deviceConfigContent = JSON.stringify(deviceConfigPayload, null, 2);
+      let deviceConfigContent = '';
+      if (configSourceType === 'wizard') {
+        const deviceConfigPayload = {
+          inverterMeterType,
+          busId: parseInt(busDataId) || 1,
+          baudRate: parseInt(busBaudRate) || 9600,
+          timestamp: new Date().toISOString()
+        };
+        deviceConfigContent = JSON.stringify(deviceConfigPayload, null, 2);
+      } else {
+        if (!configFileContent) {
+          alert('Please import a configuration file first.');
+          setIsUploadingConfigPartition(false);
+          setConfigPartitionProgress(0);
+          return;
+        }
+        deviceConfigContent = configFileContent;
+      }
 
       const uuidConfigPayload = {
         uuid: uuidToken.trim() || 'nebula-secure-uuid',
@@ -2037,33 +2056,46 @@ Overall Status : ${overallStatus}
       };
       const uuidConfigContent = JSON.stringify(uuidConfigPayload, null, 2);
 
-      addLogLine(`[CONFIG PARTITION] Uploading /device_config.json to ESP32 config partition (SPIFFS)...`);
-      ipcRenderer.send('update-spiffs-file', {
-        ip: otaIp,
-        port: otaPort,
-        filename: '/device_config.json',
-        content: deviceConfigContent
-      });
-
-      setConfigPartitionProgress(40);
-
-      setTimeout(() => {
-        addLogLine(`[CONFIG PARTITION] Uploading /uuid.json (bus_id: ${busDataId}) to ESP32 config partition (SPIFFS)...`);
+      if (configSourceType === 'wizard') {
+        addLogLine(`[CONFIG PARTITION] Uploading /device_config.json to ESP32 config partition (SPIFFS)...`);
         ipcRenderer.send('update-spiffs-file', {
           ip: otaIp,
           port: otaPort,
-          filename: '/uuid.json',
-          content: uuidConfigContent
+          filename: '/device_config.json',
+          content: deviceConfigContent
         });
-        setConfigPartitionProgress(80);
+
+        setConfigPartitionProgress(40);
 
         setTimeout(() => {
-          setConfigPartitionProgress(100);
-          setIsUploadingConfigPartition(false);
-          addLogLine(`[CONFIG PARTITION SUCCESS] Partition configuration successfully uploaded and stored forever!`, 'success');
-          alert('Configuration uploaded to spiffs/psram config partition successfully! Reboot gateway to apply settings.');
-        }, 500);
-      }, 600);
+          addLogLine(`[CONFIG PARTITION] Uploading /uuid.json (bus_id: ${busDataId}) to ESP32 config partition (SPIFFS)...`);
+          ipcRenderer.send('update-spiffs-file', {
+            ip: otaIp,
+            port: otaPort,
+            filename: '/uuid.json',
+            content: uuidConfigContent
+          });
+          setConfigPartitionProgress(80);
+        }, 600);
+      } else {
+        const isJson = configSourceType === 'file_json';
+        const targetFilename = isJson ? '/device_config.json' : '/config.csv';
+        addLogLine(`[CONFIG PARTITION] Uploading custom file to ESP32 config partition (${targetFilename})...`);
+        ipcRenderer.send('update-spiffs-file', {
+          ip: otaIp,
+          port: otaPort,
+          filename: targetFilename,
+          content: deviceConfigContent
+        });
+        setConfigPartitionProgress(80);
+      }
+
+      setTimeout(() => {
+        setConfigPartitionProgress(100);
+        setIsUploadingConfigPartition(false);
+        addLogLine(`[CONFIG PARTITION SUCCESS] Partition configuration successfully uploaded and stored forever!`, 'success');
+        alert('Configuration uploaded to spiffs/psram config partition successfully! Reboot gateway to apply settings.');
+      }, 500);
 
     } catch (err) {
       setIsUploadingConfigPartition(false);
@@ -2071,6 +2103,31 @@ Overall Status : ${overallStatus}
       addLogLine(`[ERROR] Failed to compile or upload configuration: ${err.message}`, 'error');
       alert(`Upload failed: ${err.message}`);
     }
+  };
+
+  const handleImportConfigFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target.result;
+      setConfigFileContent(content);
+      setConfigFileName(file.name);
+      
+      const fileExt = file.name.split('.').pop().toLowerCase();
+      if (fileExt === 'json') {
+        setConfigSourceType('file_json');
+      } else if (fileExt === 'csv') {
+        setConfigSourceType('file_csv');
+      }
+      
+      addLogLine(`[GUI] Successfully imported local config file: ${file.name} (${file.size} bytes)`);
+    };
+    reader.onerror = (err) => {
+      alert(`Failed to read file: ${err.message}`);
+    };
+    reader.readAsText(file);
   };
 
   const fetchTroubleshootLogs = async () => {
@@ -2096,10 +2153,10 @@ Overall Status : ${overallStatus}
   };
 
   useEffect(() => {
-    if (activeTab === 'page-account') {
+    if (showAccountModal) {
       fetchTroubleshootLogs();
     }
-  }, [activeTab]);
+  }, [showAccountModal]);
 
   // Auto-scan: refresh port list then try connecting to each one in order
   // until a successful connection is established (useful when exact COM port is unknown)
@@ -2437,6 +2494,9 @@ Overall Status : ${overallStatus}
       next[index] = isChecked;
       return next;
     });
+    if (connection.type) {
+      sendControlCommand(isChecked ? `SIM_DI_ON:${index}` : `SIM_DI_OFF:${index}`);
+    }
   };
 
   const handleIntervalChange = (e) => {
@@ -3095,7 +3155,7 @@ Overall Status : ${overallStatus}
             </div> */}
 
             <div className="header-account-container">
-              <button className={`header-account-btn ${activeTab === 'page-account' ? 'active' : ''}`} onClick={() => setActiveTab('page-account')} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button className={`header-account-btn ${showAccountModal ? 'active' : ''}`} onClick={() => setShowAccountModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 👤 Account & Support
               </button>
             </div>
@@ -3602,21 +3662,21 @@ Overall Status : ${overallStatus}
                           <div className="diag-value" style={{ fontSize: '11px', fontWeight: 'bold' }}>{diagnostics[key]}</div>
                           {connection.type && diagnostics[key] !== 'TESTING' && (
                             key === 'gprs' ? (
-                              <div style={{ display: 'flex', gap: '6px', width: '100px', flexShrink: 0 }}>
+                              <div style={{ display: 'flex', gap: '6px', width: '130px', flexShrink: 0 }}>
                                 <button
                                   className="btn btn-secondary small"
-                                  style={{ width: '80%', margin: 0, padding: '2px 4px', fontSize: '10px', height: '22px', minWidth: 'auto', border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
+                                  style={{ flex: 1, margin: 0, padding: '2px 4px', fontSize: '10px', height: '22px', minWidth: 'auto', border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
                                   onClick={() => testModule(key)}
                                 >
                                   Test
                                 </button>
                                 <button
                                   className="btn btn-secondary small"
-                                  style={{ width: '20%', margin: 0, padding: 0, fontSize: '12px', height: '22px', minWidth: 'auto', border: '1px solid rgba(0, 240, 255, 0.4)', color: '#00f0ff', background: 'rgba(0, 240, 255, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                  style={{ flex: 1, margin: 0, padding: '2px 4px', fontSize: '10px', height: '22px', minWidth: 'auto', border: '1px solid rgba(0, 240, 255, 0.4)', color: '#00f0ff', background: 'rgba(0, 240, 255, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', cursor: 'pointer' }}
                                   onClick={() => setShowGprsConsole(true)}
                                   title="Open GPRS Modem Interactive AT Command Debug Console"
                                 >
-                                  📟
+                                  📟 Debug
                                 </button>
                               </div>
                             ) : (
@@ -4483,6 +4543,7 @@ Overall Status : ${overallStatus}
                           setEditingDeviceImei(null);
                           setRegImei('');
                           setRegPcb('');
+                          setRegRemarks('');
                           setRegPass('admin_secure_gate');
                           setRegSsid('');
                           setRegWifiPass('');
@@ -4498,9 +4559,9 @@ Overall Status : ${overallStatus}
               </div>
             </header>
 
-            <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
+            <div className="security-layout-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', width: '100%' }}>
               {/* Registry Form */}
-              <div className="glass-card" style={{ border: editingDeviceImei ? '1px solid rgba(0, 122, 255, 0.4)' : '1px solid var(--glass-border)', boxShadow: editingDeviceImei ? '0 0 20px rgba(0, 122, 255, 0.15)' : 'none' }}>
+              <div className="glass-card" style={{ flex: '0 0 calc(30% - 10px)', minWidth: '320px', border: editingDeviceImei ? '1px solid rgba(0, 122, 255, 0.4)' : '1px solid var(--glass-border)', boxShadow: editingDeviceImei ? '0 0 20px rgba(0, 122, 255, 0.15)' : 'none' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
                   <h3><span className="icon">📝</span> {editingDeviceImei ? 'Modify Device Profile' : 'Register Device Config'}</h3>
                   {editingDeviceImei ? (
@@ -4624,6 +4685,17 @@ Overall Status : ${overallStatus}
                     />
                   </div>
 
+                  <div className="input-group">
+                    <label>Remarks</label>
+                    <input
+                      type="text"
+                      value={regRemarks}
+                      onChange={(e) => setRegRemarks(e.target.value)}
+                      placeholder="e.g. Medha Station Gateway"
+                      disabled={isRegistryLocked}
+                    />
+                  </div>
+
                   <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
                     <button
                       type="submit"
@@ -4657,7 +4729,7 @@ Overall Status : ${overallStatus}
               </div>
 
               {/* Registered Devices List Table */}
-              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="glass-card" style={{ flex: '1 1 calc(70% - 10px)', minWidth: '450px', display: 'flex', flexDirection: 'column' }}>
                 <h3><span className="icon">📡</span> Registered Device Profiles ({registeredDevices.length})</h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
                   List of device configurations registered inside the MongoDB database.
@@ -4675,6 +4747,7 @@ Overall Status : ${overallStatus}
                           <th style={{ padding: '8px' }}>Device #</th>
                           <th style={{ padding: '8px' }}>IMEI / PCB Serial</th>
                           <th style={{ padding: '8px' }}>Mode</th>
+                          <th style={{ padding: '8px' }}>Remarks</th>
                           <th style={{ padding: '8px' }}>Net Status</th>
                           <th style={{ padding: '8px' }}>Target Address</th>
                           <th style={{ padding: '8px' }}>MAC</th>
@@ -4708,6 +4781,9 @@ Overall Status : ${overallStatus}
                               </td>
                               <td style={{ padding: '8px', fontSize: '11px', textTransform: 'capitalize' }}>
                                 <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold' }}>{dev.deviceMode || 'solaryan inverter'}</span>
+                              </td>
+                              <td style={{ padding: '8px', fontSize: '11px', color: 'var(--text-dim)' }}>
+                                {dev.remarks || '--'}
                               </td>
                               <td style={{ padding: '8px' }}>
                                 {isFound ? (
@@ -4796,6 +4872,7 @@ Overall Status : ${overallStatus}
                                       setRegInterval(String(dev.telemetryInterval || 1500));
                                       setRegDeviceNumber(String(dev.deviceNumber || 1));
                                       setRegDeviceMode(dev.deviceMode || 'solaryan inverter');
+                                      setRegRemarks(dev.remarks || '');
                                       setEditingDeviceImei(dev.imei);
                                     }}
                                   >
@@ -5758,19 +5835,67 @@ Overall Status : ${overallStatus}
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '20px' }}>
                   <div className="input-group">
-                    <label>Selected Device Layout</label>
+                    <label>Configuration Source</label>
                     <select
-                      value={inverterMeterType}
-                      onChange={(e) => setInverterMeterType(e.target.value)}
+                      value={configSourceType}
+                      onChange={(e) => {
+                        setConfigSourceType(e.target.value);
+                        if (e.target.value === 'wizard') {
+                          setConfigFileName('');
+                          setConfigFileContent('');
+                        }
+                      }}
                       style={{ width: '100%', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
                     >
-                      <option value="solar_yan_inverter_single">Solar Yan Inverter (Single)</option>
-                      <option value="inverter_single_meter_single">Inverter (Single) + Meter (Single)</option>
-                      <option value="inverter_3phase_meter_single">Inverter (3-Phase) + Meter (Single)</option>
-                      <option value="inverter_3phase_meter_3phase">Inverter (3-Phase) + Meter (3-Phase)</option>
-                      <option value="dlms_meter">DLMS Meter</option>
+                      <option value="wizard">Predefined Layout (Wizard)</option>
+                      <option value="file_json">Custom JSON File</option>
+                      <option value="file_csv">Custom CSV File</option>
                     </select>
                   </div>
+
+                  {configSourceType === 'wizard' ? (
+                    <div className="input-group">
+                      <label>Selected Device Layout</label>
+                      <select
+                        value={inverterMeterType}
+                        onChange={(e) => setInverterMeterType(e.target.value)}
+                        style={{ width: '100%', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
+                      >
+                        <option value="solar_yan_inverter_single">Solar Yan Inverter (Single)</option>
+                        <option value="inverter_single_meter_single">Inverter (Single) + Meter (Single)</option>
+                        <option value="inverter_3phase_meter_single">Inverter (3-Phase) + Meter (Single)</option>
+                        <option value="inverter_3phase_meter_3phase">Inverter (3-Phase) + Meter (3-Phase)</option>
+                        <option value="dlms_meter">DLMS Meter</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="input-group" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                      <label>Import Configuration File</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => document.getElementById('config-file-importer').click()}
+                          style={{ margin: 0, padding: '8px 14px', fontSize: '11px', height: '36px' }}
+                        >
+                          📂 Import File
+                        </button>
+                        <input
+                          type="file"
+                          id="config-file-importer"
+                          accept={configSourceType === 'file_json' ? '.json' : '.csv'}
+                          onChange={handleImportConfigFile}
+                          style={{ display: 'none' }}
+                        />
+                        {configFileName ? (
+                          <span style={{ fontSize: '11px', color: 'var(--accent-emerald)', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }} title={configFileName}>
+                            ✓ {configFileName}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '10px', color: 'var(--text-dim)', fontStyle: 'italic' }}>No file selected</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="input-group">
                     <label>Device Bus ID (Modbus Slave ID)</label>
@@ -6988,7 +7113,7 @@ Overall Status : ${overallStatus}
           </section>
 
           {/* ================= VIEW 8: ACCOUNT & TROUBLESHOOT ================= */}
-          <section id="page-account" className={`page-view ${activeTab === 'page-account' ? 'active' : ''}`}>
+          <section id="page-account" className={`page-view ${activeTab === 'page-account' ? 'active' : ''}`} style={{ display: 'none' }}>
             <header className="view-header">
               <div>
                 <h1>Account & Troubleshoot Center</h1>
@@ -7653,6 +7778,209 @@ Overall Status : ${overallStatus}
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+      {showAccountModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(3, 0, 10, 0.75)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }} onClick={() => setShowAccountModal(false)}>
+          <div className="glass-card" style={{
+            width: '640px',
+            maxWidth: '90%',
+            maxHeight: '85vh',
+            background: 'var(--grad-glass)',
+            border: '1px solid var(--glass-border)',
+            borderRadius: '20px',
+            boxShadow: 'var(--shadow-card), 0 0 30px rgba(0, 240, 255, 0.15)',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            position: 'relative',
+            padding: '24px'
+          }} onClick={(e) => e.stopPropagation()}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', color: 'white' }}>
+                👤 Account & Support Help Desk
+              </h3>
+              <button 
+                onClick={() => setShowAccountModal(false)} 
+                style={{ 
+                  background: 'none', 
+                  border: 'none', 
+                  color: 'var(--text-dim)', 
+                  fontSize: '18px', 
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {!isLoggedIn ? (
+              <div className="glass-card auth-card" style={{ border: 'none', background: 'none', boxShadow: 'none', padding: 0 }}>
+                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                  <span style={{ fontSize: '40px' }}>🔑</span>
+                  <h2 style={{ color: 'white', marginTop: '10px', fontSize: '18px' }}>Admin Authorization</h2>
+                  <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Authenticate with admin credentials to unlock profiles</p>
+                </div>
+
+                {authError && (
+                  <div style={{ padding: '10px', background: 'rgba(255, 51, 102, 0.1)', border: '1px solid rgba(255, 51, 102, 0.3)', color: '#ff3366', borderRadius: '6px', fontSize: '12px', marginBottom: '15px', textAlign: 'center' }}>
+                    ⚠️ {authError}
+                  </div>
+                )}
+
+                <div className="input-group">
+                  <label>Username</label>
+                  <input type="text" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} placeholder="Enter admin username" />
+                </div>
+
+                {authMode === 'signup' && (
+                  <div className="input-group">
+                    <label>Email Address</label>
+                    <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="admin@domain.com" />
+                  </div>
+                )}
+
+                <div className="input-group">
+                  <label>Password</label>
+                  <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••••••" />
+                </div>
+
+                {authMode === 'signup' && (
+                  <div className="input-group">
+                    <label>Confirm Password</label>
+                    <input type="password" value={authConfirmPassword} onChange={(e) => setAuthConfirmPassword(e.target.value)} placeholder="••••••••••••" />
+                  </div>
+                )}
+
+                <button className="btn btn-accent" onClick={handleAuth} style={{ width: '100%', marginTop: '15px' }}>
+                  {authMode === 'login' ? 'Authenticate Session' : 'Register Administrator'}
+                </button>
+
+                <div style={{ marginTop: '15px', textAlign: 'center', fontSize: '12px' }}>
+                  <a href="#" onClick={(e) => { e.preventDefault(); setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }} style={{ color: 'var(--accent-blue)', textDecoration: 'underline' }}>
+                    {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Log In"}
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '15px' }}>
+                  {/* Admin Profile */}
+                  <div className="glass-card" style={{ padding: '16px' }}>
+                    <h4 style={{ color: 'white', marginBottom: '10px', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>👤 Admin Profile</h4>
+                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px', fontSize: '11px' }}>
+                      <div>
+                        <span style={{ color: 'var(--accent-pink)', textTransform: 'uppercase', fontSize: '8px', display: 'block' }}>Username</span>
+                        <strong>Administrator</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--accent-pink)', textTransform: 'uppercase', fontSize: '8px', display: 'block' }}>Status</span>
+                        <strong style={{ color: 'var(--accent-emerald)' }}>Connected Offline</strong>
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        localStorage.removeItem('isLoggedIn');
+                        setIsLoggedIn(false);
+                        addLogLine('[GUI] Logged out.', 'system');
+                      }}
+                      style={{ width: '100%', borderColor: 'rgba(239, 68, 68, 0.4)', color: '#ef4444', background: 'rgba(239, 68, 68, 0.05)', padding: '6px 12px', fontSize: '11px', margin: 0 }}
+                    >
+                      🚪 Log Out Session
+                    </button>
+                  </div>
+
+                  {/* GitHub Sync */}
+                  <div className="glass-card" style={{ padding: '16px' }}>
+                    <h4 style={{ color: 'white', marginBottom: '10px', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🐙 GitHub Sync</h4>
+                    <div className="input-group" style={{ marginBottom: '6px' }}>
+                      <label style={{ fontSize: '8px' }}>Repository URL</label>
+                      <input
+                        type="text"
+                        value={gitHubRepoUrlInput || ''}
+                        onChange={(e) => setGitHubRepoUrlInput(e.target.value)}
+                        placeholder="https://github.com/Username/Repo"
+                        style={{ padding: '6px 10px', fontSize: '11px', height: '28px' }}
+                      />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: '10px' }}>
+                      <label style={{ fontSize: '8px' }}>Branch</label>
+                      <input
+                        type="text"
+                        value={gitHubRepoBranchInput || ''}
+                        onChange={(e) => setGitHubRepoBranchInput(e.target.value)}
+                        placeholder="main"
+                        style={{ padding: '6px 10px', fontSize: '11px', height: '28px' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        className="btn btn-primary"
+                        onClick={handlePullGithubXml}
+                        disabled={isSyncingXml}
+                        style={{ flex: 1, padding: '6px 8px', fontSize: '11px', margin: 0, height: '28px' }}
+                      >
+                        {isSyncingXml ? 'Syncing...' : 'XML Pull'}
+                      </button>
+                      <button
+                        className="btn btn-accent"
+                        onClick={handleGitHubSync}
+                        disabled={isGitHubSyncing}
+                        style={{ flex: 1, padding: '6px 8px', fontSize: '11px', margin: 0, height: '28px' }}
+                      >
+                        {isGitHubSyncing ? 'Syncing...' : 'Code Pull'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Revocation Logs */}
+                <div className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h4 style={{ color: 'white', margin: 0, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🛠️ Troubleshoot Logs</h4>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button className="btn btn-secondary small" onClick={fetchTroubleshootLogs} style={{ margin: 0, height: '22px', padding: '0 8px', fontSize: '10px' }}>
+                        🔄 Refresh
+                      </button>
+                      <button className="btn btn-danger small" onClick={clearTroubleshootLogs} style={{ margin: 0, height: '22px', padding: '0 8px', fontSize: '10px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
+                        🗑️ Clear
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ maxHeight: '150px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '8px', borderRadius: '6px', border: '1px solid var(--glass-border)', fontSize: '11px', fontFamily: 'monospace' }}>
+                    {troubleshootLogs.length === 0 ? (
+                      <div style={{ padding: '20px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
+                        No troubleshooting reports found.
+                      </div>
+                    ) : (
+                      troubleshootLogs.map((log, idx) => (
+                        <div key={idx} style={{ marginBottom: '6px', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '4px' }}>
+                          <span style={{ color: 'var(--accent-pink)' }}>[{new Date(log.timestamp).toLocaleTimeString()}]</span>{' '}
+                          <span style={{ color: 'var(--accent-blue)' }}>{log.event || log.type}</span>: {log.details || log.message}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

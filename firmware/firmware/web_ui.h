@@ -729,7 +729,7 @@ footer a:hover{text-decoration:underline}
 <footer>
   <div class="footer-grid">
     <div class="footer-item">ESP32-S3 Gateway Diagnostic v4.0</div>
-    <div class="footer-item"><div class="dot"></div>WiFi: <strong style="color:var(--text);margin-left:4px">Esp32_Channel_Network's</strong></div>
+    <div class="footer-item"><div class="dot"></div>WiFi: <strong style="color:var(--text);margin-left:4px">RMS-FIRMWARE-A530</strong></div>
     <div class="footer-item"><div class="dot"></div>Pass: <strong style="color:var(--text);margin-left:4px">esp32</strong></div>
     <div class="footer-item"><div class="dot"></div>IP: <a href="http://192.168.4.1">192.168.4.1</a></div>
   </div>

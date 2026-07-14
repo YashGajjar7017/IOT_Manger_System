@@ -129,8 +129,9 @@ uint32_t currentGprsBaud = GPRS_BAUD_RATE;
 // ============================================================
 //  WI-FI  (Diagnostic / Web dashboard AP)
 // ============================================================
-#define AP_SSID "Esp32_Channel_Network's"
+#define AP_SSID "RMS-FIRMWARE-A530"
 #define AP_PASS "esp32"
+String customApSSID = "RMS-FIRMWARE-A530";
 
 // ============================================================
 //  TEST IDs & STATUSES
@@ -317,18 +318,8 @@ void setResult(TestID id, TestStatus status, const String &detail) {
 }
 
 void enableKeepAlive(WiFiClient& client) {
-  int fd = client.fd();
-  if (fd >= 0) {
-    int keepAlive = 1;     // Enable keep-alive
-    int keepIdle = 10;     // 10 seconds idle before sending first probe
-    int keepInterval = 5;  // 5 seconds between probes
-    int keepCount = 3;     // 3 failed probes before dropping connection
-
-    setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(keepAlive));
-    setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(keepIdle));
-    setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(keepInterval));
-    setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(keepCount));
-  }
+  int keepAlive = 1;     // Enable keep-alive
+  client.setSocketOption(SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(keepAlive));
 }
 
 String testStatusJson(TestID id) {
@@ -1108,7 +1099,7 @@ void testAP() {
   logLn("ACCESS POINT STATUS CHECK");
   IPAddress apIP = WiFi.softAPIP();
   if (apIP[0] != 0) {
-    String msg = "AP Active | SSID: " + String(AP_SSID) + " | IP: " + apIP.toString();
+    String msg = "AP Active | SSID: " + customApSSID + " | IP: " + apIP.toString();
     logLn("[SUCCESS] " + msg);
     setResult(T_AP, S_PASS, msg);
   } else {
@@ -1760,7 +1751,7 @@ void sendBootSuccessPayload() {
   for (int i = 0; i < DI_COUNT; i++) {
     if (i)
       diagJson += ",";
-    diagJson += (digitalRead(DI_PINS[i]) == HIGH) ? "true" : "false";
+    diagJson += (digitalRead(DI_PINS[i]) == LOW) ? "true" : "false";
   }
   diagJson += "],";
   diagJson += "\"switch_pin\":" +
@@ -2125,7 +2116,7 @@ void setupHTTPServer() {
     json += "\"imei\":\"" + deviceIMEI + "\",";
     json += "\"mac\":\"" + deviceMAC + "\",";
     json += "\"ssid\":\"" + routerSSID + "\",";
-    json += "\"ap_ssid\":\"" + String(AP_SSID) + "\",";
+    json += "\"ap_ssid\":\"" + customApSSID + "\",";
     json += "\"ap_clients\":" + String(WiFi.softAPgetStationNum()) + ",";
     json += "\"ap_clients_list\":" + getSoftAPStationsJson() + ",";
     json +=
@@ -2572,8 +2563,16 @@ void setupWiFi() {
 
   WiFi.onEvent(onWiFiAPEvent);
   WiFi.mode(WIFI_AP);
+  WiFi.setHostname("RMS-FIRMWARE-A530");
   WiFi.setAutoReconnect(false);
   deviceMAC = WiFi.macAddress();
+
+  String macClean = deviceMAC;
+  macClean.replace(":", "");
+  if (macClean.length() >= 6) {
+    customApSSID = "RMS-FIRMWARE-" + macClean.substring(macClean.length() - 6);
+    customApSSID.toUpperCase();
+  }
 
   // Configure SoftAP to match MERN/Electron expected IP subnet 192.168.0.x
   IPAddress local_IP(192, 168, 0, 1);
@@ -2581,11 +2580,11 @@ void setupWiFi() {
   IPAddress subnet(255, 255, 255, 0);
   WiFi.softAPConfig(local_IP, gateway, subnet);
 
-  // SoftAP — use fixed diagnostic SSID for easy web dashboard access
-  WiFi.softAP(AP_SSID, AP_PASS);
+  // SoftAP — use dynamic unique SSID
+  WiFi.softAP(customApSSID.c_str(), AP_PASS);
   IPAddress apIP = WiFi.softAPIP();
 
-  logFmt("[WIFI AP] SSID : %s\n", AP_SSID);
+  logFmt("[WIFI AP] SSID : %s\n", customApSSID.c_str());
   logFmt("[WIFI AP] Pass : %s\n", AP_PASS);
   logFmt("[WIFI AP] IP   : %s\n", apIP.toString().c_str());
   logFmt("[WIFI AP] MAC  : %s\n", deviceMAC.c_str());
@@ -2667,6 +2666,19 @@ void processCommand(String cmd) {
     sendBootSuccessPayload();
   } else if (cmd == "RE_DIAGNOSE") {
     pendingAll = true;
+  } else if (cmd.startsWith("SIM_DI_ON:")) {
+    int pinIndex = cmd.substring(10).toInt();
+    if (pinIndex >= 0 && pinIndex < DI_COUNT) {
+      pinMode(DI_PINS[pinIndex], OUTPUT);
+      digitalWrite(DI_PINS[pinIndex], LOW);
+      logFmt("[CMD] SIM_DI_ON: Shorted DI%d (GPIO%d) to GND\n", pinIndex + 1, DI_PINS[pinIndex]);
+    }
+  } else if (cmd.startsWith("SIM_DI_OFF:")) {
+    int pinIndex = cmd.substring(11).toInt();
+    if (pinIndex >= 0 && pinIndex < DI_COUNT) {
+      pinMode(DI_PINS[pinIndex], INPUT_PULLUP);
+      logFmt("[CMD] SIM_DI_OFF: Released DI%d (GPIO%d) to HIGH\n", pinIndex + 1, DI_PINS[pinIndex]);
+    }
   } else if (cmd == "RELAY_1_ON") {
     relay1State = true;
     digitalWrite(RELAY_1_PIN, HIGH);
@@ -3174,6 +3186,11 @@ void setup() {
   pinMode(RELAY_2_PIN, OUTPUT);
   digitalWrite(RELAY_2_PIN, LOW);
 
+  // Initialize DI pins
+  for (int i = 0; i < DI_COUNT; i++) {
+    pinMode(DI_PINS[i], INPUT_PULLUP);
+  }
+
   // Serial monitor
   Serial.begin(115200);
   delay(500);
@@ -3253,7 +3270,7 @@ void setup() {
   logLine();
   logLn("Ready!");
   logFmt("  → PRISM Dashboard : http://192.168.0.1\n");
-  logFmt("  → WiFi SSID       : %s\n", AP_SSID);
+  logFmt("  → WiFi SSID       : %s\n", customApSSID.c_str());
   logFmt("  → WiFi Pass       : %s\n", AP_PASS);
   logFmt("  → OTA (Electron)  : port 8000\n");
   logFmt("  → Certs OTA       : port 500\n");

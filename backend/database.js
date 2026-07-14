@@ -327,6 +327,7 @@ const DeviceIdentificationSchema = new mongoose.Schema({
   connectionType: String,
   target: String,
   imei: { type: String, default: '' },
+  remarks: { type: String, default: '' },
   mac: { type: String, default: '' },
   uuid: { type: String, default: '' },
   busId: { type: Number, default: 1 },
@@ -566,6 +567,7 @@ async function registerOrUpdateDevice(data) {
       updatedObj = {
         ...localDevices[foundIdx],
         pcbNumber: data.pcbNumber || localDevices[foundIdx].pcbNumber,
+        remarks: data.remarks !== undefined ? data.remarks : localDevices[foundIdx].remarks,
         connectionType: data.connectionType || localDevices[foundIdx].connectionType,
         target: data.target || localDevices[foundIdx].target,
         mac: data.mac || localDevices[foundIdx].mac,
@@ -609,6 +611,7 @@ async function registerOrUpdateDevice(data) {
       updatedObj = {
         imei: data.imei,
         pcbNumber: data.pcbNumber || '',
+        remarks: data.remarks || '',
         connectionType: data.connectionType || 'unknown',
         target: data.target || '',
         mac: data.mac || '',
@@ -684,6 +687,7 @@ async function registerOrUpdateDevice(data) {
       }
 
       if (doc) {
+        doc.remarks = data.remarks !== undefined ? data.remarks : doc.remarks;
         doc.pcbNumber = data.pcbNumber || doc.pcbNumber;
         doc.connectionType = data.connectionType || doc.connectionType;
         doc.target = data.target || doc.target;
@@ -732,6 +736,7 @@ async function registerOrUpdateDevice(data) {
         doc = await DeviceIdentificationModel.create({
           imei: data.imei,
           pcbNumber: data.pcbNumber || '',
+          remarks: data.remarks || '',
           connectionType: data.connectionType || 'unknown',
           target: data.target || '',
           mac: data.mac || '',
