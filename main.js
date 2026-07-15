@@ -2343,6 +2343,21 @@ ipcMain.handle('query-modbus-tcp', async (event, { ip, port, startReg, count, sl
       }
     }
 
+    try {
+      const outputData = {
+        ip: ip,
+        start_register: startReg,
+        end_register: endReg,
+        register_type: regType,
+        timestamp: new Date().toISOString(),
+        values: values32
+      };
+      fs.writeFileSync('registers_2.json', JSON.stringify(outputData, null, 2));
+      console.log(`[MODBUS] Saved ${Object.keys(values32).length} registers to registers_2.json`);
+    } catch (e) {
+      console.error('[MODBUS] Failed to write registers_2.json:', e);
+    }
+
     return { success: true, values: values32, raw16: values };
   } catch (err) {
     return { success: false, error: err.message };

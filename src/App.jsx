@@ -260,7 +260,7 @@ export default function App() {
   const [modbusPort, setModbusPort] = useState('502');
   const [modbusSlaveId, setModbusSlaveId] = useState('1');
   const [modbusRegType, setModbusRegType] = useState('holding');
-  const [modbusMode, setModbusMode] = useState('gateway');
+  const [modbusMode, setModbusMode] = useState('direct');
   const [modbusDisplay32, setModbusDisplay32] = useState(true);
 
   const [showGprsConsole, setShowGprsConsole] = useState(false);
@@ -340,8 +340,8 @@ export default function App() {
   const [configSourceType, setConfigSourceType] = useState('wizard');
   const [configFileName, setConfigFileName] = useState('');
   const [configFileContent, setConfigFileContent] = useState('');
-  const [modbusStartReg, setModbusStartReg] = useState(3333);
-  const [modbusCount, setModbusCount] = useState(100);
+  const [modbusStartReg, setModbusStartReg] = useState(2000);
+  const [modbusCount, setModbusCount] = useState(4001);
   const [modbusData, setModbusData] = useState([]);
   const [modbusData32, setModbusData32] = useState({});
   const [isReadingModbus, setIsReadingModbus] = useState(false);
@@ -437,8 +437,7 @@ export default function App() {
   // Dynamic Theme, Font, and GitHub Integration States
   // Default to the 1st theme 'quantum-indigo' on startup
   const [currentTheme, setCurrentTheme] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    return saved && saved !== 'minecraft' ? saved : 'quantum-indigo';
+    return localStorage.getItem('theme') || 'quantum-indigo';
   });
   const [currentFont, setCurrentFont] = useState(() => localStorage.getItem('font') || 'outfit');
   const starNovaStars = useMemo(() => Array.from({ length: 24 }, (_, index) => ({
@@ -3267,13 +3266,14 @@ Overall Status : ${overallStatus}
               <span>Storage</span>
             </button>
 
-            <button className={`header-nav-item ${(activeTab === 'page-settings' || activeTab === 'settings') ? 'active' : ''}`} onClick={() => setActiveTab('page-settings')}>
+            <button className={`header-nav-item ${showAccountModal ? 'active' : ''}`} onClick={() => { setAccountModalActiveTab('profile'); setShowAccountModal(true); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="3" />
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
               <span>Settings</span>
             </button>
+
           </nav>
 
           <div className="header-right">
@@ -3293,9 +3293,10 @@ Overall Status : ${overallStatus}
                 }}
                 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
               >
-                👤 Account & Settings
+                👤 Settings
               </button>
-              {showAccountModal && (
+              {/* Modal overlay moved to root level to avoid stacking context/clipping issues */}
+              {false && (
                 <div
                   className="gprs-modal-overlay"
                   style={{
@@ -5208,11 +5209,11 @@ Overall Status : ${overallStatus}
                   </div>
 
                   <div style={{ flex: 1, minWidth: '150px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Number of Registers (Max 125)</label>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Number of Registers {modbusMode === 'gateway' ? '(Max 125)' : '(Chunked)'}</label>
                     <input
                       type="number"
                       value={modbusCount}
-                      onChange={(e) => setModbusCount(Math.min(125, Math.max(1, parseInt(e.target.value) || 1)))}
+                      onChange={(e) => setModbusCount(modbusMode === 'gateway' ? Math.min(125, Math.max(1, parseInt(e.target.value) || 1)) : Math.max(1, parseInt(e.target.value) || 1))}
                       placeholder="e.g. 100"
                       style={{
                         width: '100%',
@@ -8363,209 +8364,808 @@ Overall Status : ${overallStatus}
         </div>
       )}
 
-      {/* {showAccountModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(3, 0, 10, 0.75)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          zIndex: 9999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }} onClick={() => setShowAccountModal(false)}>
-          <div className="glass-card" style={{
-            width: '640px',
-            maxWidth: '90%',
-            maxHeight: '85vh',
-            background: 'var(--grad-glass)',
-            border: '1px solid var(--glass-border)',
-            borderRadius: '20px',
-            boxShadow: 'var(--shadow-card), 0 0 30px rgba(0, 240, 255, 0.15)',
-            overflowY: 'auto',
+      {showAccountModal && (
+        <div
+          className="gprs-modal-overlay"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(3, 2, 8, 0.85)',
+            backdropFilter: 'blur(12px)',
             display: 'flex',
-            flexDirection: 'column',
-            position: 'relative',
-            padding: '24px'
-          }} onClick={(e) => e.stopPropagation()}>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', color: 'white' }}>
-                👤 Account & Support Help Desk
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10000
+          }}
+          onClick={() => setShowAccountModal(false)}
+        >
+          <div
+            style={{
+              width: '50vw',
+              minWidth: '850px',
+              height: '80vh',
+              minHeight: '550px',
+              background: '#0e0b1e', // Solid premium dark background
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '16px',
+              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7), 0 0 40px rgba(0, 240, 255, 0.15)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              textAlign: 'left'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '18px 24px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                background: 'rgba(255, 255, 255, 0.01)'
+              }}
+            >
+              <h3 style={{ margin: 0, fontSize: '15px', color: 'white', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+                👤 System Account & Settings Manager
               </h3>
-              <button 
-                onClick={() => setShowAccountModal(false)} 
-                style={{ 
-                  background: 'none', 
-                  border: 'none', 
-                  color: 'var(--text-dim)', 
-                  fontSize: '18px', 
+              <button
+                onClick={() => setShowAccountModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-dim)',
+                  fontSize: '24px',
                   cursor: 'pointer',
-                  padding: '4px'
+                  padding: '4px',
+                  lineHeight: '1'
                 }}
               >
-                ✕
+                &times;
               </button>
             </div>
 
-            {!isLoggedIn ? (
-              <div className="glass-card auth-card" style={{ border: 'none', background: 'none', boxShadow: 'none', padding: 0 }}>
-                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                  <span style={{ fontSize: '40px' }}>🔑</span>
-                  <h2 style={{ color: 'white', marginTop: '10px', fontSize: '18px' }}>Admin Authorization</h2>
-                  <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Authenticate with admin credentials to unlock profiles</p>
-                </div>
-
-                {authError && (
-                  <div style={{ padding: '10px', background: 'rgba(255, 51, 102, 0.1)', border: '1px solid rgba(255, 51, 102, 0.3)', color: '#ff3366', borderRadius: '6px', fontSize: '12px', marginBottom: '15px', textAlign: 'center' }}>
-                    ⚠️ {authError}
-                  </div>
-                )}
-
-                <div className="input-group">
-                  <label>Username</label>
-                  <input type="text" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} placeholder="Enter admin username" />
-                </div>
-
-                {authMode === 'signup' && (
-                  <div className="input-group">
-                    <label>Email Address</label>
-                    <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="admin@domain.com" />
-                  </div>
-                )}
-
-                <div className="input-group">
-                  <label>Password</label>
-                  <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••••••" />
-                </div>
-
-                {authMode === 'signup' && (
-                  <div className="input-group">
-                    <label>Confirm Password</label>
-                    <input type="password" value={authConfirmPassword} onChange={(e) => setAuthConfirmPassword(e.target.value)} placeholder="••••••••••••" />
-                  </div>
-                )}
-
-                <button className="btn btn-accent" onClick={handleAuth} style={{ width: '100%', marginTop: '15px' }}>
-                  {authMode === 'login' ? 'Authenticate Session' : 'Register Administrator'}
+            {/* Modal Body Grid */}
+            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+              {/* Left Navigation Sidebar */}
+              <div
+                style={{
+                  width: '230px',
+                  borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+                  background: 'rgba(0, 0, 0, 0.15)',
+                  padding: '15px 10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  overflowY: 'auto'
+                }}
+              >
+                <button
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 12px',
+                    background: accountModalActiveTab === 'profile' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: accountModalActiveTab === 'profile' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    outline: 'none',
+                    transition: 'all 0.2s'
+                  }}
+                  onClick={() => setAccountModalActiveTab('profile')}
+                >
+                  👤 Admin Session Info
                 </button>
-
-                <div style={{ marginTop: '15px', textAlign: 'center', fontSize: '12px' }}>
-                  <a href="#" onClick={(e) => { e.preventDefault(); setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }} style={{ color: 'var(--accent-blue)', textDecoration: 'underline' }}>
-                    {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Log In"}
-                  </a>
-                </div>
+                <button
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 12px',
+                    background: accountModalActiveTab === 'db-settings' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: accountModalActiveTab === 'db-settings' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    outline: 'none',
+                    transition: 'all 0.2s'
+                  }}
+                  onClick={() => setAccountModalActiveTab('db-settings')}
+                >
+                  📂 Database Settings
+                </button>
+                <button
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 12px',
+                    background: accountModalActiveTab === 'theme-styling' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: accountModalActiveTab === 'theme-styling' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    outline: 'none',
+                    transition: 'all 0.2s'
+                  }}
+                  onClick={() => setAccountModalActiveTab('theme-styling')}
+                >
+                  🎨 Theme & Styling
+                </button>
+                <button
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 12px',
+                    background: accountModalActiveTab === 'ports-baud' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: accountModalActiveTab === 'ports-baud' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    outline: 'none',
+                    transition: 'all 0.2s'
+                  }}
+                  onClick={() => setAccountModalActiveTab('ports-baud')}
+                >
+                  🔌 Communication Ports
+                </button>
+                <button
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 12px',
+                    background: accountModalActiveTab === 'github-oauth' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: accountModalActiveTab === 'github-oauth' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    outline: 'none',
+                    transition: 'all 0.2s'
+                  }}
+                  onClick={() => setAccountModalActiveTab('github-oauth')}
+                >
+                  🐙 GitHub Integration
+                </button>
+                <button
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 12px',
+                    background: accountModalActiveTab === 'performance-os' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: accountModalActiveTab === 'performance-os' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    outline: 'none',
+                    transition: 'all 0.2s'
+                  }}
+                  onClick={() => setAccountModalActiveTab('performance-os')}
+                >
+                  ⚡ Performance & OS
+                </button>
+                <button
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 12px',
+                    background: accountModalActiveTab === 'github-sync' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: accountModalActiveTab === 'github-sync' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    outline: 'none',
+                    transition: 'all 0.2s'
+                  }}
+                  onClick={() => setAccountModalActiveTab('github-sync')}
+                >
+                  📂 GitHub File Sync
+                </button>
+                <button
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 12px',
+                    background: accountModalActiveTab === 'revocation-logs' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: accountModalActiveTab === 'revocation-logs' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    outline: 'none',
+                    transition: 'all 0.2s'
+                  }}
+                  onClick={() => setAccountModalActiveTab('revocation-logs')}
+                >
+                  🛠️ Troubleshoot Logs
+                </button>
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '15px' }}>
-                  {/* Admin Profile */}
-      {/* <div className="glass-card" style={{ padding: '16px' }}>
-                    <h4 style={{ color: 'white', marginBottom: '10px', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>👤 Admin Profile</h4>
-                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px', fontSize: '11px' }}>
-                      <div>
-                        <span style={{ color: 'var(--accent-pink)', textTransform: 'uppercase', fontSize: '8px', display: 'block' }}>Username</span>
-                        <strong>Administrator</strong>
+
+              {/* Right Panel Scrollable Content */}
+              <div style={{ flex: 1, padding: '24px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.05)' }}>
+                {/* Profile Tab */}
+                {accountModalActiveTab === 'profile' && (
+                  <div>
+                    {!isLoggedIn ? (
+                      <div className="glass-card auth-card" style={{ maxWidth: '400px', margin: '20px auto', border: '1px solid var(--glass-border)', padding: '20px' }}>
+                        <div style={{ textAlign: 'center', marginBottom: '15px' }}>
+                          <span style={{ fontSize: '32px' }}>🔑</span>
+                          <h4 style={{ color: 'white', margin: '10px 0 5px 0', fontSize: '15px' }}>Admin Authorization</h4>
+                          <p style={{ fontSize: '12px', color: 'var(--text-dim)', margin: 0 }}>Unlock profiles & settings</p>
+                        </div>
+
+                        {authError && (
+                          <div style={{ padding: '8px', background: 'rgba(255, 51, 102, 0.1)', border: '1px solid rgba(255, 51, 102, 0.3)', color: '#ff3366', borderRadius: '6px', fontSize: '12px', marginBottom: '12px', textAlign: 'center' }}>
+                            ⚠️ {authError}
+                          </div>
+                        )}
+
+                        <div className="input-group">
+                          <label>Username</label>
+                          <input type="text" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} placeholder="Enter admin username" />
+                        </div>
+
+                        {authMode === 'signup' && (
+                          <div className="input-group">
+                            <label>Email Address</label>
+                            <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="admin@domain.com" />
+                          </div>
+                        )}
+
+                        <div className="input-group">
+                          <label>Password</label>
+                          <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••••••" />
+                        </div>
+
+                        {authMode === 'signup' && (
+                          <div className="input-group">
+                            <label>Confirm Password</label>
+                            <input type="password" value={authConfirmPassword} onChange={(e) => setAuthConfirmPassword(e.target.value)} placeholder="••••••••••••" />
+                          </div>
+                        )}
+
+                        <button className="btn btn-accent" onClick={handleAuth} style={{ width: '100%', marginTop: '15px' }}>
+                          {authMode === 'login' ? 'Authenticate Session' : 'Register Administrator'}
+                        </button>
+
+                        <div style={{ marginTop: '12px', textAlign: 'center', fontSize: '12px' }}>
+                          <a href="#" onClick={(e) => { e.preventDefault(); setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }} style={{ color: 'var(--accent-blue)', textDecoration: 'underline' }}>
+                            {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Log In"}
+                          </a>
+                        </div>
                       </div>
-                      <div>
-                        <span style={{ color: 'var(--accent-pink)', textTransform: 'uppercase', fontSize: '8px', display: 'block' }}>Status</span>
-                        <strong style={{ color: 'var(--accent-emerald)' }}>Connected Offline</strong>
+                    ) : (
+                      <div className="glass-card" style={{ padding: '20px' }}>
+                        <h3>👤 Admin Profile</h3>
+                        <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>Active administrator session details:</p>
+
+                        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '8px', border: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+                          <div>
+                            <span style={{ color: 'var(--accent-pink)', textTransform: 'uppercase', fontSize: '9px', display: 'block', fontWeight: 'bold' }}>Active User</span>
+                            <strong style={{ fontSize: '14px', color: 'white' }}>Administrator</strong>
+                          </div>
+                          <div>
+                            <span style={{ color: 'var(--accent-pink)', textTransform: 'uppercase', fontSize: '9px', display: 'block', fontWeight: 'bold' }}>Status</span>
+                            <strong style={{ fontSize: '14px', color: 'var(--accent-emerald)' }}>Connected & Authenticated</strong>
+                          </div>
+                        </div>
+
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => {
+                            localStorage.removeItem('isLoggedIn');
+                            setIsLoggedIn(false);
+                            addLogLine('[GUI] Logged out.', 'system');
+                            alert('Session terminated.');
+                          }}
+                          style={{ width: '100%', borderColor: 'rgba(239, 68, 68, 0.4)', color: '#ef4444', background: 'rgba(239, 68, 68, 0.05)', height: '36px', padding: '0', cursor: 'pointer' }}
+                        >
+                          🚪 Log Out Session
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Database Settings Tab */}
+                {accountModalActiveTab === 'db-settings' && (
+                  <div className="glass-card" style={{ padding: '20px' }}>
+                    <h3>📂 MongoDB Database Settings</h3>
+                    <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                      Set the MERN backend database connection URI. The app will attempt to connect and persist telemetry data dynamically.
+                    </p>
+                    <div className="input-group">
+                      <label>MongoDB Connection URI</label>
+                      <input
+                        type="text"
+                        value={dbUriInput}
+                        onChange={(e) => setDbUriInput(e.target.value)}
+                        placeholder="mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB"
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                      <button className="btn btn-primary" onClick={triggerDbReconnect} disabled={isReconnectingDb} style={{ flex: 1 }}>
+                        {isReconnectingDb ? 'Connecting...' : 'Reconnect & Save'}
+                      </button>
+                    </div>
+                    {dbReconnectStatus && (
+                      <div style={{ marginTop: '10px', fontSize: '12px', color: dbReconnectStatus.includes('success') ? '#00ff66' : '#ff3366', fontFamily: 'var(--font-mono)' }}>
+                        {dbReconnectStatus}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Theme & Styling Tab */}
+                {accountModalActiveTab === 'theme-styling' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* Color Theme Selector Grid */}
+                    <div className="glass-card" style={{ padding: '20px' }}>
+                      <h3>🎨 Active Color Theme Palette</h3>
+                      <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                        Choose a color style preset. Changes animate dynamically across the dashboard.
+                      </p>
+                      <div className="theme-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px' }}>
+                        <button
+                          className={`theme-preset-btn ${currentTheme === 'quantum-indigo' ? 'active' : ''}`}
+                          onClick={() => changeThemeWithTransition('quantum-indigo')}
+                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                        >
+                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #0a84ff 0%, #5e5ce6 100%)' }}></span>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Quantum Indigo</span>
+                        </button>
+                        <button
+                          className={`theme-preset-btn ${currentTheme === 'cyber-orchid' ? 'active' : ''}`}
+                          onClick={() => changeThemeWithTransition('cyber-orchid')}
+                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                        >
+                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #8e8e93 0%, #d1d1d6 100%)' }}></span>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Cyber Orchid</span>
+                        </button>
+                        <button
+                          className={`theme-preset-btn ${currentTheme === 'mint-aurora' ? 'active' : ''}`}
+                          onClick={() => changeThemeWithTransition('mint-aurora')}
+                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                        >
+                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #30d158 0%, #0a84ff 100%)' }}></span>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Mint Aurora</span>
+                        </button>
+                        <button
+                          className={`theme-preset-btn ${currentTheme === 'solar-flare' ? 'active' : ''}`}
+                          onClick={() => changeThemeWithTransition('solar-flare')}
+                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                        >
+                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #0a84ff 0%, #bf5af2 100%)' }}></span>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Solar Flare</span>
+                        </button>
+                        <button
+                          className={`theme-preset-btn ${currentTheme === 'minecraft' ? 'active' : ''}`}
+                          onClick={() => changeThemeWithTransition('minecraft')}
+                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                        >
+                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #855C33 0%, #3D8B2A 100%)' }}></span>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Minecraft Craft</span>
+                        </button>
+                        <button
+                          className={`theme-preset-btn ${currentTheme === 'cherry-grove' ? 'active' : ''}`}
+                          onClick={() => changeThemeWithTransition('cherry-grove')}
+                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                        >
+                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #ff79c6 0%, #ffb86c 100%)' }}></span>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Cherry Grove</span>
+                        </button>
+                        <button
+                          className={`theme-preset-btn ${currentTheme === 'deep-sea-ocean' ? 'active' : ''}`}
+                          onClick={() => changeThemeWithTransition('deep-sea-ocean', triggerOceanAnimation)}
+                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                        >
+                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)' }}></span>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Deep Sea Ocean</span>
+                        </button>
+                        <button
+                          className={`theme-preset-btn ${currentTheme === 'hacking' ? 'active' : ''}`}
+                          onClick={() => changeThemeWithTransition('hacking', triggerHackerAnimation)}
+                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                        >
+                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #000000 0%, #15803d 100%)' }}></span>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Terminal Hacking</span>
+                        </button>
+                        <button
+                          className={`theme-preset-btn ${currentTheme === 'mojang-studios' ? 'active' : ''}`}
+                          onClick={() => changeThemeWithTransition('mojang-studios')}
+                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                        >
+                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)' }}></span>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Mojang Studios</span>
+                        </button>
+                        <button
+                          className={`theme-preset-btn ${currentTheme === 'star-nova' ? 'active' : ''}`}
+                          onClick={() => changeThemeWithTransition('star-nova')}
+                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                        >
+                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%)' }}></span>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Star Nova</span>
+                        </button>
+                        <button
+                          className={`theme-preset-btn ${currentTheme === 'cyber-sunset' ? 'active' : ''}`}
+                          onClick={() => changeThemeWithTransition('cyber-sunset')}
+                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                        >
+                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #ec4899 0%, #eab308 100%)' }}></span>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Cyber Sunset</span>
+                        </button>
                       </div>
                     </div>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        localStorage.removeItem('isLoggedIn');
-                        setIsLoggedIn(false);
-                        addLogLine('[GUI] Logged out.', 'system');
-                      }}
-                      style={{ width: '100%', borderColor: 'rgba(239, 68, 68, 0.4)', color: '#ef4444', background: 'rgba(239, 68, 68, 0.05)', padding: '6px 12px', fontSize: '11px', margin: 0 }}
-                    >
-                      🚪 Log Out Session
-                    </button>
-                  </div> 
 
-      {/* GitHub Sync */}
-      {/* <div className="glass-card" style={{ padding: '16px' }}>
-                    <h4 style={{ color: 'white', marginBottom: '10px', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🐙 GitHub Sync</h4>
-                    <div className="input-group" style={{ marginBottom: '6px' }}>
-                      <label style={{ fontSize: '8px' }}>Repository URL</label>
+                    {/* Active Font Face Selector */}
+                    <div className="glass-card" style={{ padding: '20px' }}>
+                      <h3>🔤 Active Application Font Face</h3>
+                      <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                        Choose typographic layout spacing style.
+                      </p>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button
+                          className={`btn ${currentFont === 'outfit' ? 'btn-primary' : 'btn-secondary'}`}
+                          onClick={() => {
+                            setCurrentFont('outfit');
+                            localStorage.setItem('font', 'outfit');
+                            document.documentElement.setAttribute('data-font', 'outfit');
+                          }}
+                          style={{ flex: 1, margin: 0 }}
+                        >
+                          Outfit Rounded
+                        </button>
+                        <button
+                          className={`btn ${currentFont === 'mono' ? 'btn-primary' : 'btn-secondary'}`}
+                          onClick={() => {
+                            setCurrentFont('mono');
+                            localStorage.setItem('font', 'mono');
+                            document.documentElement.setAttribute('data-font', 'mono');
+                          }}
+                          style={{ flex: 1, margin: 0 }}
+                        >
+                          JetBrains Mono
+                        </button>
+                        <button
+                          className={`btn ${currentFont === 'space' ? 'btn-primary' : 'btn-secondary'}`}
+                          onClick={() => {
+                            setCurrentFont('space');
+                            localStorage.setItem('font', 'space');
+                            document.documentElement.setAttribute('data-font', 'space');
+                          }}
+                          style={{ flex: 1, margin: 0 }}
+                        >
+                          Space Grotesk
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Looping YouTube Background Settings */}
+                    <div className="glass-card" style={{ padding: '20px' }}>
+                      <h3>🎬 Looping Video Background</h3>
+                      <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                        Play a high-fidelity video loop in the dashboard background.
+                      </p>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                        <div className="input-group" style={{ marginBottom: 0 }}>
+                          <label style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px', display: 'block' }}>Video Player State</label>
+                          <select
+                            value={String(bgVideoEnabled)}
+                            onChange={(e) => {
+                              const val = e.target.value === 'true';
+                              setBgVideoEnabled(val);
+                              localStorage.setItem('bgVideoEnabled', String(val));
+                            }}
+                            style={{ width: '100%', padding: '8px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
+                          >
+                            <option value="true">Enabled (Looping Trailer)</option>
+                            <option value="false">Disabled (Solid Theme Color)</option>
+                          </select>
+                        </div>
+
+                        <div className="input-group" style={{ marginBottom: 0 }}>
+                          <label style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px', display: 'block' }}>YouTube Video ID</label>
+                          <input
+                            type="text"
+                            value={bgVideoId}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setBgVideoId(val);
+                              localStorage.setItem('bgVideoId', val);
+                            }}
+                            placeholder="e.g. FYH9n37B7Yw"
+                            style={{ width: '100%', padding: '8px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="input-group" style={{ marginTop: '15px', marginBottom: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <label style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Video Opacity / Dim Level</label>
+                          <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 'bold' }}>{Math.round(bgVideoOpacity * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.05"
+                          max="0.80"
+                          step="0.05"
+                          value={bgVideoOpacity}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setBgVideoOpacity(val);
+                            localStorage.setItem('bgVideoOpacity', String(val));
+                          }}
+                          style={{ width: '100%', accentColor: 'var(--accent-pink)', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', height: '6px' }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Ports & Baud Rate Tab */}
+                {accountModalActiveTab === 'ports-baud' && (
+                  <div className="glass-card" style={{ padding: '20px' }}>
+                    <h3>🔌 Port & Communication Config</h3>
+                    <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                      Modify ports used by telemetry, web hosting, OTA, and UDP network services. Changes require app restart to bind.
+                    </p>
+                    <div className="input-group">
+                      <label>Express Web Host Port</label>
+                      <input type="text" value={expressPortInput} onChange={(e) => setExpressPortInput(e.target.value)} />
+                    </div>
+                    <div className="input-group">
+                      <label>Telemetry TCP Socket Port</label>
+                      <input type="text" value={telemetryPortInput} onChange={(e) => setTelemetryPortInput(e.target.value)} />
+                    </div>
+                    <div className="input-group">
+                      <label>OTA Local Portal Port</label>
+                      <input type="text" value={otaPortInput} onChange={(e) => setOtaPortInput(e.target.value)} />
+                    </div>
+                    <div className="input-group">
+                      <label>UDP Network Discovery Port</label>
+                      <input type="text" value={udpPortInput} onChange={(e) => setUdpPortInput(e.target.value)} />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: '15px' }}>
+                      <label>Default COM Baud Rate</label>
+                      <select value={defaultBaudRateInput} onChange={(e) => setDefaultBaudRateInput(e.target.value)} className="filter-select" style={{ width: '100%', height: '40px', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '8px', padding: '0 10px', cursor: 'pointer', outline: 'none' }}>
+                        <option value="115200" style={{ background: '#1c1b22', color: 'white' }}>115200</option>
+                        <option value="9600" style={{ background: '#1c1b22', color: 'white' }}>9600</option>
+                        <option value="57600" style={{ background: '#1c1b22', color: 'white' }}>57600</option>
+                      </select>
+                    </div>
+                    <button className="btn btn-accent" onClick={saveAppConfigSettings} style={{ width: '100%' }}>
+                      Save Communications Config
+                    </button>
+                  </div>
+                )}
+
+                {/* GitHub OAuth Tab */}
+                {accountModalActiveTab === 'github-oauth' && (
+                  <div className="glass-card" style={{ padding: '20px' }}>
+                    <h3>🐙 GitHub OAuth Integration</h3>
+                    <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                      Register a GitHub OAuth Application and configure credentials to enable secure administrator sign-in.
+                    </p>
+                    <div className="input-group">
+                      <label>GitHub Client ID</label>
+                      <input
+                        type="text"
+                        value={githubClientIdInput}
+                        onChange={(e) => setGitHubRepoUrlInput(e.target.value)}
+                        placeholder="Enter Client ID"
+                      />
+                    </div>
+                    <div className="input-group">
+                      <label>GitHub Client Secret</label>
+                      <input
+                        type="password"
+                        value={githubClientSecretInput}
+                        onChange={(e) => setGithubClientSecretInput(e.target.value)}
+                        placeholder="Enter Client Secret"
+                      />
+                    </div>
+                    <button className="btn btn-primary" onClick={saveAppConfigSettings} style={{ marginTop: '15px', width: '100%' }}>
+                      Save GitHub Credentials
+                    </button>
+                    <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--text-dim)', lineHeight: '1.4' }}>
+                      💡 Need help? View instructions in the <a href="#" onClick={(e) => { e.preventDefault(); alert("Please refer to Documentation/SIGN_WITH_GITHUB.md for setup details."); }} style={{ color: 'var(--accent-pink)', textDecoration: 'underline' }}>GitHub OAuth Setup Guide</a>.
+                    </div>
+                  </div>
+                )}
+
+                {/* Performance & OS Tab */}
+                {accountModalActiveTab === 'performance-os' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div className="glass-card" style={{ padding: '20px' }}>
+                      <h3>⚡ Performance & System Config</h3>
+                      <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                        Enable hardware acceleration to use GPU resources for smoother transitions and rendering.
+                      </p>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '10px 15px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'white' }}>GPU Hardware Acceleration</div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>Requires application restart to take effect</div>
+                        </div>
+                        <label className="switch-toggle" style={{ margin: 0 }}>
+                          <input
+                            type="checkbox"
+                            checked={hwAccelInput}
+                            onChange={(e) => setHwAccelInput(e.target.checked)}
+                          />
+                          <span className="switch-slider"></span>
+                        </label>
+                      </div>
+                      <button className="btn btn-primary" onClick={saveAppConfigSettings} style={{ marginTop: '15px', width: '100%' }}>
+                        Save Performance Settings
+                      </button>
+                    </div>
+
+                    <div className="glass-card" style={{ padding: '20px' }}>
+                      <h3>🖥️ System Specifications & Versions</h3>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginTop: '10px' }}>
+                        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                          <span style={{ fontSize: '9px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>OS Environment</span>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginTop: '2px', color: 'white' }}>{systemInfo.platform.toUpperCase()} ({systemInfo.release})</span>
+                        </div>
+                        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                          <span style={{ fontSize: '9px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>CPU Architecture</span>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginTop: '2px', color: 'white' }}>{systemInfo.cpu} ({systemInfo.arch})</span>
+                        </div>
+                        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                          <span style={{ fontSize: '9px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>System RAM</span>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginTop: '2px', color: 'white' }}>{systemInfo.freeMem} / {systemInfo.totalMem}</span>
+                        </div>
+                        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                          <span style={{ fontSize: '9px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>Electron</span>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginTop: '2px', color: 'white' }}>v{systemInfo.electron}</span>
+                        </div>
+                        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                          <span style={{ fontSize: '9px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>NodeJS</span>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginTop: '2px', color: 'white' }}>v{systemInfo.node}</span>
+                        </div>
+                        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                          <span style={{ fontSize: '9px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>Chromium</span>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginTop: '2px', color: 'white' }}>v{systemInfo.chrome}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* GitHub Sync Tab */}
+                {accountModalActiveTab === 'github-sync' && (
+                  <div className="glass-card" style={{ padding: '20px' }}>
+                    <h3>🐙 GitHub Sync & XML Pull</h3>
+                    <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                      Sync online codebase files and raw repository XML update logs:
+                    </p>
+
+                    <div className="input-group">
+                      <label>GitHub Repository URL</label>
                       <input
                         type="text"
                         value={gitHubRepoUrlInput || ''}
                         onChange={(e) => setGitHubRepoUrlInput(e.target.value)}
                         placeholder="https://github.com/Username/Repo"
-                        style={{ padding: '6px 10px', fontSize: '11px', height: '28px' }}
                       />
                     </div>
-                    <div className="input-group" style={{ marginBottom: '10px' }}>
-                      <label style={{ fontSize: '8px' }}>Branch</label>
+                    <div className="input-group">
+                      <label>Repository Branch</label>
                       <input
                         type="text"
                         value={gitHubRepoBranchInput || ''}
                         onChange={(e) => setGitHubRepoBranchInput(e.target.value)}
                         placeholder="main"
-                        style={{ padding: '6px 10px', fontSize: '11px', height: '28px' }}
                       />
                     </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '15px' }}>
                       <button
                         className="btn btn-primary"
                         onClick={handlePullGithubXml}
                         disabled={isSyncingXml}
-                        style={{ flex: 1, padding: '6px 8px', fontSize: '11px', margin: 0, height: '28px' }}
+                        style={{ margin: 0, width: '100%' }}
                       >
-                        {isSyncingXml ? 'Syncing...' : 'XML Pull'}
+                        {isSyncingXml ? 'Syncing XML...' : 'Update XML Now'}
                       </button>
                       <button
                         className="btn btn-accent"
                         onClick={handleGitHubSync}
                         disabled={isGitHubSyncing}
-                        style={{ flex: 1, padding: '6px 8px', fontSize: '11px', margin: 0, height: '28px' }}
+                        style={{ margin: 0, width: '100%' }}
                       >
-                        {isGitHubSyncing ? 'Syncing...' : 'Code Pull'}
+                        {isGitHubSyncing ? 'Syncing Code...' : 'Sync Code Now'}
                       </button>
                     </div>
                   </div>
-                </div> */}
+                )}
 
-      {/* Revocation Logs */}
-      {/* <div className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h4 style={{ color: 'white', margin: 0, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🛠️ Troubleshoot Logs</h4>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button className="btn btn-secondary small" onClick={fetchTroubleshootLogs} style={{ margin: 0, height: '22px', padding: '0 8px', fontSize: '10px' }}>
-                        🔄 Refresh
-                      </button>
-                      <button className="btn btn-danger small" onClick={clearTroubleshootLogs} style={{ margin: 0, height: '22px', padding: '0 8px', fontSize: '10px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
-                        🗑️ Clear
-                      </button>
+                {/* Troubleshoot Logs Tab */}
+                {accountModalActiveTab === 'revocation-logs' && (
+                  <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', padding: '20px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                      <h3>🛠️ Revocation & Troubleshoot Logs</h3>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="btn btn-secondary small" onClick={fetchTroubleshootLogs} style={{ margin: 0, height: '28px', padding: '0 12px', fontSize: '11px' }}>
+                          🔄 Refresh
+                        </button>
+                        <button className="btn btn-danger small" onClick={clearTroubleshootLogs} style={{ margin: 0, height: '28px', padding: '0 12px', fontSize: '11px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
+                          🗑️ Clear Logs
+                        </button>
+                      </div>
+                    </div>
+                    <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                      Offline troubleshooting history: connection terminations (revoke events) and database failures.
+                    </p>
+
+                    <div style={{ maxHeight: '350px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                      {troubleshootLogs.length === 0 ? (
+                        <div style={{ padding: '30px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
+                          No troubleshooting logs found.
+                        </div>
+                      ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
+                              <th style={{ padding: '6px' }}>Timestamp</th>
+                              <th style={{ padding: '6px' }}>Event</th>
+                              <th style={{ padding: '6px' }}>Message</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {troubleshootLogs.map((log, idx) => (
+                              <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
+                                <td style={{ padding: '6px', whiteSpace: 'nowrap' }}>{new Date(log.timestamp).toLocaleString()}</td>
+                                <td style={{ padding: '6px' }}>
+                                  <span className="status-tag err" style={{ padding: '1px 4px', fontSize: '8px' }}>
+                                    {log.event || log.type}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '6px' }}>{log.message || log.details}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
                     </div>
                   </div>
-                  <div style={{ maxHeight: '150px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '8px', borderRadius: '6px', border: '1px solid var(--glass-border)', fontSize: '11px', fontFamily: 'monospace' }}>
-                    {troubleshootLogs.length === 0 ? (
-                      <div style={{ padding: '20px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
-                        No troubleshooting reports found.
-                      </div>
-                    ) : (
-                      troubleshootLogs.map((log, idx) => (
-                        <div key={idx} style={{ marginBottom: '6px', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '4px' }}>
-                          <span style={{ color: 'var(--accent-pink)' }}>[{new Date(log.timestamp).toLocaleTimeString()}]</span>{' '}
-                          <span style={{ color: 'var(--accent-blue)' }}>{log.event || log.type}</span>: {log.details || log.message}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
-      )} */}
+      )}
 
     </>
   );
