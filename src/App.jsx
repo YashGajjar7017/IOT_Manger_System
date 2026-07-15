@@ -245,6 +245,24 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [accountModalActiveTab, setAccountModalActiveTab] = useState('profile');
+  const [bgVideoEnabled, setBgVideoEnabled] = useState(() => {
+    const saved = localStorage.getItem('bgVideoEnabled');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [bgVideoId, setBgVideoId] = useState(() => localStorage.getItem('bgVideoId') || 'FYH9n37B7Yw');
+  const [bgVideoOpacity, setBgVideoOpacity] = useState(() => {
+    const saved = localStorage.getItem('bgVideoOpacity');
+    return saved !== null ? parseFloat(saved) : 0.25;
+  });
+
+  const [modbusIp, setModbusIp] = useState('192.168.4.1');
+  const [modbusPort, setModbusPort] = useState('502');
+  const [modbusSlaveId, setModbusSlaveId] = useState('1');
+  const [modbusRegType, setModbusRegType] = useState('holding');
+  const [modbusMode, setModbusMode] = useState('gateway');
+  const [modbusDisplay32, setModbusDisplay32] = useState(true);
+
   const [showGprsConsole, setShowGprsConsole] = useState(false);
   const [gprsCommandInput, setGprsCommandInput] = useState('');
   const [continuousDiagnostics, setContinuousDiagnostics] = useState(false);
@@ -325,6 +343,7 @@ export default function App() {
   const [modbusStartReg, setModbusStartReg] = useState(3333);
   const [modbusCount, setModbusCount] = useState(100);
   const [modbusData, setModbusData] = useState([]);
+  const [modbusData32, setModbusData32] = useState({});
   const [isReadingModbus, setIsReadingModbus] = useState(false);
   const [modbusError, setModbusError] = useState(null);
 
@@ -1252,6 +1271,11 @@ export default function App() {
     };
     ipcRenderer.on('refresh-registered-devices', onRefreshRegisteredDevices);
 
+    const onRefreshDatabaseHistory = () => {
+      fetchDatabaseHistory();
+    };
+    ipcRenderer.on('refresh-database-history', onRefreshDatabaseHistory);
+
     // Fetch initial app configuration (Requirement 6)
     ipcRenderer.invoke('get-app-config').then((config) => {
       if (config) {
@@ -1288,6 +1312,7 @@ export default function App() {
       ipcRenderer.off('spiffs-update-result', onSpiffsUpdateResult);
       ipcRenderer.off('github-oauth-success', onGitHubOauthSuccess);
       ipcRenderer.off('refresh-registered-devices', onRefreshRegisteredDevices);
+      ipcRenderer.off('refresh-database-history', onRefreshDatabaseHistory);
       ipcRenderer.off('usb-flash-progress', onUsbFlashProgress);
       ipcRenderer.off('arduino-cli-install-status', onArduinoCliInstallStatus);
       ipcRenderer.off('github-sync-result', onGitHubSyncResult);
@@ -1755,15 +1780,45 @@ Overall Status : ${overallStatus}
     }
   };
 
-  const triggerModbusRead = () => {
-    if (!connection.type) {
-      alert('Gateway must be connected via TCP or Serial to read registers.');
-      return;
-    }
+  const triggerModbusRead = async () => {
     setIsReadingModbus(true);
     setModbusError(null);
-    sendControlCommand(`READ_MODBUS:${modbusStartReg}:${modbusCount}`);
-    addLogLine(`[GUI] Requested Modbus read of ${modbusCount} registers starting at ${modbusStartReg}...`, 'system');
+
+    if (modbusMode === 'gateway') {
+      if (!connection.type) {
+        alert('Gateway must be connected via TCP or Serial to read registers in Gateway mode.');
+        setIsReadingModbus(false);
+        return;
+      }
+      sendControlCommand(`READ_MODBUS:${modbusStartReg}:${modbusCount}`);
+      addLogLine(`[GUI] Requested Modbus read of ${modbusCount} registers starting at ${modbusStartReg} via gateway...`, 'system');
+    } else {
+      // Direct Modbus TCP
+      addLogLine(`[MODBUS] Direct query to ${modbusIp}:${modbusPort} (Slave ${modbusSlaveId}, type ${modbusRegType})...`, 'system');
+      try {
+        const result = await ipcRenderer.invoke('query-modbus-tcp', {
+          ip: modbusIp,
+          port: parseInt(modbusPort) || 502,
+          startReg: modbusStartReg,
+          count: modbusCount,
+          slaveId: parseInt(modbusSlaveId) || 1,
+          regType: modbusRegType
+        });
+        setIsReadingModbus(false);
+        if (result.success) {
+          setModbusData(result.raw16 || []);
+          setModbusData32(result.values || {});
+          addLogLine(`[MODBUS] Direct query success. Read ${result.raw16.length} registers.`, 'success');
+        } else {
+          setModbusError(result.error || 'Modbus communication error');
+          addLogLine(`[MODBUS ERROR] Direct query failed: ${result.error}`, 'error');
+        }
+      } catch (err) {
+        setIsReadingModbus(false);
+        setModbusError(err.message);
+        addLogLine(`[MODBUS ERROR] Direct query exception: ${err.message}`, 'error');
+      }
+    }
   };
 
   // Apply IMEI and Password dynamic updates to firmware
@@ -2533,6 +2588,25 @@ Overall Status : ${overallStatus}
     addLogLine(`[CMD] Triggering diagnostics check for module: ${moduleKey.toUpperCase()}`);
   };
 
+  // Group Modbus registers into 32-bit values (Big Endian)
+  const grouped32BitData = useMemo(() => {
+    const dict = {};
+    for (let i = 0; i < modbusData.length; i += 2) {
+      const regAddr = modbusStartReg + i;
+      const val1 = modbusData[i];
+      const val2 = (i + 1 < modbusData.length) ? modbusData[i + 1] : null;
+      if (val1 !== null && val1 !== undefined && val2 !== null && val2 !== undefined) {
+        const longVal = (val1 << 16) | val2;
+        dict[String(regAddr)] = longVal;
+      } else if (val1 !== null && val1 !== undefined) {
+        dict[String(regAddr)] = val1; // Fallback to 16-bit single
+      } else {
+        dict[String(regAddr)] = null;
+      }
+    }
+    return dict;
+  }, [modbusData, modbusStartReg]);
+
   // Sub-device grid filters
   const filteredDevicesList = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -3060,6 +3134,39 @@ Overall Status : ${overallStatus}
         </div>
       </div>
 
+      {bgVideoEnabled && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          zIndex: -2,
+          overflow: 'hidden',
+          pointerEvents: 'none',
+          background: '#0d0a1b'
+        }}>
+          <iframe
+            src={`https://www.youtube.com/embed/${bgVideoId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${bgVideoId}&showinfo=0&rel=0&modestbranding=1&iv_load_policy=3&playsinline=1&enablejsapi=1`}
+            style={{
+              width: '100vw',
+              height: '56.25vw',
+              minHeight: '100vh',
+              minWidth: '177.77vh',
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              opacity: bgVideoOpacity,
+              border: 'none',
+              pointerEvents: 'none'
+            }}
+            title="Background Video"
+            allow="autoplay; encrypted-media"
+          />
+        </div>
+      )}
+
       <div className="app-container">
 
         {/* Horizontal Navigation Header (Requirement 1 & 2) */}
@@ -3178,210 +3285,798 @@ Overall Status : ${overallStatus}
             </div> */}
 
             <div className="header-account-container" ref={accountContainerRef} style={{ position: 'relative' }}>
-              <button className={`header-account-btn ${showAccountModal ? 'active' : ''}`} onClick={() => setShowAccountModal(!showAccountModal)} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                👤 Account & Support
+              <button
+                className={`header-account-btn ${showAccountModal ? 'active' : ''}`}
+                onClick={() => {
+                  setAccountModalActiveTab('profile');
+                  setShowAccountModal(!showAccountModal);
+                }}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                👤 Account & Settings
               </button>
               {showAccountModal && (
-                <div style={{
-                  position: 'absolute',
-                  right: 0,
-                  top: 'calc(100% + 8px)',
-                  width: '450px',
-                  background: 'rgba(10, 14, 28, 0.97)',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
-                  borderRadius: '14px',
-                  boxShadow: '0 24px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 240, 255, 0.08)',
-                  backdropFilter: 'blur(28px)',
-                  padding: '16px',
-                  zIndex: 9999,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '12px',
-                  textAlign: 'left'
-                }} onClick={(e) => e.stopPropagation()}>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: '8px' }}>
-                    <h3 style={{ margin: 0, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', color: 'white' }}>
-                      👤 Support & Admin Desk
-                    </h3>
-                    <button
-                      onClick={() => setShowAccountModal(false)}
+                <div
+                  className="gprs-modal-overlay"
+                  style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(3, 2, 8, 0.85)',
+                    backdropFilter: 'blur(12px)',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    zIndex: 10000
+                  }}
+                  onClick={() => setShowAccountModal(false)}
+                >
+                  <div
+                    style={{
+                      width: '50vw',
+                      minWidth: '850px',
+                      height: '80vh',
+                      minHeight: '550px',
+                      background: '#0e0b1e', // Solid premium dark background
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      borderRadius: '16px',
+                      boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7), 0 0 40px rgba(0, 240, 255, 0.15)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      overflow: 'hidden',
+                      textAlign: 'left'
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* Modal Header */}
+                    <div
                       style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--text-dim)',
-                        fontSize: '14px',
-                        cursor: 'pointer',
-                        padding: '2px'
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '18px 24px',
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                        background: 'rgba(255, 255, 255, 0.01)'
                       }}
                     >
-                      ✕
-                    </button>
-                  </div>
-
-                  {!isLoggedIn ? (
-                    <div className="glass-card auth-card" style={{ border: 'none', background: 'none', boxShadow: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-                        <span style={{ fontSize: '24px' }}>🔑</span>
-                        <h4 style={{ color: 'white', margin: '4px 0 2px 0', fontSize: '13px' }}>Admin Authorization</h4>
-                        <p style={{ fontSize: '11px', color: 'var(--text-dim)', margin: 0 }}>Unlock profiles & settings</p>
-                      </div>
-
-                      {authError && (
-                        <div style={{ padding: '6px', background: 'rgba(255, 51, 102, 0.1)', border: '1px solid rgba(255, 51, 102, 0.3)', color: '#ff3366', borderRadius: '4px', fontSize: '11px', textAlign: 'center' }}>
-                          ⚠️ {authError}
-                        </div>
-                      )}
-
-                      <div className="input-group" style={{ marginBottom: '4px' }}>
-                        <label style={{ fontSize: '10px' }}>Username</label>
-                        <input style={{ padding: '6px', fontSize: '11px', height: '28px' }} type="text" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} placeholder="Enter admin username" />
-                      </div>
-
-                      {authMode === 'signup' && (
-                        <div className="input-group" style={{ marginBottom: '4px' }}>
-                          <label style={{ fontSize: '10px' }}>Email Address</label>
-                          <input style={{ padding: '6px', fontSize: '11px', height: '28px' }} type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="admin@domain.com" />
-                        </div>
-                      )}
-
-                      <div className="input-group" style={{ marginBottom: '8px' }}>
-                        <label style={{ fontSize: '10px' }}>Password</label>
-                        <input style={{ padding: '6px', fontSize: '11px', height: '28px' }} type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••••••" />
-                      </div>
-
-                      {authMode === 'signup' && (
-                        <div className="input-group" style={{ marginBottom: '8px' }}>
-                          <label style={{ fontSize: '10px' }}>Confirm Password</label>
-                          <input style={{ padding: '6px', fontSize: '11px', height: '28px' }} type="password" value={authConfirmPassword} onChange={(e) => setAuthConfirmPassword(e.target.value)} placeholder="••••••••••••" />
-                        </div>
-                      )}
-
-                      <button className="btn btn-accent" onClick={handleAuth} style={{ width: '100%', margin: 0, height: '30px', padding: '0 10px', fontSize: '11px' }}>
-                        {authMode === 'login' ? 'Authenticate Session' : 'Register Administrator'}
+                      <h3 style={{ margin: 0, fontSize: '15px', color: 'white', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+                        👤 System Account & Settings Manager
+                      </h3>
+                      <button
+                        onClick={() => setShowAccountModal(false)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-dim)',
+                          fontSize: '24px',
+                          cursor: 'pointer',
+                          padding: '4px',
+                          lineHeight: '1'
+                        }}
+                      >
+                        &times;
                       </button>
-
-                      <div style={{ marginTop: '8px', textAlign: 'center', fontSize: '11px' }}>
-                        <a href="#" onClick={(e) => { e.preventDefault(); setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }} style={{ color: 'var(--accent-blue)', textDecoration: 'underline' }}>
-                          {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Log In"}
-                        </a>
-                      </div>
                     </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '10px' }}>
-                        {/* Admin Profile */}
-                        <div className="glass-card" style={{ padding: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+
+                    {/* Modal Body Grid */}
+                    <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+                      {/* Left Navigation Sidebar */}
+                      <div
+                        style={{
+                          width: '230px',
+                          borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+                          background: 'rgba(0, 0, 0, 0.15)',
+                          padding: '15px 10px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px',
+                          overflowY: 'auto'
+                        }}
+                      >
+                        <button
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '10px 12px',
+                            background: accountModalActiveTab === 'profile' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                            border: 'none',
+                            borderRadius: '8px',
+                            color: accountModalActiveTab === 'profile' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            outline: 'none',
+                            transition: 'all 0.2s'
+                          }}
+                          onClick={() => setAccountModalActiveTab('profile')}
+                        >
+                          👤 Admin Profile
+                        </button>
+                        <button
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '10px 12px',
+                            background: accountModalActiveTab === 'db-settings' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                            border: 'none',
+                            borderRadius: '8px',
+                            color: accountModalActiveTab === 'db-settings' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            outline: 'none',
+                            transition: 'all 0.2s'
+                          }}
+                          onClick={() => setAccountModalActiveTab('db-settings')}
+                        >
+                          📂 Database Settings
+                        </button>
+                        <button
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '10px 12px',
+                            background: accountModalActiveTab === 'theme-styling' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                            border: 'none',
+                            borderRadius: '8px',
+                            color: accountModalActiveTab === 'theme-styling' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            outline: 'none',
+                            transition: 'all 0.2s'
+                          }}
+                          onClick={() => setAccountModalActiveTab('theme-styling')}
+                        >
+                          🎨 Theme & Styling
+                        </button>
+                        <button
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '10px 12px',
+                            background: accountModalActiveTab === 'ports-baud' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                            border: 'none',
+                            borderRadius: '8px',
+                            color: accountModalActiveTab === 'ports-baud' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            outline: 'none',
+                            transition: 'all 0.2s'
+                          }}
+                          onClick={() => setAccountModalActiveTab('ports-baud')}
+                        >
+                          🔌 Ports & Baud Rate
+                        </button>
+                        <button
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '10px 12px',
+                            background: accountModalActiveTab === 'github-oauth' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                            border: 'none',
+                            borderRadius: '8px',
+                            color: accountModalActiveTab === 'github-oauth' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            outline: 'none',
+                            transition: 'all 0.2s'
+                          }}
+                          onClick={() => setAccountModalActiveTab('github-oauth')}
+                        >
+                          🐙 GitHub OAuth
+                        </button>
+                        <button
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '10px 12px',
+                            background: accountModalActiveTab === 'performance-os' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                            border: 'none',
+                            borderRadius: '8px',
+                            color: accountModalActiveTab === 'performance-os' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            outline: 'none',
+                            transition: 'all 0.2s'
+                          }}
+                          onClick={() => setAccountModalActiveTab('performance-os')}
+                        >
+                          ⚡ Performance & OS
+                        </button>
+                        <button
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '10px 12px',
+                            background: accountModalActiveTab === 'github-sync' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                            border: 'none',
+                            borderRadius: '8px',
+                            color: accountModalActiveTab === 'github-sync' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            outline: 'none',
+                            transition: 'all 0.2s'
+                          }}
+                          onClick={() => setAccountModalActiveTab('github-sync')}
+                        >
+                          🔄 GitHub Sync
+                        </button>
+                        <button
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '10px 12px',
+                            background: accountModalActiveTab === 'revocation-logs' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                            border: 'none',
+                            borderRadius: '8px',
+                            color: accountModalActiveTab === 'revocation-logs' ? 'var(--accent-pink)' : 'var(--text-dim)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            outline: 'none',
+                            transition: 'all 0.2s'
+                          }}
+                          onClick={() => setAccountModalActiveTab('revocation-logs')}
+                        >
+                          🛠️ Troubleshoot Logs
+                        </button>
+                      </div>
+
+                      {/* Right Panel Scrollable Content */}
+                      <div style={{ flex: 1, padding: '24px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.05)' }}>
+                        {/* Profile Tab */}
+                        {accountModalActiveTab === 'profile' && (
                           <div>
-                            <h4 style={{ color: 'white', margin: '0 0 6px 0', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>👤 Profile</h4>
-                            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px', borderRadius: '4px', border: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '10px' }}>
-                              <div>
-                                <span style={{ color: 'var(--accent-pink)', textTransform: 'uppercase', fontSize: '7px', display: 'block' }}>User</span>
-                                <strong>Admin</strong>
+                            {!isLoggedIn ? (
+                              <div className="glass-card auth-card" style={{ maxWidth: '400px', margin: '20px auto', border: '1px solid var(--glass-border)', padding: '20px' }}>
+                                <div style={{ textAlign: 'center', marginBottom: '15px' }}>
+                                  <span style={{ fontSize: '32px' }}>🔑</span>
+                                  <h4 style={{ color: 'white', margin: '10px 0 5px 0', fontSize: '15px' }}>Admin Authorization</h4>
+                                  <p style={{ fontSize: '12px', color: 'var(--text-dim)', margin: 0 }}>Unlock profiles & settings</p>
+                                </div>
+
+                                {authError && (
+                                  <div style={{ padding: '8px', background: 'rgba(255, 51, 102, 0.1)', border: '1px solid rgba(255, 51, 102, 0.3)', color: '#ff3366', borderRadius: '6px', fontSize: '12px', marginBottom: '12px', textAlign: 'center' }}>
+                                    ⚠️ {authError}
+                                  </div>
+                                )}
+
+                                <div className="input-group">
+                                  <label>Username</label>
+                                  <input type="text" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} placeholder="Enter admin username" />
+                                </div>
+
+                                {authMode === 'signup' && (
+                                  <div className="input-group">
+                                    <label>Email Address</label>
+                                    <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="admin@domain.com" />
+                                  </div>
+                                )}
+
+                                <div className="input-group">
+                                  <label>Password</label>
+                                  <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••••••" />
+                                </div>
+
+                                {authMode === 'signup' && (
+                                  <div className="input-group">
+                                    <label>Confirm Password</label>
+                                    <input type="password" value={authConfirmPassword} onChange={(e) => setAuthConfirmPassword(e.target.value)} placeholder="••••••••••••" />
+                                  </div>
+                                )}
+
+                                <button className="btn btn-accent" onClick={handleAuth} style={{ width: '100%', marginTop: '15px' }}>
+                                  {authMode === 'login' ? 'Authenticate Session' : 'Register Administrator'}
+                                </button>
+
+                                <div style={{ marginTop: '12px', textAlign: 'center', fontSize: '12px' }}>
+                                  <a href="#" onClick={(e) => { e.preventDefault(); setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }} style={{ color: 'var(--accent-blue)', textDecoration: 'underline' }}>
+                                    {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Log In"}
+                                  </a>
+                                </div>
                               </div>
-                              <div>
-                                <span style={{ color: 'var(--accent-pink)', textTransform: 'uppercase', fontSize: '7px', display: 'block' }}>Status</span>
-                                <strong style={{ color: 'var(--accent-emerald)' }}>Connected</strong>
+                            ) : (
+                              <div className="glass-card" style={{ padding: '20px' }}>
+                                <h3>👤 Admin Profile</h3>
+                                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>Active administrator session details:</p>
+
+                                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '8px', border: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+                                  <div>
+                                    <span style={{ color: 'var(--accent-pink)', textTransform: 'uppercase', fontSize: '9px', display: 'block', fontWeight: 'bold' }}>Active User</span>
+                                    <strong style={{ fontSize: '14px', color: 'white' }}>Administrator</strong>
+                                  </div>
+                                  <div>
+                                    <span style={{ color: 'var(--accent-pink)', textTransform: 'uppercase', fontSize: '9px', display: 'block', fontWeight: 'bold' }}>Status</span>
+                                    <strong style={{ fontSize: '14px', color: 'var(--accent-emerald)' }}>Connected & Authenticated</strong>
+                                  </div>
+                                </div>
+
+                                <button
+                                  className="btn btn-secondary"
+                                  onClick={() => {
+                                    localStorage.removeItem('isLoggedIn');
+                                    setIsLoggedIn(false);
+                                    addLogLine('[GUI] Logged out.', 'system');
+                                    alert('Session terminated.');
+                                  }}
+                                  style={{ width: '100%', borderColor: 'rgba(239, 68, 68, 0.4)', color: '#ef4444', background: 'rgba(239, 68, 68, 0.05)', height: '36px', padding: '0', cursor: 'pointer' }}
+                                >
+                                  🚪 Log Out Session
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Database Settings Tab */}
+                        {accountModalActiveTab === 'db-settings' && (
+                          <div className="glass-card" style={{ padding: '20px' }}>
+                            <h3>📂 MongoDB Database Settings</h3>
+                            <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                              Set the MERN backend database connection URI. The app will attempt to connect and persist telemetry data dynamically.
+                            </p>
+                            <div className="input-group">
+                              <label>MongoDB Connection URI</label>
+                              <input
+                                type="text"
+                                value={dbUriInput}
+                                onChange={(e) => setDbUriInput(e.target.value)}
+                                placeholder="mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB"
+                              />
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                              <button className="btn btn-primary" onClick={triggerDbReconnect} disabled={isReconnectingDb} style={{ flex: 1 }}>
+                                {isReconnectingDb ? 'Connecting...' : 'Reconnect & Save'}
+                              </button>
+                            </div>
+                            {dbReconnectStatus && (
+                              <div style={{ marginTop: '10px', fontSize: '12px', color: dbReconnectStatus.includes('success') ? '#00ff66' : '#ff3366', fontFamily: 'var(--font-mono)' }}>
+                                {dbReconnectStatus}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Theme & Styling Tab */}
+                        {accountModalActiveTab === 'theme-styling' && (
+                          <div className="glass-card" style={{ padding: '20px' }}>
+                            <h3>🎨 Theme & Personalization</h3>
+                            <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                              Choose from curated dark modes and modern typography fonts. Changes apply instantly.
+                            </p>
+
+                            {/* Theme Preset Selection */}
+                            <div style={{ marginBottom: '20px' }}>
+                              <label className="control-title" style={{ fontSize: '10px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold' }}>Color Theme</label>
+                              <div className="theme-presets-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginTop: '10px' }}>
+                                <div
+                                  className={`theme-preset-card ${currentTheme === 'quantum-indigo' ? 'active' : ''}`}
+                                  onClick={() => changeThemeWithTransition('quantum-indigo')}
+                                  style={{ '--theme-card-border': '#7000ff', '--theme-card-bg-rgb': '112, 0, 255', '--theme-preview-grad': 'linear-gradient(135deg, #7000ff 0%, #00c6ff 100%)' }}
+                                >
+                                  <div className="theme-preview-bar"></div>
+                                  <span className="theme-preset-name">Quantum Indigo</span>
+                                </div>
+
+                                <div
+                                  className={`theme-preset-card ${currentTheme === 'cyber-orchid' ? 'active' : ''}`}
+                                  onClick={() => changeThemeWithTransition('cyber-orchid')}
+                                  style={{ '--theme-card-border': '#f953c6', '--theme-card-bg-rgb': '249, 83, 198', '--theme-preview-grad': 'linear-gradient(135deg, #f953c6 0%, #7000ff 100%)' }}
+                                >
+                                  <div className="theme-preview-bar"></div>
+                                  <span className="theme-preset-name">Cyber Orchid</span>
+                                </div>
+
+                                <div
+                                  className={`theme-preset-card ${currentTheme === 'mint-aurora' ? 'active' : ''}`}
+                                  onClick={() => changeThemeWithTransition('mint-aurora')}
+                                  style={{ '--theme-card-border': '#00e676', '--theme-card-bg-rgb': '0, 230, 118', '--theme-preview-grad': 'linear-gradient(135deg, #00e676 0%, #00c6ff 100%)' }}
+                                >
+                                  <div className="theme-preview-bar"></div>
+                                  <span className="theme-preset-name">Mint Aurora</span>
+                                </div>
+
+                                <div
+                                  className={`theme-preset-card ${currentTheme === 'solar-flare' ? 'active' : ''}`}
+                                  onClick={() => changeThemeWithTransition('solar-flare')}
+                                  style={{ '--theme-card-border': '#ff7300', '--theme-card-bg-rgb': '255, 115, 0', '--theme-preview-grad': 'linear-gradient(135deg, #ff7300 0%, #f953c6 100%)' }}
+                                >
+                                  <div className="theme-preview-bar"></div>
+                                  <span className="theme-preset-name">Solar Flare</span>
+                                </div>
+
+                                <div
+                                  className={`theme-preset-card ${currentTheme === 'minecraft' ? 'active' : ''}`}
+                                  onClick={() => changeThemeWithTransition('minecraft')}
+                                  style={{ '--theme-card-border': '#5b8731', '--theme-card-bg-rgb': '91, 135, 49', '--theme-preview-grad': 'linear-gradient(135deg, #5b8731 0%, #866043 100%)' }}
+                                >
+                                  <div className="theme-preview-bar"></div>
+                                  <span className="theme-preset-name">Minecraft</span>
+                                </div>
+
+                                <div
+                                  className={`theme-preset-card ${currentTheme === 'cherry-grove' ? 'active' : ''}`}
+                                  onClick={() => changeThemeWithTransition('cherry-grove')}
+                                  style={{ '--theme-card-border': '#ff8da1', '--theme-card-bg-rgb': '255, 141, 161', '--theme-preview-grad': 'linear-gradient(135deg, #ff8da1 0%, #3a222d 100%)' }}
+                                >
+                                  <div className="theme-preview-bar"></div>
+                                  <span className="theme-preset-name">Cherry Grove</span>
+                                </div>
+
+                                <div
+                                  className={`theme-preset-card ${currentTheme === 'deep-sea-ocean' ? 'active' : ''}`}
+                                  onClick={() => changeThemeWithTransition('deep-sea-ocean', triggerOceanAnimation)}
+                                  style={{ '--theme-card-border': '#0d9488', '--theme-card-bg-rgb': '13, 148, 136', '--theme-preview-grad': 'linear-gradient(135deg, #060e17 0%, #0d9488 100%)' }}
+                                >
+                                  <div className="theme-preview-bar"></div>
+                                  <span className="theme-preset-name">Deep Sea Ocean</span>
+                                </div>
+
+                                <div
+                                  className={`theme-preset-card ${currentTheme === 'hacking' ? 'active' : ''}`}
+                                  onClick={() => changeThemeWithTransition('hacking', triggerHackerAnimation)}
+                                  style={{ '--theme-card-border': '#00ff00', '--theme-card-bg-rgb': '0, 255, 0', '--theme-preview-grad': 'linear-gradient(135deg, #020202 0%, #00ff00 100%)' }}
+                                >
+                                  <div className="theme-preview-bar"></div>
+                                  <span className="theme-preset-name">Hacking Edition</span>
+                                </div>
+
+                                <div
+                                  className={`theme-preset-card ${currentTheme === 'mojang-studios' ? 'active' : ''}`}
+                                  onClick={() => changeThemeWithTransition('mojang-studios')}
+                                  style={{ '--theme-card-border': '#ef323d', '--theme-card-bg-rgb': '239, 50, 61', '--theme-preview-grad': 'linear-gradient(135deg, #ef323d 0%, #000 100%)' }}
+                                >
+                                  <div className="theme-preview-bar"></div>
+                                  <span className="theme-preset-name">Mojang Studios</span>
+                                </div>
+
+                                <div
+                                  className={`theme-preset-card ${currentTheme === 'star-nova' ? 'active' : ''}`}
+                                  onClick={() => changeThemeWithTransition('star-nova')}
+                                  style={{ '--theme-card-border': '#fef3c7', '--theme-card-bg-rgb': '254, 243, 199', '--theme-preview-grad': 'linear-gradient(135deg, #0f172a 0%, #fef3c7 100%)' }}
+                                >
+                                  <div className="theme-preview-bar"></div>
+                                  <span className="theme-preset-name">Star Nova</span>
+                                </div>
+
+                                <div
+                                  className={`theme-preset-card ${currentTheme === 'cyber-sunset' ? 'active' : ''}`}
+                                  onClick={() => changeThemeWithTransition('cyber-sunset')}
+                                  style={{ '--theme-card-border': '#ec4899', '--theme-card-bg-rgb': '236, 72, 153', '--theme-preview-grad': 'linear-gradient(135deg, #ec4899 0%, #eab308 100%)' }}
+                                >
+                                  <div className="theme-preview-bar"></div>
+                                  <span className="theme-preset-name">Cyber Sunset</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Font Preset Selection */}
+                            <div style={{ marginBottom: '10px' }}>
+                              <label className="control-title" style={{ fontSize: '10px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold' }}>Typography Font</label>
+                              <div className="font-presets-grid" style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                                <div className={`font-preset-card ${currentFont === 'outfit' ? 'active' : ''}`} onClick={() => setCurrentFont('outfit')} style={{ fontFamily: 'Outfit, sans-serif', flex: 1, textAlign: 'center', padding: '8px', cursor: 'pointer', border: '1px solid var(--glass-border)', borderRadius: '6px' }}>
+                                  Outfit Sans
+                                </div>
+                                <div className={`font-preset-card ${currentFont === 'mono' ? 'active' : ''}`} onClick={() => setCurrentFont('mono')} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', flex: 1, textAlign: 'center', padding: '8px', cursor: 'pointer', border: '1px solid var(--glass-border)', borderRadius: '6px' }}>
+                                  JB Mono
+                                </div>
+                                <div className={`font-preset-card ${currentFont === 'space' ? 'active' : ''}`} onClick={() => setCurrentFont('space')} style={{ fontFamily: 'Space Grotesk, sans-serif', flex: 1, textAlign: 'center', padding: '8px', cursor: 'pointer', border: '1px solid var(--glass-border)', borderRadius: '6px' }}>
+                                  Space Grotesk
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Video Background Settings */}
+                            <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '15px' }}>
+                              <label className="control-title" style={{ fontSize: '10px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold' }}>Cinematic Background Video</label>
+                              
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '10px' }}>
+                                <div className="input-group" style={{ marginBottom: 0 }}>
+                                  <label style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px', display: 'block' }}>Video Background</label>
+                                  <select
+                                    value={bgVideoEnabled ? 'true' : 'false'}
+                                    onChange={(e) => {
+                                      const val = e.target.value === 'true';
+                                      setBgVideoEnabled(val);
+                                      localStorage.setItem('bgVideoEnabled', String(val));
+                                    }}
+                                    style={{ width: '100%', padding: '8px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
+                                  >
+                                    <option value="true">Enabled (Looping Trailer)</option>
+                                    <option value="false">Disabled (Solid Theme Color)</option>
+                                  </select>
+                                </div>
+
+                                <div className="input-group" style={{ marginBottom: 0 }}>
+                                  <label style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px', display: 'block' }}>YouTube Video ID</label>
+                                  <input
+                                    type="text"
+                                    value={bgVideoId}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setBgVideoId(val);
+                                      localStorage.setItem('bgVideoId', val);
+                                    }}
+                                    placeholder="e.g. FYH9n37B7Yw"
+                                    style={{ width: '100%', padding: '8px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="input-group" style={{ marginTop: '15px', marginBottom: 0 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                  <label style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Video Opacity / Dim Level</label>
+                                  <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 'bold' }}>{Math.round(bgVideoOpacity * 100)}%</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0.05"
+                                  max="0.80"
+                                  step="0.05"
+                                  value={bgVideoOpacity}
+                                  onChange={(e) => {
+                                    const val = parseFloat(e.target.value);
+                                    setBgVideoOpacity(val);
+                                    localStorage.setItem('bgVideoOpacity', String(val));
+                                  }}
+                                  style={{ width: '100%', accentColor: 'var(--accent-pink)', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', height: '6px' }}
+                                />
                               </div>
                             </div>
                           </div>
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => {
-                              setActiveTab('page-settings');
-                              setShowAccountModal(false);
-                            }}
-                            style={{ width: '100%', padding: '4px 8px', fontSize: '10px', margin: '8px 0 0 0', height: '24px' }}
-                          >
-                            ⚙️ App Settings
-                          </button>
-                          <button
-                            className="btn btn-secondary"
-                            onClick={() => {
-                              localStorage.removeItem('isLoggedIn');
-                              setIsLoggedIn(false);
-                              addLogLine('[GUI] Logged out.', 'system');
-                            }}
-                            style={{ width: '100%', borderColor: 'rgba(239, 68, 68, 0.4)', color: '#ef4444', background: 'rgba(239, 68, 68, 0.05)', padding: '4px 8px', fontSize: '10px', margin: '8px 0 0 0', height: '24px' }}
-                          >
-                            🚪 Log Out
-                          </button>
-                        </div>
+                        )}
 
-                        {/* GitHub Sync */}
-                        <div className="glass-card" style={{ padding: '10px' }}>
-                          <h4 style={{ color: 'white', margin: '0 0 6px 0', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🐙 GitHub</h4>
-                          <div className="input-group" style={{ marginBottom: '4px' }}>
-                            <label style={{ fontSize: '8px' }}>Repo URL</label>
-                            <input
-                              type="text"
-                              value={gitHubRepoUrlInput || ''}
-                              onChange={(e) => setGitHubRepoUrlInput(e.target.value)}
-                              placeholder="https://github.com/..."
-                              style={{ padding: '4px 6px', fontSize: '10px', height: '22px' }}
-                            />
-                          </div>
-                          <div className="input-group" style={{ marginBottom: '6px' }}>
-                            <label style={{ fontSize: '8px' }}>Branch</label>
-                            <input
-                              type="text"
-                              value={gitHubRepoBranchInput || ''}
-                              onChange={(e) => setGitHubRepoBranchInput(e.target.value)}
-                              placeholder="main"
-                              style={{ padding: '4px 6px', fontSize: '10px', height: '22px' }}
-                            />
-                          </div>
-                          <div style={{ display: 'flex', gap: '4px' }}>
-                            <button
-                              className="btn btn-primary"
-                              onClick={handlePullGithubXml}
-                              disabled={isSyncingXml}
-                              style={{ flex: 1, padding: '4px', fontSize: '9px', margin: 0, height: '22px' }}
-                            >
-                              XML Pull
-                            </button>
-                            <button
-                              className="btn btn-accent"
-                              onClick={handleGitHubSync}
-                              disabled={isGitHubSyncing}
-                              style={{ flex: 1, padding: '4px', fontSize: '9px', margin: 0, height: '22px' }}
-                            >
-                              Code Pull
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Revocation Logs */}
-                      <div className="glass-card" style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <h4 style={{ color: 'white', margin: 0, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🛠️ Troubleshoot Logs</h4>
-                          <div style={{ display: 'flex', gap: '4px' }}>
-                            <button className="btn btn-secondary small" onClick={fetchTroubleshootLogs} style={{ margin: 0, height: '18px', padding: '0 6px', fontSize: '9px' }}>
-                              🔄 Refresh
-                            </button>
-                            <button className="btn btn-danger small" onClick={clearTroubleshootLogs} style={{ margin: 0, height: '18px', padding: '0 6px', fontSize: '9px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
-                              Clear
-                            </button>
-                          </div>
-                        </div>
-                        <div style={{ maxHeight: '110px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '6px', borderRadius: '4px', border: '1px solid var(--glass-border)', fontSize: '10px', fontFamily: 'monospace' }}>
-                          {troubleshootLogs.length === 0 ? (
-                            <div style={{ padding: '10px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
-                              No troubleshoot logs found.
+                        {/* Ports & Baud Rate Tab */}
+                        {accountModalActiveTab === 'ports-baud' && (
+                          <div className="glass-card" style={{ padding: '20px' }}>
+                            <h3>🔌 Port & Communication Config</h3>
+                            <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                              Modify ports used by telemetry, web hosting, OTA, and UDP network services. Changes require app restart to bind.
+                            </p>
+                            <div className="input-group">
+                              <label>Express Web Host Port</label>
+                              <input type="text" value={expressPortInput} onChange={(e) => setExpressPortInput(e.target.value)} />
                             </div>
-                          ) : (
-                            troubleshootLogs.map((log, idx) => (
-                              <div key={idx} style={{ marginBottom: '4px', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${log.event || log.type}: ${log.details || log.message}`}>
-                                <span style={{ color: 'var(--accent-pink)' }}>[{new Date(log.timestamp).toLocaleTimeString()}]</span>{' '}
-                                <span style={{ color: 'var(--accent-blue)' }}>{log.event || log.type}</span>: {log.details || log.message}
+                            <div className="input-group">
+                              <label>Telemetry TCP Socket Port</label>
+                              <input type="text" value={telemetryPortInput} onChange={(e) => setTelemetryPortInput(e.target.value)} />
+                            </div>
+                            <div className="input-group">
+                              <label>OTA Local Portal Port</label>
+                              <input type="text" value={otaPortInput} onChange={(e) => setOtaPortInput(e.target.value)} />
+                            </div>
+                            <div className="input-group">
+                              <label>UDP Network Discovery Port</label>
+                              <input type="text" value={udpPortInput} onChange={(e) => setUdpPortInput(e.target.value)} />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: '15px' }}>
+                              <label>Default COM Baud Rate</label>
+                              <select value={defaultBaudRateInput} onChange={(e) => setDefaultBaudRateInput(e.target.value)} className="filter-select" style={{ width: '100%', height: '40px', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '8px', padding: '0 10px', cursor: 'pointer', outline: 'none' }}>
+                                <option value="115200" style={{ background: '#1c1b22', color: 'white' }}>115200</option>
+                                <option value="9600" style={{ background: '#1c1b22', color: 'white' }}>9600</option>
+                                <option value="57600" style={{ background: '#1c1b22', color: 'white' }}>57600</option>
+                              </select>
+                            </div>
+                            <button className="btn btn-accent" onClick={saveAppConfigSettings} style={{ width: '100%' }}>
+                              Save Communications Config
+                            </button>
+                          </div>
+                        )}
+
+                        {/* GitHub OAuth Tab */}
+                        {accountModalActiveTab === 'github-oauth' && (
+                          <div className="glass-card" style={{ padding: '20px' }}>
+                            <h3>🐙 GitHub OAuth Integration</h3>
+                            <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
+                              Register a GitHub OAuth Application and configure credentials to enable secure administrator sign-in.
+                            </p>
+                            <div className="input-group">
+                              <label>GitHub Client ID</label>
+                              <input
+                                type="text"
+                                value={githubClientIdInput}
+                                onChange={(e) => setGithubClientIdInput(e.target.value)}
+                                placeholder="Enter Client ID"
+                              />
+                            </div>
+                            <div className="input-group">
+                              <label>GitHub Client Secret</label>
+                              <input
+                                type="password"
+                                value={githubClientSecretInput}
+                                onChange={(e) => setGithubClientSecretInput(e.target.value)}
+                                placeholder="Enter Client Secret"
+                              />
+                            </div>
+                            <button className="btn btn-primary" onClick={saveAppConfigSettings} style={{ marginTop: '15px', width: '100%' }}>
+                              Save GitHub Credentials
+                            </button>
+                            <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--text-dim)', lineHeight: '1.4' }}>
+                              💡 Need help? View instructions in the <a href="#" onClick={(e) => { e.preventDefault(); alert("Please refer to Documentation/SIGN_WITH_GITHUB.md for setup details."); }} style={{ color: 'var(--accent-pink)', textDecoration: 'underline' }}>GitHub OAuth Setup Guide</a>.
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Performance & OS Tab */}
+                        {accountModalActiveTab === 'performance-os' && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            <div className="glass-card" style={{ padding: '20px' }}>
+                              <h3>⚡ Performance & System Config</h3>
+                              <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                                Enable hardware acceleration to use GPU resources for smoother transitions and rendering.
+                              </p>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '10px 15px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                                <div>
+                                  <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'white' }}>GPU Hardware Acceleration</div>
+                                  <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>Requires application restart to take effect</div>
+                                </div>
+                                <label className="switch-toggle" style={{ margin: 0 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={hwAccelInput}
+                                    onChange={(e) => setHwAccelInput(e.target.checked)}
+                                  />
+                                  <span className="switch-slider"></span>
+                                </label>
                               </div>
-                            ))
-                          )}
-                        </div>
+                              <button className="btn btn-primary" onClick={saveAppConfigSettings} style={{ marginTop: '15px', width: '100%' }}>
+                                Save Performance Settings
+                              </button>
+                            </div>
+
+                            <div className="glass-card" style={{ padding: '20px' }}>
+                              <h3>🖥️ System Specifications & Versions</h3>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginTop: '10px' }}>
+                                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                                  <span style={{ fontSize: '9px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>OS Environment</span>
+                                  <span style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginTop: '2px', color: 'white' }}>{systemInfo.platform.toUpperCase()} ({systemInfo.release})</span>
+                                </div>
+                                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                                  <span style={{ fontSize: '9px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>CPU Architecture</span>
+                                  <span style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginTop: '2px', color: 'white' }}>{systemInfo.cpu} ({systemInfo.arch})</span>
+                                </div>
+                                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                                  <span style={{ fontSize: '9px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>System RAM</span>
+                                  <span style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginTop: '2px', color: 'white' }}>{systemInfo.freeMem} / {systemInfo.totalMem}</span>
+                                </div>
+                                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                                  <span style={{ fontSize: '9px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>Electron</span>
+                                  <span style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginTop: '2px', color: 'white' }}>v{systemInfo.electron}</span>
+                                </div>
+                                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                                  <span style={{ fontSize: '9px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>NodeJS</span>
+                                  <span style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginTop: '2px', color: 'white' }}>v{systemInfo.node}</span>
+                                </div>
+                                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                                  <span style={{ fontSize: '9px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>Chromium</span>
+                                  <span style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginTop: '2px', color: 'white' }}>v{systemInfo.chrome}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* GitHub Sync Tab */}
+                        {accountModalActiveTab === 'github-sync' && (
+                          <div className="glass-card" style={{ padding: '20px' }}>
+                            <h3>🐙 GitHub Sync & XML Pull</h3>
+                            <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                              Sync online codebase files and raw repository XML update logs:
+                            </p>
+
+                            <div className="input-group">
+                              <label>GitHub Repository URL</label>
+                              <input
+                                type="text"
+                                value={gitHubRepoUrlInput || ''}
+                                onChange={(e) => setGitHubRepoUrlInput(e.target.value)}
+                                placeholder="https://github.com/Username/Repo"
+                              />
+                            </div>
+                            <div className="input-group">
+                              <label>Repository Branch</label>
+                              <input
+                                type="text"
+                                value={gitHubRepoBranchInput || ''}
+                                onChange={(e) => setGitHubRepoBranchInput(e.target.value)}
+                                placeholder="main"
+                              />
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '15px' }}>
+                              <button
+                                className="btn btn-primary"
+                                onClick={handlePullGithubXml}
+                                disabled={isSyncingXml}
+                                style={{ margin: 0, width: '100%' }}
+                              >
+                                {isSyncingXml ? 'Syncing XML...' : 'Update XML Now'}
+                              </button>
+                              <button
+                                className="btn btn-accent"
+                                onClick={handleGitHubSync}
+                                disabled={isGitHubSyncing}
+                                style={{ margin: 0, width: '100%' }}
+                              >
+                                {isGitHubSyncing ? 'Syncing Code...' : 'Sync Code Now'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Troubleshoot Logs Tab */}
+                        {accountModalActiveTab === 'revocation-logs' && (
+                          <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', padding: '20px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                              <h3>🛠️ Revocation & Troubleshoot Logs</h3>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button className="btn btn-secondary small" onClick={fetchTroubleshootLogs} style={{ margin: 0, height: '28px', padding: '0 12px', fontSize: '11px' }}>
+                                  🔄 Refresh
+                                </button>
+                                <button className="btn btn-danger small" onClick={clearTroubleshootLogs} style={{ margin: 0, height: '28px', padding: '0 12px', fontSize: '11px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
+                                  🗑️ Clear Logs
+                                </button>
+                              </div>
+                            </div>
+                            <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
+                              Offline troubleshooting history: connection terminations (revoke events) and database failures.
+                            </p>
+
+                            <div style={{ maxHeight: '350px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                              {troubleshootLogs.length === 0 ? (
+                                <div style={{ padding: '30px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
+                                  No troubleshooting logs found.
+                                </div>
+                              ) : (
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                                  <thead>
+                                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
+                                      <th style={{ padding: '6px' }}>Timestamp</th>
+                                      <th style={{ padding: '6px' }}>Event</th>
+                                      <th style={{ padding: '6px' }}>Message</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {troubleshootLogs.map((log, idx) => (
+                                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
+                                        <td style={{ padding: '6px', whiteSpace: 'nowrap' }}>{new Date(log.timestamp).toLocaleString()}</td>
+                                        <td style={{ padding: '6px' }}>
+                                          <span className="status-tag err" style={{ padding: '1px 4px', fontSize: '8px' }}>
+                                            {log.event || log.type}
+                                          </span>
+                                        </td>
+                                        <td style={{ padding: '6px' }}>{log.message || log.details}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )}
+                  </div>
                 </div>
               )}
             </div>
@@ -4452,7 +5147,7 @@ Overall Status : ${overallStatus}
             <header className="view-header glass-header">
               <div>
                 <h1>Modbus Register Viewer</h1>
-                <p>Read holding/input registers dynamically from Modbus slave devices via RS485 bus.</p>
+                <p>Read holding/input registers dynamically from Modbus slave devices via RS485 bus or Direct TCP/IP link.</p>
               </div>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <span className="status-tag ok" style={{ background: 'rgba(0, 240, 255, 0.1)', color: '#00f0ff', borderColor: 'rgba(0, 240, 255, 0.3)' }}>
@@ -4465,60 +5160,200 @@ Overall Status : ${overallStatus}
             </header>
 
             <div className="glass-card" style={{ marginBottom: '20px', padding: '20px' }}>
-              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: '150px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Starting Register Address</label>
-                  <input
-                    type="number"
-                    value={modbusStartReg}
-                    onChange={(e) => setModbusStartReg(Math.max(0, parseInt(e.target.value) || 0))}
-                    placeholder="e.g. 3333"
-                    style={{
-                      width: '100%',
-                      height: '38px',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: '1px solid var(--glass-border)',
-                      borderRadius: '6px',
-                      color: 'white',
-                      padding: '0 12px',
-                      fontSize: '14px',
-                      outline: 'none'
-                    }}
-                  />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                {/* Row 1: Mode, Starting Register, Number of Registers */}
+                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: '150px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Query Mode</label>
+                    <select
+                      value={modbusMode}
+                      onChange={(e) => setModbusMode(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: '38px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid var(--glass-border)',
+                        borderRadius: '6px',
+                        color: 'white',
+                        padding: '0 10px',
+                        fontSize: '14px',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="gateway" style={{ background: '#1c1b22', color: 'white' }}>Gateway Bridge (Connected HW)</option>
+                      <option value="direct" style={{ background: '#1c1b22', color: 'white' }}>Direct Modbus TCP (Desktop Client)</option>
+                    </select>
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: '150px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Starting Register Address</label>
+                    <input
+                      type="number"
+                      value={modbusStartReg}
+                      onChange={(e) => setModbusStartReg(Math.max(0, parseInt(e.target.value) || 0))}
+                      placeholder="e.g. 2000"
+                      style={{
+                        width: '100%',
+                        height: '38px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid var(--glass-border)',
+                        borderRadius: '6px',
+                        color: 'white',
+                        padding: '0 12px',
+                        fontSize: '14px',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: '150px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Number of Registers (Max 125)</label>
+                    <input
+                      type="number"
+                      value={modbusCount}
+                      onChange={(e) => setModbusCount(Math.min(125, Math.max(1, parseInt(e.target.value) || 1)))}
+                      placeholder="e.g. 100"
+                      style={{
+                        width: '100%',
+                        height: '38px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid var(--glass-border)',
+                        borderRadius: '6px',
+                        color: 'white',
+                        padding: '0 12px',
+                        fontSize: '14px',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
                 </div>
 
-                <div style={{ flex: 1, minWidth: '150px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Number of Registers (Max 125)</label>
-                  <input
-                    type="number"
-                    value={modbusCount}
-                    onChange={(e) => setModbusCount(Math.min(125, Math.max(1, parseInt(e.target.value) || 1)))}
-                    placeholder="e.g. 100"
-                    style={{
-                      width: '100%',
-                      height: '38px',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: '1px solid var(--glass-border)',
-                      borderRadius: '6px',
-                      color: 'white',
-                      padding: '0 12px',
-                      fontSize: '14px',
-                      outline: 'none'
-                    }}
-                  />
-                </div>
+                {/* Row 2: Direct Mode Inputs */}
+                {modbusMode === 'direct' && (
+                  <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '15px' }}>
+                    <div style={{ flex: 2, minWidth: '180px' }}>
+                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Modbus Device IP Address</label>
+                      <input
+                        type="text"
+                        value={modbusIp}
+                        onChange={(e) => setModbusIp(e.target.value)}
+                        placeholder="e.g. 192.168.4.1"
+                        style={{
+                          width: '100%',
+                          height: '38px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid var(--glass-border)',
+                          borderRadius: '6px',
+                          color: 'white',
+                          padding: '0 12px',
+                          fontSize: '14px',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
 
-                <div>
+                    <div style={{ flex: 1, minWidth: '100px' }}>
+                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Port</label>
+                      <input
+                        type="text"
+                        value={modbusPort}
+                        onChange={(e) => setModbusPort(e.target.value)}
+                        placeholder="502"
+                        style={{
+                          width: '100%',
+                          height: '38px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid var(--glass-border)',
+                          borderRadius: '6px',
+                          color: 'white',
+                          padding: '0 12px',
+                          fontSize: '14px',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: '100px' }}>
+                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Slave / Unit ID</label>
+                      <input
+                        type="number"
+                        value={modbusSlaveId}
+                        onChange={(e) => setModbusSlaveId(e.target.value)}
+                        placeholder="1"
+                        style={{
+                          width: '100%',
+                          height: '38px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid var(--glass-border)',
+                          borderRadius: '6px',
+                          color: 'white',
+                          padding: '0 12px',
+                          fontSize: '14px',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ flex: 1.5, minWidth: '130px' }}>
+                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Register Type</label>
+                      <select
+                        value={modbusRegType}
+                        onChange={(e) => setModbusRegType(e.target.value)}
+                        style={{
+                          width: '100%',
+                          height: '38px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid var(--glass-border)',
+                          borderRadius: '6px',
+                          color: 'white',
+                          padding: '0 10px',
+                          fontSize: '14px',
+                          outline: 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="holding" style={{ background: '#1c1b22', color: 'white' }}>Holding (FC 03)</option>
+                        <option value="input" style={{ background: '#1c1b22', color: 'white' }}>Input (FC 04)</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {/* Row 3: Format & Action Button */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '15px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Display Format:</span>
+                    <select
+                      value={modbusDisplay32 ? '32bit' : '16bit'}
+                      onChange={(e) => setModbusDisplay32(e.target.value === '32bit')}
+                      style={{
+                        height: '30px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid var(--glass-border)',
+                        color: 'white',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        padding: '0 8px',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="32bit" style={{ background: '#1c1b22', color: 'white' }}>32-Bit Grouped (Long Endian)</option>
+                      <option value="16bit" style={{ background: '#1c1b22', color: 'white' }}>16-Bit Raw Registers</option>
+                    </select>
+                  </div>
+
                   <button
                     className="btn btn-primary"
                     onClick={triggerModbusRead}
-                    disabled={isReadingModbus || !connection.type}
-                    style={{ margin: 0, height: '38px', display: 'flex', alignItems: 'center', gap: '8px', minWidth: '160px', justifyContent: 'center' }}
+                    disabled={isReadingModbus || (modbusMode === 'gateway' && !connection.type)}
+                    style={{ margin: 0, height: '38px', display: 'flex', alignItems: 'center', gap: '8px', minWidth: '180px', justifyContent: 'center' }}
                   >
                     {isReadingModbus ? (
                       <>
                         <span style={{ width: '12px', height: '12px', border: '2px solid white', borderRightColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.75s linear infinite' }}></span>
-                        Reading Bus...
+                        Reading Modbus...
                       </>
                     ) : (
                       <>⚡ Query Registers</>
@@ -4536,42 +5371,100 @@ Overall Status : ${overallStatus}
 
             <div className="glass-card" style={{ padding: '20px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                <h3 style={{ margin: 0, fontSize: '1rem', color: 'white' }}>Register Data Grid ({modbusData.length} active registers)</h3>
+                <h3 style={{ margin: 0, fontSize: '1rem', color: 'white' }}>
+                  Register Data Grid ({modbusDisplay32 ? Object.keys(grouped32BitData).length : modbusData.length} records shown)
+                </h3>
                 <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
                   Format: Address [Decimal | Hex | Binary]
                 </div>
               </div>
 
               <div style={{ flex: 1, overflowY: 'auto', maxHeight: '500px', paddingRight: '5px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' }}>
-                  {modbusData.map((val, idx) => {
-                    const regAddr = modbusStartReg + idx;
-                    const hexStr = '0x' + val.toString(16).toUpperCase().padStart(4, '0');
-                    const binStr = val.toString(2).padStart(16, '0').replace(/(.{4})/g, '$1 ').trim();
-                    return (
-                      <div key={regAddr} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px', transition: 'all 0.2s ease' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '11px', color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)', fontWeight: 'bold' }}>
-                            REG {regAddr}
-                          </span>
-                          <span style={{ fontSize: '10px', color: 'var(--text-dim)', background: 'rgba(255,255,255,0.04)', padding: '1px 5px', borderRadius: '4px', fontFamily: 'var(--font-mono)' }}>
-                            {hexStr}
-                          </span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+                  {modbusDisplay32 ? (
+                    // 32-bit grouped view
+                    Object.keys(grouped32BitData).sort((a, b) => parseInt(a) - parseInt(b)).map((key) => {
+                      const regAddr = parseInt(key);
+                      const val = grouped32BitData[key];
+                      if (val === null || val === undefined) {
+                        return (
+                          <div key={regAddr} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                              REG {regAddr} - {regAddr + 1}
+                            </span>
+                            <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--text-muted)' }}>
+                              NULL / TIMEOUT
+                            </div>
+                          </div>
+                        );
+                      }
+                      
+                      const hasNext = (regAddr + 1 - modbusStartReg < modbusData.length);
+                      const hexStr = '0x' + val.toString(16).toUpperCase().padStart(8, '0');
+                      const binStr = val.toString(2).padStart(32, '0').replace(/(.{4})/g, '$1 ').trim();
+
+                      return (
+                        <div key={regAddr} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(0, 240, 255, 0.1)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px', transition: 'all 0.2s ease' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--accent-pink)', fontFamily: 'var(--font-mono)', fontWeight: 'bold' }}>
+                              REG {regAddr}{hasNext ? ` - ${regAddr + 1}` : ''} (32-Bit)
+                            </span>
+                            <span style={{ fontSize: '10px', color: 'var(--text-dim)', background: 'rgba(255,255,255,0.04)', padding: '1px 5px', borderRadius: '4px', fontFamily: 'var(--font-mono)' }}>
+                              {hexStr}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
+                            {val}
+                          </div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', opacity: 0.8 }}>
+                            BIN: {binStr}
+                          </div>
                         </div>
-                        <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
-                          {val}
+                      );
+                    })
+                  ) : (
+                    // 16-bit raw registers view
+                    modbusData.map((val, idx) => {
+                      const regAddr = modbusStartReg + idx;
+                      if (val === null || val === undefined) {
+                        return (
+                          <div key={regAddr} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                              REG {regAddr}
+                            </span>
+                            <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--text-muted)' }}>
+                              NULL / TIMEOUT
+                            </div>
+                          </div>
+                        );
+                      }
+                      const hexStr = '0x' + val.toString(16).toUpperCase().padStart(4, '0');
+                      const binStr = val.toString(2).padStart(16, '0').replace(/(.{4})/g, '$1 ').trim();
+                      return (
+                        <div key={regAddr} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px', transition: 'all 0.2s ease' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)', fontWeight: 'bold' }}>
+                              REG {regAddr}
+                            </span>
+                            <span style={{ fontSize: '10px', color: 'var(--text-dim)', background: 'rgba(255,255,255,0.04)', padding: '1px 5px', borderRadius: '4px', fontFamily: 'var(--font-mono)' }}>
+                              {hexStr}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
+                            {val}
+                          </div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', opacity: 0.8 }}>
+                            BIN: {binStr}
+                          </div>
                         </div>
-                        <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', opacity: 0.8 }}>
-                          BIN: {binStr}
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
 
                   {modbusData.length === 0 && (
                     <div style={{ gridColumn: '1 / -1', padding: '60px 0', textAlign: 'center', color: 'var(--text-dim)' }}>
                       <div style={{ fontSize: '2rem', marginBottom: '10px' }}>📊</div>
-                      No register data read yet. Select a range above and click "Query Registers".
+                      No register data read yet. Configure the parameters above and click "Query Registers".
                     </div>
                   )}
                 </div>
@@ -4787,7 +5680,7 @@ Overall Status : ${overallStatus}
 
             <div className="security-layout-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', width: '100%' }}>
               {/* Registry Form */}
-              <div className="glass-card" style={{ flex: '0 0 calc(30% - 10px)', minWidth: '320px', border: editingDeviceImei ? '1px solid rgba(0, 122, 255, 0.4)' : '1px solid var(--glass-border)', boxShadow: editingDeviceImei ? '0 0 20px rgba(0, 122, 255, 0.15)' : 'none' }}>
+              <div className="glass-card" style={{ flex: '0 0 250px', width: '250px', minWidth: '250px', border: editingDeviceImei ? '1px solid rgba(0, 122, 255, 0.4)' : '1px solid var(--glass-border)', boxShadow: editingDeviceImei ? '0 0 20px rgba(0, 122, 255, 0.15)' : 'none' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
                   <h3><span className="icon">📝</span> {editingDeviceImei ? 'Modify Device Profile' : 'Register Device Config'}</h3>
                   {editingDeviceImei ? (
@@ -4955,19 +5848,19 @@ Overall Status : ${overallStatus}
               </div>
 
               {/* Registered Devices List Table */}
-              <div className="glass-card" style={{ flex: '1 1 calc(70% - 10px)', minWidth: '450px', display: 'flex', flexDirection: 'column' }}>
+              <div className="glass-card" style={{ flex: '1 1 calc(100% - 270px)', minWidth: '450px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <h3><span className="icon">📡</span> Registered Device Profiles ({registeredDevices.length})</h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
                   List of device configurations registered inside the MongoDB database.
                 </p>
 
-                <div style={{ maxHeight: '420px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)', flex: 1 }}>
+                <div style={{ maxHeight: '420px', overflowY: 'auto', overflowX: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)', flex: 1 }}>
                   {registeredDevices.length === 0 ? (
                     <div style={{ padding: '40px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
                       No configurations found in database registry. Fill form to register.
                     </div>
                   ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
                       <thead>
                         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
                           <th style={{ padding: '8px' }}>Device #</th>
@@ -6220,7 +7113,7 @@ Overall Status : ${overallStatus}
               </div>
             </div>
             {/* Added GitHub Code Sync card */}
-            <div className="glass-card" style={{ marginTop: '20px' }}>
+            {/* <div className="glass-card" style={{ marginTop: '20px' }}>
               <h3><span className="icon">🔄</span> GitHub App Code Auto-Updater</h3>
               <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
                 Pull the latest javascript, styling, and firmware source files directly from your GitHub repository to update the app dynamically without reinstalling the full .exe.
@@ -6254,7 +7147,7 @@ Overall Status : ${overallStatus}
                   {isGitHubSyncing ? 'Syncing...' : '🔄 Pull Latest Code'}
                 </button>
               </div>
-            </div>
+            </div> */}
           </section>
 
           {/* ================= VIEW 4: DEBUG LOGS ================= */}
@@ -6998,545 +7891,7 @@ Overall Status : ${overallStatus}
             </div>
           </section>
 
-          {/* ================= VIEW 5: APP SETTINGS (Requirement 6) ================= */}
-          <section id="page-settings" className={`page-view ${(activeTab === 'page-settings' || activeTab === 'settings') ? 'active' : ''}`}>
-            <header className="view-header">
-              <div>
-                <h1>Application Settings</h1>
-                <p>Configure MongoDB connection strings, system communication ports, default baud rates, and view system specifications</p>
-              </div>
-            </header>
 
-            <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-
-              {/* Database Settings Card */}
-              <div className="glass-card">
-                <h3><span className="icon">📂</span> MongoDB Database Settings</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
-                  Set the MERN backend database connection URI. The app will attempt to connect and persist telemetry data dynamically.
-                </p>
-                <div className="input-group">
-                  <label>MongoDB Connection URI</label>
-                  <input
-                    type="text"
-                    value={dbUriInput}
-                    onChange={(e) => setDbUriInput(e.target.value)}
-                    placeholder="mongodb+srv://yashacker:Iamyash@reactdb.d04du.mongodb.net/?appName=ReactDB"
-                  />
-                </div>
-                <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-                  <button className="btn btn-primary" onClick={triggerDbReconnect} disabled={isReconnectingDb} style={{ flex: 1 }}>
-                    {isReconnectingDb ? 'Connecting...' : 'Reconnect & Save'}
-                  </button>
-                </div>
-                {dbReconnectStatus && (
-                  <div style={{ marginTop: '10px', fontSize: '12px', color: dbReconnectStatus.includes('success') ? '#00ff66' : '#ff3366', fontFamily: 'var(--font-mono)' }}>
-                    {dbReconnectStatus}
-                  </div>
-                )}
-              </div>
-
-              {/* App Theme & Personalization Card */}
-              <div className="glass-card">
-                <h3><span className="icon">🎨</span> Theme & Personalization</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
-                  Choose from curated dark modes and modern typography fonts. Changes apply instantly.
-                </p>
-
-                {/* Theme Preset Selection */}
-                <div style={{ marginBottom: '20px' }}>
-                  <label className="control-title" style={{ fontSize: '10px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold' }}>Color Theme</label>
-                  <div className="theme-presets-grid">
-                    <div
-                      className={`theme-preset-card ${currentTheme === 'quantum-indigo' ? 'active' : ''}`}
-                      onClick={() => changeThemeWithTransition('quantum-indigo')}
-                      style={{ '--theme-card-border': '#7000ff', '--theme-card-bg-rgb': '112, 0, 255', '--theme-preview-grad': 'linear-gradient(135deg, #7000ff 0%, #00c6ff 100%)' }}
-                    >
-                      <div className="theme-preview-bar"></div>
-                      <span className="theme-preset-name">Quantum Indigo</span>
-                    </div>
-
-                    <div
-                      className={`theme-preset-card ${currentTheme === 'cyber-orchid' ? 'active' : ''}`}
-                      onClick={() => changeThemeWithTransition('cyber-orchid')}
-                      style={{ '--theme-card-border': '#f953c6', '--theme-card-bg-rgb': '249, 83, 198', '--theme-preview-grad': 'linear-gradient(135deg, #f953c6 0%, #7000ff 100%)' }}
-                    >
-                      <div className="theme-preview-bar"></div>
-                      <span className="theme-preset-name">Cyber Orchid</span>
-                    </div>
-
-                    <div
-                      className={`theme-preset-card ${currentTheme === 'mint-aurora' ? 'active' : ''}`}
-                      onClick={() => changeThemeWithTransition('mint-aurora')}
-                      style={{ '--theme-card-border': '#00e676', '--theme-card-bg-rgb': '0, 230, 118', '--theme-preview-grad': 'linear-gradient(135deg, #00e676 0%, #00c6ff 100%)' }}
-                    >
-                      <div className="theme-preview-bar"></div>
-                      <span className="theme-preset-name">Mint Aurora</span>
-                    </div>
-
-                    <div
-                      className={`theme-preset-card ${currentTheme === 'solar-flare' ? 'active' : ''}`}
-                      onClick={() => changeThemeWithTransition('solar-flare')}
-                      style={{ '--theme-card-border': '#ff7300', '--theme-card-bg-rgb': '255, 115, 0', '--theme-preview-grad': 'linear-gradient(135deg, #ff7300 0%, #f953c6 100%)' }}
-                    >
-                      <div className="theme-preview-bar"></div>
-                      <span className="theme-preset-name">Solar Flare</span>
-                    </div>
-
-                    <div
-                      className={`theme-preset-card ${currentTheme === 'minecraft' ? 'active' : ''}`}
-                      onClick={() => changeThemeWithTransition('minecraft')}
-                      style={{ '--theme-card-border': '#5b8731', '--theme-card-bg-rgb': '91, 135, 49', '--theme-preview-grad': 'linear-gradient(135deg, #5b8731 0%, #866043 100%)' }}
-                    >
-                      <div className="theme-preview-bar"></div>
-                      <span className="theme-preset-name">Minecraft Edition</span>
-                    </div>
-
-                    <div
-                      className={`theme-preset-card ${currentTheme === 'cherry-grove' ? 'active' : ''}`}
-                      onClick={() => changeThemeWithTransition('cherry-grove')}
-                      style={{ '--theme-card-border': '#ff8da1', '--theme-card-bg-rgb': '255, 141, 161', '--theme-preview-grad': 'linear-gradient(135deg, #ff8da1 0%, #3a222d 100%)' }}
-                    >
-                      <div className="theme-preview-bar"></div>
-                      <span className="theme-preset-name">Cherry Grove Edition</span>
-                    </div>
-
-                    <div
-                      className={`theme-preset-card ${currentTheme === 'deep-sea-ocean' ? 'active' : ''}`}
-                      onClick={() => changeThemeWithTransition('deep-sea-ocean', triggerOceanAnimation)}
-                      style={{ '--theme-card-border': '#0d9488', '--theme-card-bg-rgb': '13, 148, 136', '--theme-preview-grad': 'linear-gradient(135deg, #060e17 0%, #0d9488 100%)' }}
-                    >
-                      <div className="theme-preview-bar"></div>
-                      <span className="theme-preset-name">Deep Sea Ocean</span>
-                    </div>
-
-                    <div
-                      className={`theme-preset-card ${currentTheme === 'hacking' ? 'active' : ''}`}
-                      onClick={() => changeThemeWithTransition('hacking', triggerHackerAnimation)}
-                      style={{ '--theme-card-border': '#00ff00', '--theme-card-bg-rgb': '0, 255, 0', '--theme-preview-grad': 'linear-gradient(135deg, #020202 0%, #00ff00 100%)' }}
-                    >
-                      <div className="theme-preview-bar"></div>
-                      <span className="theme-preset-name">Hacking Edition</span>
-                    </div>
-
-                    <div
-                      className={`theme-preset-card ${currentTheme === 'mojang-studios' ? 'active' : ''}`}
-                      onClick={() => changeThemeWithTransition('mojang-studios')}
-                      style={{ '--theme-card-border': '#ef323d', '--theme-card-bg-rgb': '239, 50, 61', '--theme-preview-grad': 'linear-gradient(135deg, #ef323d 0%, #000 100%)' }}
-                    >
-                      <div className="theme-preview-bar"></div>
-                      <span className="theme-preset-name">Mojang Studios</span>
-                    </div>
-
-                    <div
-                      className={`theme-preset-card ${currentTheme === 'star-nova' ? 'active' : ''}`}
-                      onClick={() => changeThemeWithTransition('star-nova')}
-                      style={{ '--theme-card-border': '#fef3c7', '--theme-card-bg-rgb': '254, 243, 199', '--theme-preview-grad': 'linear-gradient(135deg, #0f172a 0%, #fef3c7 100%)' }}
-                    >
-                      <div className="theme-preview-bar"></div>
-                      <span className="theme-preset-name">Star Nova</span>
-                    </div>
-
-                    <div
-                      className={`theme-preset-card ${currentTheme === 'cyber-sunset' ? 'active' : ''}`}
-                      onClick={() => changeThemeWithTransition('cyber-sunset')}
-                      style={{ '--theme-card-border': '#ec4899', '--theme-card-bg-rgb': '236, 72, 153', '--theme-preview-grad': 'linear-gradient(135deg, #ec4899 0%, #eab308 100%)' }}
-                    >
-                      <div className="theme-preview-bar"></div>
-                      <span className="theme-preset-name">Cyber Sunset</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Font Preset Selection */}
-                <div style={{ marginBottom: '20px' }}>
-                  <label className="control-title" style={{ fontSize: '10px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold' }}>Typography Font</label>
-                  <div className="font-presets-grid">
-                    <div className={`font-preset-card ${currentFont === 'outfit' ? 'active' : ''}`} onClick={() => setCurrentFont('outfit')} style={{ fontFamily: 'Outfit, sans-serif' }}>
-                      Outfit Sans
-                    </div>
-                    <div className={`font-preset-card ${currentFont === 'mono' ? 'active' : ''}`} onClick={() => setCurrentFont('mono')} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px' }}>
-                      JB Mono
-                    </div>
-                    <div className={`font-preset-card ${currentFont === 'space' ? 'active' : ''}`} onClick={() => setCurrentFont('space')} style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-                      Space Grotesk
-                    </div>
-                  </div>
-                </div>
-
-                {/* GitHub Authentication Integration */}
-                <div style={{ marginTop: '25px', paddingTop: '20px', borderTop: '1px solid var(--glass-border)' }}>
-                  <label className="control-title" style={{ fontSize: '10px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold' }}>GitHub Cloud Workspace</label>
-                  {gitHubUser ? (
-                    <div className="github-widget" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '10px' }}>
-                      <div className="github-avatar" style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundImage: `url(${gitHubUser.avatarUrl})`, backgroundSize: 'cover' }}></div>
-                      <div className="github-info" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                        <span className="github-username" style={{ fontSize: '13px', fontWeight: 'bold', color: 'white' }}>@{gitHubUser.username}</span>
-                        <span className="github-status" style={{ fontSize: '10px', color: 'var(--accent-emerald)' }}>Workspace Sync Active</span>
-                      </div>
-                      <button className="btn btn-secondary small" style={{ margin: 0, padding: '4px 10px', fontSize: '10px', height: '24px', minWidth: 'auto', background: 'rgba(255,51,102,0.1)', border: '1px solid rgba(255,51,102,0.3)', color: '#ff3366' }} onClick={handleGitHubSignIn}>
-                        Disconnect
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '10px' }}>
-                      <button className="btn btn-secondary" onClick={handleGitHubSignIn} style={{ width: '100%', margin: 0, gap: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                          <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
-                        </svg>
-                        Sign in via Window (OAuth Portal)
-                      </button>
-                      <button className="btn btn-secondary" onClick={handleGitHubCopyLink} style={{ width: '100%', margin: 0, gap: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.03)', borderColor: 'rgba(255,255,255,0.1)' }}>
-                        🔗 Copy Auth Link to Browser
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Ports & Communication Config Card */}
-              <div className="glass-card">
-                <h3><span className="icon">⚙️</span> Port & Communication Config</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
-                  Modify ports used by telemetry, web hosting, OTA, and UDP network services. Changes require app restart to bind.
-                </p>
-                <div className="input-group">
-                  <label>Express Web Host Port</label>
-                  <input type="text" value={expressPortInput} onChange={(e) => setExpressPortInput(e.target.value)} />
-                </div>
-                <div className="input-group">
-                  <label>Telemetry TCP Socket Port</label>
-                  <input type="text" value={telemetryPortInput} onChange={(e) => setTelemetryPortInput(e.target.value)} />
-                </div>
-                <div className="input-group">
-                  <label>OTA Local Portal Port</label>
-                  <input type="text" value={otaPortInput} onChange={(e) => setOtaPortInput(e.target.value)} />
-                </div>
-                <div className="input-group">
-                  <label>UDP Network Discovery Port</label>
-                  <input type="text" value={udpPortInput} onChange={(e) => setUdpPortInput(e.target.value)} />
-                </div>
-                <div className="input-group">
-                  <label>Default COM Baud Rate</label>
-                  <select value={defaultBaudRateInput} onChange={(e) => setDefaultBaudRateInput(e.target.value)} className="filter-select" style={{ width: '100%', height: '42px', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '8px', padding: '0 10px', cursor: 'pointer', outline: 'none' }}>
-                    <option value="115200" style={{ background: '#1c1b22', color: 'white' }}>115200</option>
-                    <option value="9600" style={{ background: '#1c1b22', color: 'white' }}>9600</option>
-                    <option value="57600" style={{ background: '#1c1b22', color: 'white' }}>57600</option>
-                  </select>
-                </div>
-                <button className="btn btn-accent" onClick={saveAppConfigSettings} style={{ marginTop: '15px', width: '100%' }}>
-                  Save Communications Config
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    localStorage.removeItem('isLoggedIn');
-                    setIsLoggedIn(false);
-                    alert('Logged out successfully!');
-                  }}
-                  style={{ marginTop: '10px', width: '100%', borderColor: 'rgba(239, 68, 68, 0.4)', color: '#ef4444', background: 'rgba(239, 68, 68, 0.05)' }}
-                >
-                  🔒 Log Out Admin Session
-                </button>
-              </div>
-
-              {/* GitHub OAuth Credentials Card */}
-              <div className="glass-card">
-                <h3><span className="icon">🐙</span> GitHub OAuth Integration</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '20px' }}>
-                  Register a GitHub OAuth Application and configure credentials to enable secure administrator sign-in.
-                </p>
-                <div className="input-group">
-                  <label>GitHub Client ID</label>
-                  <input
-                    type="text"
-                    value={githubClientIdInput}
-                    onChange={(e) => setGithubClientIdInput(e.target.value)}
-                    placeholder="Enter Client ID"
-                  />
-                </div>
-                <div className="input-group">
-                  <label>GitHub Client Secret</label>
-                  <input
-                    type="password"
-                    value={githubClientSecretInput}
-                    onChange={(e) => setGithubClientSecretInput(e.target.value)}
-                    placeholder="Enter Client Secret"
-                  />
-                </div>
-                <button className="btn btn-primary" onClick={saveAppConfigSettings} style={{ marginTop: '15px', width: '100%' }}>
-                  Save GitHub Credentials
-                </button>
-                <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--text-dim)', textAlign: 'left', lineHeight: '1.4' }}>
-                  💡 Need help? View the configuration instructions in the <a href="#" onClick={(e) => { e.preventDefault(); alert("Please refer to Documentation/SIGN_WITH_GITHUB.md for step-by-step setup details."); }} style={{ color: 'var(--accent-pink)', textDecoration: 'underline' }}>GitHub OAuth Setup Guide</a>.
-                </div>
-              </div>
-
-              {/* Hardware Performance Settings Card */}
-              <div className="glass-card">
-                <h3><span className="icon">⚡</span> Performance & System Config</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
-                  Enable hardware acceleration to use GPU resources for smoother transitions and rendering.
-                </p>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '10px 15px', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
-                  <div>
-                    <div style={{ fontSize: '12px', fontWeight: 'bold' }}>GPU Hardware Acceleration</div>
-                    <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>Requires application restart to take effect</div>
-                  </div>
-                  <label className="switch-toggle" style={{ margin: 0 }}>
-                    <input
-                      type="checkbox"
-                      checked={hwAccelInput}
-                      onChange={(e) => setHwAccelInput(e.target.checked)}
-                    />
-                    <span className="switch-slider"></span>
-                  </label>
-                </div>
-                <button className="btn btn-primary" onClick={saveAppConfigSettings} style={{ marginTop: '15px', width: '100%' }}>
-                  Save Performance Settings
-                </button>
-              </div>
-
-              {/* System Info Specifications Card */}
-              <div className="glass-card" style={{ gridColumn: 'span 2' }}>
-                <h3><span className="icon">🖥️</span> System Specifications & Versions</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
-                  Hardware architecture, operating system metadata, and host framework runtime environments:
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginTop: '10px' }}>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>OS Environment</span>
-                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>{systemInfo.platform.toUpperCase()} ({systemInfo.release})</span>
-                  </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>CPU Architecture</span>
-                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>{systemInfo.cpu} ({systemInfo.arch})</span>
-                  </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>System RAM</span>
-                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>{systemInfo.freeMem} Free / {systemInfo.totalMem} Total</span>
-                  </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>Electron Framework</span>
-                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>v{systemInfo.electron}</span>
-                  </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>NodeJS Platform</span>
-                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>v{systemInfo.node}</span>
-                  </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>Chromium Core</span>
-                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>v{systemInfo.chrome}</span>
-                  </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', textAlign: 'left' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--accent-blue)', display: 'block', textTransform: 'uppercase' }}>V8 JavaScript Engine</span>
-                    <span style={{ fontSize: '14px', fontWeight: 'bold', display: 'block', marginTop: '2px' }}>{systemInfo.v8}</span>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          </section>
-
-          {/* ================= VIEW 8: ACCOUNT & TROUBLESHOOT ================= */}
-          <section id="page-account" className={`page-view ${activeTab === 'page-account' ? 'active' : ''}`} style={{ display: 'none' }}>
-            <header className="view-header">
-              <div>
-                <h1>Account & Troubleshoot Center</h1>
-                <p>Manage administrator credentials, online sync connections, and review diagnostic revocation logs</p>
-              </div>
-            </header>
-
-            {!isLoggedIn ? (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '60px 0' }}>
-                <div className="glass-card auth-card" style={{ maxWidth: '400px', width: '100%', border: '1px solid var(--glass-border)' }}>
-                  <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                    <span style={{ fontSize: '40px' }}>🔑</span>
-                    <h2 style={{ color: 'white', marginTop: '10px' }}>Admin Authorization</h2>
-                    <p style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Authenticate with admin keys to modify hardware settings</p>
-                  </div>
-
-                  {authError && (
-                    <div style={{ padding: '10px', background: 'rgba(255, 51, 102, 0.1)', border: '1px solid rgba(255, 51, 102, 0.3)', color: '#ff3366', borderRadius: '6px', fontSize: '12px', marginBottom: '15px', textAlign: 'center' }}>
-                      ⚠️ {authError}
-                    </div>
-                  )}
-
-                  <div className="input-group">
-                    <label>Username</label>
-                    <input type="text" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} placeholder="Enter admin username" />
-                  </div>
-
-                  {authMode === 'signup' && (
-                    <div className="input-group">
-                      <label>Email Address</label>
-                      <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="admin@domain.com" />
-                    </div>
-                  )}
-
-                  <div className="input-group">
-                    <label>Password</label>
-                    <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••••••" />
-                  </div>
-
-                  {authMode === 'signup' && (
-                    <div className="input-group">
-                      <label>Confirm Password</label>
-                      <input type="password" value={authConfirmPassword} onChange={(e) => setAuthConfirmPassword(e.target.value)} placeholder="••••••••••••" />
-                    </div>
-                  )}
-
-                  <button className="btn btn-accent" onClick={handleAuth} style={{ width: '100%', marginTop: '15px' }}>
-                    {authMode === 'login' ? 'Authenticate Session' : 'Register Administrator'}
-                  </button>
-
-                  <div style={{ marginTop: '15px', textAlign: 'center', fontSize: '12px' }}>
-                    <a href="#" onClick={(e) => { e.preventDefault(); setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }} style={{ color: 'var(--accent-blue)', textDecoration: 'underline' }}>
-                      {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Log In"}
-                    </a>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
-
-                {/* Admin Status & Reconnect Card */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div className="glass-card">
-                    <h3><span className="icon">👤</span> Admin Profile</h3>
-                    <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>Active administrator session details:</p>
-
-                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '15px' }}>
-                      <div>
-                        <span style={{ fontSize: '10px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>Username</span>
-                        <span style={{ fontSize: '14px', fontWeight: 'bold' }}>Administrator</span>
-                      </div>
-                      <div>
-                        <span style={{ fontSize: '10px', color: 'var(--accent-pink)', display: 'block', textTransform: 'uppercase' }}>Status</span>
-                        <span style={{ fontSize: '12px', color: 'var(--accent-emerald)', fontWeight: 'bold' }}>Connected Offline & Local</span>
-                      </div>
-                    </div>
-
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        localStorage.removeItem('isLoggedIn');
-                        setIsLoggedIn(false);
-                        addLogLine('[GUI] Logged out.', 'system');
-                      }}
-                      style={{ width: '100%', borderColor: 'rgba(239, 68, 68, 0.4)', color: '#ef4444', background: 'rgba(239, 68, 68, 0.05)', margin: 0 }}
-                    >
-                      🚪 Log Out Session
-                    </button>
-                  </div>
-
-                  {/* GitHub Repo Sync Options Card */}
-                  <div className="glass-card">
-                    <h3><span className="icon">🐙</span> GitHub Sync & XML Pull</h3>
-                    <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
-                      Sync online codebase files and raw repository XML update logs:
-                    </p>
-
-                    <div className="input-group">
-                      <label>GitHub Repository URL</label>
-                      <input
-                        type="text"
-                        value={gitHubRepoUrlInput || ''}
-                        onChange={(e) => setGitHubRepoUrlInput(e.target.value)}
-                        placeholder="https://github.com/Username/Repo"
-                      />
-                    </div>
-                    <div className="input-group">
-                      <label>Repository Branch</label>
-                      <input
-                        type="text"
-                        value={gitHubRepoBranchInput || ''}
-                        onChange={(e) => setGitHubRepoBranchInput(e.target.value)}
-                        placeholder="main"
-                      />
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
-                      <button
-                        className="btn btn-primary"
-                        onClick={handlePullGithubXml}
-                        disabled={isSyncingXml}
-                        style={{ margin: 0, width: '100%' }}
-                      >
-                        {isSyncingXml ? 'Syncing XML...' : 'Update XML Now'}
-                      </button>
-                      <button
-                        className="btn btn-accent"
-                        onClick={handleGitHubSync}
-                        disabled={isGitHubSyncing}
-                        style={{ margin: 0, width: '100%' }}
-                      >
-                        {isGitHubSyncing ? 'Syncing Code...' : 'Sync Code Now'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* System Troubleshoot Logs Card */}
-                <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <h3><span className="icon">🛠️</span> Revocation & Error Troubleshoot Logs</h3>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button className="btn btn-secondary small" onClick={fetchTroubleshootLogs} style={{ margin: 0, height: '26px', padding: '0 10px', fontSize: '11px' }}>
-                        🔄 Refresh
-                      </button>
-                      <button className="btn btn-danger small" onClick={clearTroubleshootLogs} style={{ margin: 0, height: '26px', padding: '0 10px', fontSize: '11px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
-                        🗑️ Clear Logs
-                      </button>
-                    </div>
-                  </div>
-                  <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
-                    Offline troubleshooting history: connection terminations (connection revoke events) and database writing failure records.
-                  </p>
-
-                  <div style={{ maxHeight: '420px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)', flex: 1 }}>
-                    {troubleshootLogs.length === 0 ? (
-                      <div style={{ padding: '40px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
-                        No troubleshooting reports found. Everything is running smoothly!
-                      </div>
-                    ) : (
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                        <thead>
-                          <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--accent-pink)', textAlign: 'left' }}>
-                            <th style={{ padding: '8px', width: '150px' }}>Timestamp</th>
-                            <th style={{ padding: '8px', width: '160px' }}>Event Type</th>
-                            <th style={{ padding: '8px' }}>Description</th>
-                            <th style={{ padding: '8px' }}>Details / Reason</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {troubleshootLogs.map((log, idx) => (
-                            <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
-                              <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                                {new Date(log.timestamp).toLocaleString()}
-                              </td>
-                              <td style={{ padding: '8px' }}>
-                                <span className={`status-tag ${(log.type || log.event) === 'db_entry_failed' || (log.type || log.event) === 'db_connection_failed' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', textTransform: 'uppercase', display: 'inline-block' }}>
-                                  {(log.type || log.event || 'troubleshoot').replace(/_/g, ' ')}
-                                </span>
-                              </td>
-                              <td style={{ padding: '8px', fontWeight: 'bold' }}>{log.message}</td>
-                              <td style={{ padding: '8px', color: 'var(--text-dim)', fontSize: '11px' }}>{log.details}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-
-                  <div style={{ background: 'rgba(255, 115, 0, 0.05)', border: '1px solid rgba(255, 115, 0, 0.15)', borderRadius: '6px', padding: '10px', fontSize: '11px', marginTop: '15px', color: '#ffb74d' }}>
-                    ⚠️ <strong>Why do TCP connections get revoked?</strong> In custom gateways (Wi-Fi/Ethernet links), connection revoke events usually happen if the gateway fails to respond to keep-alive TCP probes within 60s, or if there is IP collision on the LAN network, causing socket reset.
-                  </div>
-                </div>
-
-              </div>
-            )}
-          </section>
 
         </main>
 

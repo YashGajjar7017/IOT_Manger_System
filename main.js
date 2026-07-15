@@ -43,6 +43,34 @@ let tcpReconnectTimeout = null;
 // ── Worker thread for off-main-thread JSON parsing + DB writes ──────────────
 let dataWorker = null;
 
+function updateDeviceAndSaveSnapshot(updateFields) {
+  const hasWindow = mainWindow && !mainWindow.isDestroyed();
+  const wc = hasWindow ? mainWindow.webContents : null;
+  return db.registerOrUpdateDevice(updateFields)
+    .then(doc => {
+      if (doc) {
+        currentDeviceDbId = doc._id;
+        if (wc) wc.send('refresh-registered-devices');
+        
+        // Immediately save a telemetry snapshot record to MongoDB database logs
+        return db.saveTelemetrySnapshot(updateFields)
+          .then(() => {
+            if (wc) wc.send('refresh-database-history');
+            return doc;
+          })
+          .catch(err => {
+            console.error('[DATABASE] Error saving telemetry snapshot after diagnostics check:', err);
+            return doc;
+          });
+      }
+      return doc;
+    })
+    .catch(err => {
+      console.error('[DATABASE] Error registerOrUpdateDevice:', err);
+      throw err;
+    });
+}
+
 // ── Disk cache: persist last telemetry state across restarts ────────────────
 const CACHE_PATH = path.join(app.getPath('userData'), 'telemetry-cache.json');
 let telemetryCache = {}; // { deviceId -> device object }
@@ -699,7 +727,7 @@ function startExpressServer() {
       return res.status(400).json({ error: 'Missing device IMEI' });
     }
     try {
-      const result = await db.registerOrUpdateDevice(data);
+      const result = await updateDeviceAndSaveSnapshot(data);
       if (result) {
         res.json({ success: true, device: result });
       } else {
@@ -1404,16 +1432,7 @@ app.whenReady().then(async () => {
               }
             });
 
-            db.registerOrUpdateDevice(updateFields)
-              .then(doc => {
-                if (doc) {
-                  currentDeviceDbId = doc._id;
-                  wc.send('refresh-registered-devices');
-                }
-              })
-              .catch(err => {
-                console.error('[DATABASE] Error auto-saving device connection details:', err);
-              });
+            updateDeviceAndSaveSnapshot(updateFields);
           } else if (currentDeviceDbId && (msg.payload.imei || msg.payload.mac)) {
             db.updateDeviceIdentification(currentDeviceDbId, {
               imei: msg.payload.imei || '',
@@ -1909,16 +1928,7 @@ ipcMain.on('connect-serial', (event, { portPath, baudRate, pcbNumber }) => {
                       }
                     });
 
-                    db.registerOrUpdateDevice(updateFields)
-                      .then(doc => {
-                        if (doc) {
-                          currentDeviceDbId = doc._id;
-                          event.reply('refresh-registered-devices');
-                        }
-                      })
-                      .catch(err => {
-                        console.error('[DATABASE] Fallback serial error auto-saving device:', err);
-                      });
+                    updateDeviceAndSaveSnapshot(updateFields);
                   } else if (currentDeviceDbId && (payload.imei || payload.mac)) {
                     db.updateDeviceIdentification(currentDeviceDbId, {
                       imei: payload.imei || '',
@@ -2126,18 +2136,7 @@ function startTcpTelemetryServer() {
                   }
                 });
 
-                db.registerOrUpdateDevice(updateFields)
-                  .then(doc => {
-                    if (doc) {
-                      currentDeviceDbId = doc._id;
-                      if (mainWindow && !mainWindow.isDestroyed()) {
-                        mainWindow.webContents.send('refresh-registered-devices');
-                      }
-                    }
-                  })
-                  .catch(err => {
-                    console.error('[DATABASE] Fallback tcp error auto-saving device:', err);
-                  });
+                updateDeviceAndSaveSnapshot(updateFields);
               } else if (currentDeviceDbId && (payload.imei || payload.mac)) {
                 db.updateDeviceIdentification(currentDeviceDbId, {
                   imei: payload.imei || '',
@@ -2229,6 +2228,124 @@ ipcMain.on('send-tcp-command', (event, command) => {
     });
   } else {
     event.reply('console-log', '[ERROR] TCP connection is inactive.');
+  }
+});
+
+function readModbusTcpChunk(ip, port, slaveId, regType, startReg, count) {
+  return new Promise((resolve, reject) => {
+    const client = new net.Socket();
+    let isFinished = false;
+    let timeoutId = null;
+
+    const cleanup = () => {
+      isFinished = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      try { client.destroy(); } catch (e) {}
+    };
+
+    timeoutId = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Timeout reading chunk starting at ${startReg}`));
+    }, 4000);
+
+    client.connect(port, ip, () => {
+      const functionCode = regType === 'input' ? 4 : 3;
+      const buffer = Buffer.alloc(12);
+      buffer.writeUInt16BE(1, 0); // Transaction ID
+      buffer.writeUInt16BE(0, 2); // Protocol ID
+      buffer.writeUInt16BE(6, 4); // Length
+      buffer.writeUInt8(slaveId || 1, 6); // Unit ID
+      buffer.writeUInt8(functionCode, 7); // Function Code
+      buffer.writeUInt16BE(startReg, 8); // Start Address
+      buffer.writeUInt16BE(count, 10); // Quantity
+
+      client.write(buffer);
+    });
+
+    let receivedData = Buffer.alloc(0);
+
+    client.on('data', (chunk) => {
+      if (isFinished) return;
+      receivedData = Buffer.concat([receivedData, chunk]);
+      
+      if (receivedData.length >= 9) {
+        const byteCount = receivedData.readUInt8(8);
+        const expectedTotalLength = 9 + byteCount;
+        if (receivedData.length >= expectedTotalLength) {
+          cleanup();
+          
+          const values = [];
+          for (let i = 0; i < byteCount; i += 2) {
+            if (9 + i + 1 < receivedData.length) {
+              values.push(receivedData.readUInt16BE(9 + i));
+            }
+          }
+          resolve(values);
+        }
+      }
+    });
+
+    client.on('error', (err) => {
+      cleanup();
+      reject(err);
+    });
+  });
+}
+
+ipcMain.handle('query-modbus-tcp', async (event, { ip, port, startReg, count, slaveId, regType }) => {
+  const chunk_size = 100;
+  const values = [];
+  let currentAddr = startReg;
+  const endReg = startReg + count - 1;
+
+  try {
+    while (currentAddr <= endReg) {
+      const chunkCount = Math.min(chunk_size, endReg - currentAddr + 1);
+      
+      let chunkValues = null;
+      let lastErr = null;
+      // Retry 3 times
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          chunkValues = await readModbusTcpChunk(ip, port, slaveId, regType, currentAddr, chunkCount);
+          break;
+        } catch (err) {
+          lastErr = err;
+          await new Promise(r => setTimeout(r, 100));
+        }
+      }
+
+      if (chunkValues) {
+        values.push(...chunkValues);
+      } else {
+        values.push(...new Array(chunkCount).fill(null));
+        console.error(`[MODBUS] Failed to read chunk starting at ${currentAddr}:`, lastErr);
+      }
+
+      currentAddr += chunkCount;
+      await new Promise(r => setTimeout(r, 50));
+    }
+
+    // Convert 16-bit to 32-bit (Big Endian)
+    const values32 = {};
+    for (let i = 0; i < values.length; i += 2) {
+      const regAddr = startReg + i;
+      const val1 = values[i];
+      const val2 = (i + 1 < values.length) ? values[i + 1] : null;
+      if (val1 !== null && val1 !== undefined && val2 !== null && val2 !== undefined) {
+        const longVal = (val1 << 16) | val2;
+        values32[String(regAddr)] = longVal;
+      } else {
+        values32[String(regAddr)] = null;
+      }
+    }
+
+    return { success: true, values: values32, raw16: values };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 });
 
