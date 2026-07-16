@@ -43,7 +43,7 @@ async function readBlock(modbusClient, regType, address, count, slaveId) {
 /**
  * Reads registers from start to end (inclusive) in chunks and returns a flat list
  */
-async function readRegisters(socket, modbusClient, start, end, regType, slaveId, chunkSize) {
+async function readRegisters(socket, modbusClient, start, end, regType, slaveId, chunkSize, ip, port) {
     const values = [];
     let address = start;
     const total = end - start + 1;
@@ -70,7 +70,15 @@ async function readRegisters(socket, modbusClient, start, end, regType, slaveId,
                 } catch (e) { }
 
                 await new Promise((resolve) => {
-                    socket.connect({ host: IP_ADDRESS, port: PORT }, () => resolve());
+                    const onConnectErr = () => {
+                        socket.off('error', onConnectErr);
+                        resolve();
+                    };
+                    socket.once('error', onConnectErr);
+                    socket.connect({ host: ip, port: port }, () => {
+                        socket.off('error', onConnectErr);
+                        resolve();
+                    });
                 });
             }
             await sleep(DELAY_BETWEEN_REQUESTS);
@@ -114,7 +122,7 @@ async function runFetcher(ip, port, slaveId, startRegister, endRegister, regType
 
     console.log(`Connected to ${ip}:${port}, reading registers ${startRegister}-${endRegister}...`);
 
-    const values = await readRegisters(socket, client, startRegister, endRegister, regType, slaveId, CHUNK_SIZE);
+    const values = await readRegisters(socket, client, startRegister, endRegister, regType, slaveId, CHUNK_SIZE, ip, port);
 
     // Close network connection safely
     socket.end();

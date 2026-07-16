@@ -12,6 +12,13 @@ const ipcRenderer = electron ? electron.ipcRenderer : {
   }
 };
 
+const parseFloat32 = (val) => {
+  const buf = new ArrayBuffer(4);
+  const view = new DataView(buf);
+  view.setUint32(0, val);
+  return view.getFloat32(0);
+};
+
 function IoTStarLogo({ size = 28 }) {
   return (
     <svg className="iot-star-logo" viewBox="0 0 100 100" width={size} height={size}>
@@ -269,6 +276,14 @@ export default function App() {
   const [troubleshootLogs, setTroubleshootLogs] = useState([]);
   const [isSyncingXml, setIsSyncingXml] = useState(false);
 
+  // Per-module diagnostics remarks (persisted in localStorage)
+  const [diagnosticRemarks, setDiagnosticRemarks] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('diagnosticRemarks') || '{}'); } catch { return {}; }
+  });
+
+  // Device reconnect — known device banner state
+  const [reconnectBanner, setReconnectBanner] = useState(null); // null | { imei, doc }
+
   const handleAuth = async () => {
     setAuthError('');
     try {
@@ -479,6 +494,11 @@ export default function App() {
   // Stores the video settings that were active before Forza override
   const prevForzaVideo = useRef({ id: null, enabled: null });
 
+  // Forza Horizon 2 (Night Neon) variant — separate cinematic state
+  const [showForzaAnim2, setShowForzaAnim2] = useState(false);
+  const [forzaAnimStage2, setForzaAnimStage2] = useState('idle');
+  const forzaTimersRef2 = useRef([]);
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', currentTheme);
     localStorage.setItem('theme', currentTheme);
@@ -595,6 +615,34 @@ export default function App() {
     forzaTimersRef.current = [t1, t2, t3, t4, t5];
   };
 
+  // Forza Horizon 2 — Night Neon cinematic entrance sequence
+  const triggerForzaAnimation2 = () => {
+    if (forzaTimersRef2.current) {
+      forzaTimersRef2.current.forEach(clearTimeout);
+    }
+    // Override background video to Forza Horizon 5 official trailer (same video)
+    prevForzaVideo.current = { id: bgVideoId, enabled: bgVideoEnabled };
+    setBgVideoId('CdRhCdL8_wE');
+    setBgVideoEnabled(true);
+    localStorage.setItem('bgVideoId', 'CdRhCdL8_wE');
+    localStorage.setItem('bgVideoEnabled', 'true');
+
+    setShowForzaAnim2(true);
+    setForzaAnimStage2('blackout');
+
+    const t1 = setTimeout(() => setForzaAnimStage2('rev-engine'), 800);
+    const t2 = setTimeout(() => setForzaAnimStage2('speed-lines'), 3000);
+    const t3 = setTimeout(() => setForzaAnimStage2('horizon-flash'), 5500);
+    const t4 = setTimeout(() => setForzaAnimStage2('logo-reveal'), 7000);
+    const t5 = setTimeout(() => {
+      setForzaAnimStage2('done');
+      setShowForzaAnim2(false);
+      setActiveTab('page-dashboard');
+    }, 9200);
+
+    forzaTimersRef2.current = [t1, t2, t3, t4, t5];
+  };
+
   // Clean up timers on theme switch away
   useEffect(() => {
     if (currentTheme !== 'deep-sea-ocean') {
@@ -613,14 +661,20 @@ export default function App() {
         hackerTimersRef.current = [];
       }
     }
-    if (currentTheme !== 'forza-horizon') {
+    if (currentTheme !== 'forza-horizon' && currentTheme !== 'forza-horizon-2') {
       setShowForzaAnim(false);
       setForzaAnimStage('idle');
       if (forzaTimersRef.current) {
         forzaTimersRef.current.forEach(clearTimeout);
         forzaTimersRef.current = [];
       }
-      // Restore previous video when leaving Forza theme
+      setShowForzaAnim2(false);
+      setForzaAnimStage2('idle');
+      if (forzaTimersRef2.current) {
+        forzaTimersRef2.current.forEach(clearTimeout);
+        forzaTimersRef2.current = [];
+      }
+      // Restore previous video ONLY when leaving any Forza theme
       if (prevForzaVideo.current.id !== null) {
         setBgVideoId(prevForzaVideo.current.id);
         setBgVideoEnabled(prevForzaVideo.current.enabled);
@@ -1334,6 +1388,31 @@ export default function App() {
     };
     ipcRenderer.on('refresh-database-history', onRefreshDatabaseHistory);
 
+    // Handle known device reconnection — load previous session from DB
+    const onDeviceReconnectedKnown = (event, doc) => {
+      if (!doc || !doc.imei) return;
+      // Load previous diagnostics state from DB doc
+      const diagKeys = ['rs232', 'rs485', 'gprs', 'bus', 'ap', 'flash', 'di', 'driver', 'rtc'];
+      const newDiag = {};
+      const newDiagDetails = {};
+      diagKeys.forEach(key => {
+        const statusKey = `${key}Status`;
+        const logKey = `${key}Log`;
+        if (doc[statusKey] && doc[statusKey] !== 'WAITING') {
+          newDiag[key] = doc[statusKey];
+          newDiagDetails[key] = doc[logKey] || '';
+        }
+      });
+      if (Object.keys(newDiag).length > 0) {
+        setDiagnostics(prev => ({ ...prev, ...newDiag }));
+        setDiagnosticsDetails(prev => ({ ...prev, ...newDiagDetails }));
+      }
+      // Show banner
+      setReconnectBanner({ imei: doc.imei, doc });
+      addLogLine(`[DB] ⚡ Known device ${doc.imei} reconnected — previous session loaded. Testing can be skipped.`, 'success');
+    };
+    ipcRenderer.on('device-reconnected-known', onDeviceReconnectedKnown);
+
     // Fetch initial app configuration (Requirement 6)
     ipcRenderer.invoke('get-app-config').then((config) => {
       if (config) {
@@ -1371,6 +1450,7 @@ export default function App() {
       ipcRenderer.off('github-oauth-success', onGitHubOauthSuccess);
       ipcRenderer.off('refresh-registered-devices', onRefreshRegisteredDevices);
       ipcRenderer.off('refresh-database-history', onRefreshDatabaseHistory);
+      ipcRenderer.off('device-reconnected-known', onDeviceReconnectedKnown);
       ipcRenderer.off('usb-flash-progress', onUsbFlashProgress);
       ipcRenderer.off('arduino-cli-install-status', onArduinoCliInstallStatus);
       ipcRenderer.off('github-sync-result', onGitHubSyncResult);
@@ -1654,6 +1734,25 @@ Overall Status : ${overallStatus}
       }
     } catch (err) {
       alert(`Sync error: ${err.message}`);
+    }
+  };
+
+  const saveModuleRemarkToDb = async (key, value) => {
+    setDiagnosticsDetails(prev => ({ ...prev, [key]: value }));
+    if (!imei || imei === '--') return;
+    try {
+      const logField = `${key}Log`;
+      await fetch('/api/devices/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imei: imei,
+          [logField]: value
+        })
+      });
+      fetchRegisteredDevices();
+    } catch (err) {
+      console.error('[DB] Failed to save diagnostic remark:', err);
     }
   };
 
@@ -3195,7 +3294,7 @@ Overall Status : ${overallStatus}
         </div>
       </div>
 
-      {bgVideoEnabled && (
+      {bgVideoEnabled && (currentTheme === 'forza-horizon' || currentTheme === 'forza-horizon-2') && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -3330,10 +3429,10 @@ Overall Status : ${overallStatus}
 
             <button className={`header-nav-item ${showAccountModal ? 'active' : ''}`} onClick={() => { setAccountModalActiveTab('profile'); setShowAccountModal(true); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
               </svg>
-              <span>Settings</span>
+              <span>Setting</span>
             </button>
 
           </nav>
@@ -3348,15 +3447,79 @@ Overall Status : ${overallStatus}
 
             <div className="header-account-container" ref={accountContainerRef} style={{ position: 'relative' }}>
               <button
-                className={`header-account-btn ${showAccountModal ? 'active' : ''}`}
-                onClick={() => {
-                  setAccountModalActiveTab('profile');
-                  setShowAccountModal(!showAccountModal);
-                }}
+                className={`header-account-btn ${showAccountMenu ? 'active' : ''}`}
+                onClick={() => setShowAccountMenu(prev => !prev)}
                 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
               >
-                👤 Settings
+                <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: isLoggedIn ? 'linear-gradient(135deg, var(--accent-blue), var(--accent-pink))' : 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', flexShrink: 0 }}>
+                  {isLoggedIn ? (authUsername ? authUsername[0].toUpperCase() : '👤') : '👤'}
+                </span>
+                {isLoggedIn ? (authUsername || 'Setting') : 'Setting'}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '12px', height: '12px', transition: 'transform 0.2s', transform: showAccountMenu ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
               </button>
+
+              {/* Account Dropdown */}
+              {showAccountMenu && (
+                <div style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  right: 0,
+                  minWidth: '200px',
+                  background: 'rgba(14, 11, 30, 0.97)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '10px',
+                  boxShadow: '0 12px 40px rgba(0,0,0,0.6), 0 0 20px rgba(0, 240, 255, 0.08)',
+                  backdropFilter: 'blur(20px)',
+                  zIndex: 9999,
+                  overflow: 'hidden'
+                }}>
+                  {/* Account info header */}
+                  <div style={{ padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: isLoggedIn ? 'linear-gradient(135deg, var(--accent-blue), var(--accent-pink))' : 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0, fontWeight: 'bold', color: 'white' }}>
+                      {isLoggedIn ? (authUsername ? authUsername[0].toUpperCase() : '👤') : '👤'}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'white' }}>{isLoggedIn ? (authUsername || 'User') : 'Not Signed In'}</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>{isLoggedIn ? 'Administrator' : 'Click to sign in'}</div>
+                    </div>
+                  </div>
+                  {/* Menu items */}
+                  <div style={{ padding: '6px' }}>
+                    <button
+                      onClick={() => { setShowAccountMenu(false); setAccountModalActiveTab('profile'); setShowAccountModal(true); }}
+                      style={{ width: '100%', background: 'none', border: 'none', color: 'rgba(255,255,255,0.85)', fontSize: '12px', padding: '8px 10px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '14px', height: '14px' }}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9" /></svg>
+                      Open Settings
+                    </button>
+                    {isLoggedIn ? (
+                      <button
+                        onClick={() => { setShowAccountMenu(false); openAuthView('login'); }}
+                        style={{ width: '100%', background: 'none', border: 'none', color: '#ff4d6d', fontSize: '12px', padding: '8px 10px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 77, 109, 0.1)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '14px', height: '14px' }}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+                        Sign Out
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => { setShowAccountMenu(false); setShowAccountModal(true); setAccountModalActiveTab('profile'); }}
+                        style={{ width: '100%', background: 'none', border: 'none', color: 'var(--accent-blue)', fontSize: '12px', padding: '8px 10px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(0, 240, 255, 0.08)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '14px', height: '14px' }}><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><polyline points="10 17 15 12 10 7" /><line x1="15" y1="12" x2="3" y2="12" /></svg>
+                        Sign In
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
               {/* Modal overlay moved to root level to avoid stacking context/clipping issues */}
               {false && (
                 <div
@@ -3839,6 +4002,15 @@ Overall Status : ${overallStatus}
                                   <div className="theme-preview-bar"></div>
                                   <span className="theme-preset-name">🏎️ Forza Horizon</span>
                                 </div>
+
+                                <div
+                                  className={`theme-preset-card ${currentTheme === 'forza-horizon-2' ? 'active' : ''}`}
+                                  onClick={() => changeThemeWithTransition('forza-horizon-2', triggerForzaAnimation2)}
+                                  style={{ '--theme-card-border': '#7c3aed', '--theme-card-bg-rgb': '124, 58, 237', '--theme-preview-grad': 'linear-gradient(135deg, #0a0010 10%, #1a003a 50%, #7c3aed 80%, #00f0ff 100%)' }}
+                                >
+                                  <div className="theme-preview-bar"></div>
+                                  <span className="theme-preset-name">🌃 Forza Night Neon</span>
+                                </div>
                               </div>
                             </div>
 
@@ -3861,7 +4033,7 @@ Overall Status : ${overallStatus}
                             {/* Video Background Settings */}
                             <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '15px' }}>
                               <label className="control-title" style={{ fontSize: '10px', color: 'var(--accent-pink)', textTransform: 'uppercase', fontWeight: 'bold' }}>Cinematic Background Video</label>
-                              
+
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '10px' }}>
                                 <div className="input-group" style={{ marginBottom: 0 }}>
                                   <label style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px', display: 'block' }}>Video Background</label>
@@ -4613,7 +4785,7 @@ Overall Status : ${overallStatus}
                               }}
                             >
                               <span style={{ fontWeight: 'bold', color: '#ff007f' }}>#{d.deviceNumber || '1'}</span>
-                              <span style={{ color: '#fff', fontFamily: 'monospace' }}>{d.pcbNumber || d.imei.substring(0, 8)}</span>
+                              <span style={{ color: '#fff', fontFamily: 'monospace' }}>{d.pcbNumber || d.imei}</span>
                               <span className={`pulse-dot ${selectedRegDeviceImei === (d._id || d.imei || d.pcbNumber) ? 'connected' : 'idle'}`} style={{ width: '6px', height: '6px' }}></span>
                             </div>
                           ))
@@ -4684,6 +4856,38 @@ Overall Status : ${overallStatus}
                           )}
                         </div>
                       </div>
+                      {/* Remarks textarea for each diagnostic module */}
+                      <textarea
+                        placeholder={`${key.toUpperCase()} remarks — what was not working, next steps...`}
+                        value={diagnosticRemarks[key] || ''}
+                        onChange={e => {
+                          const updated = { ...diagnosticRemarks, [key]: e.target.value };
+                          setDiagnosticRemarks(updated);
+                          localStorage.setItem('diagnosticRemarks', JSON.stringify(updated));
+                        }}
+                        onMouseLeave={e => {
+                          saveModuleRemarkToDb(key, e.target.value);
+                        }}
+                        onBlur={e => {
+                          saveModuleRemarkToDb(key, e.target.value);
+                        }}
+                        rows={2}
+                        style={{
+                          width: '100%',
+                          marginTop: '6px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.07)',
+                          borderRadius: '5px',
+                          color: 'rgba(255,255,255,0.6)',
+                          fontSize: '10px',
+                          padding: '5px 8px',
+                          resize: 'vertical',
+                          outline: 'none',
+                          fontFamily: 'var(--font-mono)',
+                          lineHeight: 1.5,
+                          boxSizing: 'border-box'
+                        }}
+                      />
                       {key === 'di' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                           <div className="di-pins-container" style={{
@@ -5470,7 +5674,7 @@ Overall Status : ${overallStatus}
                           </div>
                         );
                       }
-                      
+
                       const hasNext = (regAddr + 1 - modbusStartReg < modbusData.length);
                       const hexStr = '0x' + val.toString(16).toUpperCase().padStart(8, '0');
                       const binStr = val.toString(2).padStart(32, '0').replace(/(.{4})/g, '$1 ').trim();
@@ -5485,10 +5689,21 @@ Overall Status : ${overallStatus}
                               {hexStr}
                             </span>
                           </div>
-                          <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
-                            {val}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '6px' }}>
+                            <div>
+                              <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>UINT32 (Unsigned)</div>
+                              <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)' }}>{val}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>INT32 (Signed)</div>
+                              <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)' }}>{val | 0}</div>
+                            </div>
+                            <div style={{ gridColumn: '1 / -1' }}>
+                              <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>FLOAT32 (IEEE-754)</div>
+                              <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)' }}>{parseFloat32(val).toFixed(6).replace(/\.?0+$/, "")}</div>
+                            </div>
                           </div>
-                          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', opacity: 0.8 }}>
+                          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', opacity: 0.8, marginTop: '2px' }}>
                             BIN: {binStr}
                           </div>
                         </div>
@@ -5516,16 +5731,23 @@ Overall Status : ${overallStatus}
                         <div key={regAddr} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px', transition: 'all 0.2s ease' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontSize: '11px', color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)', fontWeight: 'bold' }}>
-                              REG {regAddr}
+                              REG {regAddr} (16-Bit)
                             </span>
                             <span style={{ fontSize: '10px', color: 'var(--text-dim)', background: 'rgba(255,255,255,0.04)', padding: '1px 5px', borderRadius: '4px', fontFamily: 'var(--font-mono)' }}>
                               {hexStr}
                             </span>
                           </div>
-                          <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
-                            {val}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '6px' }}>
+                            <div>
+                              <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>UINT16 (Unsigned)</div>
+                              <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)' }}>{val}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>INT16 (Signed)</div>
+                              <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)' }}>{(val << 16) >> 16}</div>
+                            </div>
                           </div>
-                          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', opacity: 0.8 }}>
+                          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', opacity: 0.8, marginTop: '2px' }}>
                             BIN: {binStr}
                           </div>
                         </div>
@@ -5750,9 +5972,9 @@ Overall Status : ${overallStatus}
               </div>
             </header>
 
-            <div className="security-layout-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', width: '100%' }}>
+            <div className="security-layout-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', width: '100%', height: 'calc(100vh - 175px)', minHeight: '520px' }}>
               {/* Registry Form */}
-              <div className="glass-card" style={{ flex: '0 0 250px', width: '250px', minWidth: '250px', border: editingDeviceImei ? '1px solid rgba(0, 122, 255, 0.4)' : '1px solid var(--glass-border)', boxShadow: editingDeviceImei ? '0 0 20px rgba(0, 122, 255, 0.15)' : 'none' }}>
+              <div className="glass-card" style={{ flex: '0 0 250px', width: '250px', minWidth: '250px', border: editingDeviceImei ? '1px solid rgba(0, 122, 255, 0.4)' : '1px solid var(--glass-border)', boxShadow: editingDeviceImei ? '0 0 20px rgba(0, 122, 255, 0.15)' : 'none', height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
                   <h3><span className="icon">📝</span> {editingDeviceImei ? 'Modify Device Profile' : 'Register Device Config'}</h3>
                   {editingDeviceImei ? (
@@ -5769,7 +5991,7 @@ Overall Status : ${overallStatus}
                   Register or modify settings associated with a specific device IMEI ID. Settings automatically sync upon connection.
                 </p>
 
-                <form onSubmit={handleRegisterDevice}>
+                <form onSubmit={handleRegisterDevice} style={{ overflowY: 'auto', flex: 1, paddingRight: '5px' }}>
                   <div className="input-group">
                     <label>Device IMEI ID *</label>
                     <input
@@ -5920,13 +6142,13 @@ Overall Status : ${overallStatus}
               </div>
 
               {/* Registered Devices List Table */}
-              <div className="glass-card" style={{ flex: '1 1 calc(100% - 270px)', minWidth: '450px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div className="glass-card" style={{ flex: '1 1 calc(100% - 270px)', minWidth: '450px', display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%' }}>
                 <h3><span className="icon">📡</span> Registered Device Profiles ({registeredDevices.length})</h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
                   List of device configurations registered inside the MongoDB database.
                 </p>
 
-                <div style={{ maxHeight: '420px', overflowY: 'auto', overflowX: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)', flex: 1 }}>
+                <div style={{ overflowY: 'auto', overflowX: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--glass-border)', flex: 1 }}>
                   {registeredDevices.length === 0 ? (
                     <div style={{ padding: '40px', textAlign: 'center', color: '#707090', fontStyle: 'italic' }}>
                       No configurations found in database registry. Fill form to register.
@@ -8813,7 +9035,7 @@ Overall Status : ${overallStatus}
                           onClick={() => changeThemeWithTransition('quantum-indigo')}
                           style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
                         >
-                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #0a84ff 0%, #5e5ce6 100%)' }}></span>
+                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #0a84ff 0%, #5e5ce6 100%)' }}></span>
                           <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Quantum Indigo</span>
                         </button>
                         <button
@@ -8821,7 +9043,7 @@ Overall Status : ${overallStatus}
                           onClick={() => changeThemeWithTransition('cyber-orchid')}
                           style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
                         >
-                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #8e8e93 0%, #d1d1d6 100%)' }}></span>
+                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #8e8e93 0%, #d1d1d6 100%)' }}></span>
                           <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Cyber Orchid</span>
                         </button>
                         <button
@@ -8829,7 +9051,7 @@ Overall Status : ${overallStatus}
                           onClick={() => changeThemeWithTransition('mint-aurora')}
                           style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
                         >
-                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #30d158 0%, #0a84ff 100%)' }}></span>
+                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #30d158 0%, #0a84ff 100%)' }}></span>
                           <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Mint Aurora</span>
                         </button>
                         <button
@@ -8837,7 +9059,7 @@ Overall Status : ${overallStatus}
                           onClick={() => changeThemeWithTransition('solar-flare')}
                           style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
                         >
-                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #0a84ff 0%, #bf5af2 100%)' }}></span>
+                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #0a84ff 0%, #bf5af2 100%)' }}></span>
                           <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Solar Flare</span>
                         </button>
                         <button
@@ -8845,7 +9067,7 @@ Overall Status : ${overallStatus}
                           onClick={() => changeThemeWithTransition('minecraft')}
                           style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
                         >
-                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #855C33 0%, #3D8B2A 100%)' }}></span>
+                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #855C33 0%, #3D8B2A 100%)' }}></span>
                           <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Minecraft Craft</span>
                         </button>
                         <button
@@ -8853,7 +9075,7 @@ Overall Status : ${overallStatus}
                           onClick={() => changeThemeWithTransition('cherry-grove')}
                           style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
                         >
-                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #ff79c6 0%, #ffb86c 100%)' }}></span>
+                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #ff79c6 0%, #ffb86c 100%)' }}></span>
                           <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Cherry Grove</span>
                         </button>
                         <button
@@ -8861,7 +9083,7 @@ Overall Status : ${overallStatus}
                           onClick={() => changeThemeWithTransition('deep-sea-ocean', triggerOceanAnimation)}
                           style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
                         >
-                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)' }}></span>
+                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)' }}></span>
                           <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Deep Sea Ocean</span>
                         </button>
                         <button
@@ -8869,7 +9091,7 @@ Overall Status : ${overallStatus}
                           onClick={() => changeThemeWithTransition('hacking', triggerHackerAnimation)}
                           style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
                         >
-                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #000000 0%, #15803d 100%)' }}></span>
+                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #000000 0%, #15803d 100%)' }}></span>
                           <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Terminal Hacking</span>
                         </button>
                         <button
@@ -8877,7 +9099,7 @@ Overall Status : ${overallStatus}
                           onClick={() => changeThemeWithTransition('mojang-studios')}
                           style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
                         >
-                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)' }}></span>
+                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)' }}></span>
                           <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Mojang Studios</span>
                         </button>
                         <button
@@ -8885,7 +9107,7 @@ Overall Status : ${overallStatus}
                           onClick={() => changeThemeWithTransition('star-nova')}
                           style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
                         >
-                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%)' }}></span>
+                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%)' }}></span>
                           <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Star Nova</span>
                         </button>
                         <button
@@ -8893,7 +9115,7 @@ Overall Status : ${overallStatus}
                           onClick={() => changeThemeWithTransition('cyber-sunset')}
                           style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
                         >
-                          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #ec4899 0%, #eab308 100%)' }}></span>
+                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #ec4899 0%, #eab308 100%)' }}></span>
                           <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Cyber Sunset</span>
                         </button>
                         <div
@@ -8903,6 +9125,15 @@ Overall Status : ${overallStatus}
                         >
                           <div className="theme-preview-bar"></div>
                           <span className="theme-preset-name">🏎️ Forza Horizon</span>
+                        </div>
+
+                        <div
+                          className={`theme-preset-card ${currentTheme === 'forza-horizon-2' ? 'active' : ''}`}
+                          onClick={() => changeThemeWithTransition('forza-horizon-2', triggerForzaAnimation2)}
+                          style={{ '--theme-card-border': '#7c3aed', '--theme-card-bg-rgb': '124, 58, 237', '--theme-preview-grad': 'linear-gradient(135deg, #0a0010 10%, #1a003a 50%, #7c3aed 80%, #00f0ff 100%)' }}
+                        >
+                          <div className="theme-preview-bar"></div>
+                          <span className="theme-preset-name">🌃 Forza Night Neon</span>
                         </div>
                       </div>
                     </div>

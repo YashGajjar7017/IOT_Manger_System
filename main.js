@@ -30,6 +30,25 @@ if (fs.existsSync(sourcePath)) {
 let mainWindow;
 let activeSerialPort = null;
 let activeTcpSocket = null;
+function safeTcpWrite(data, callback) {
+  if (activeTcpSocket && !activeTcpSocket.destroyed) {
+    try {
+      activeTcpSocket.write(data, (err) => {
+        if (err) {
+          console.error('[TCP SAFE WRITE ERROR]', err.message);
+          if (callback) callback(err);
+        } else {
+          if (callback) callback(null);
+        }
+      });
+    } catch (e) {
+      console.error('[TCP SAFE WRITE EXCEPTION]', e.message);
+      if (callback) callback(e);
+    }
+  } else {
+    if (callback) callback(new Error('Socket is not connected or destroyed'));
+  }
+}
 let serialBuffer = '';
 let tcpBuffer = '';
 let expressServer = null;
@@ -404,7 +423,7 @@ function startExpressServer() {
 
       // Trigger sync to QCOM via serial channel
       if (activeTcpSocket && !activeTcpSocket.destroyed) {
-        activeTcpSocket.write('SYNC_CERTS_TO_QCOM\n');
+        safeTcpWrite('SYNC_CERTS_TO_QCOM\n');
       } else if (activeSerialPort && activeSerialPort.isOpen) {
         activeSerialPort.write('SYNC_CERTS_TO_QCOM\n');
       }
@@ -474,7 +493,7 @@ function startExpressServer() {
       await db.saveCertificateLog(logData);
 
       if (activeTcpSocket && !activeTcpSocket.destroyed) {
-        activeTcpSocket.write('SYNC_CERTS_TO_QCOM\n');
+        safeTcpWrite('SYNC_CERTS_TO_QCOM\n');
       } else if (activeSerialPort && activeSerialPort.isOpen) {
         activeSerialPort.write('SYNC_CERTS_TO_QCOM\n');
       }
@@ -767,7 +786,7 @@ function startExpressServer() {
     }
     console.log(`[EXPRESS API] Posting command to active channel: ${command}`);
     if (activeTcpSocket && !activeTcpSocket.destroyed) {
-      activeTcpSocket.write(command + '\n', (err) => {
+      safeTcpWrite(command + '\n', (err) => {
         if (err) return res.status(500).json({ error: `TCP write failed: ${err.message}` });
         res.json({ success: true, transport: 'tcp', message: `Command '${command}' sent.` });
       });
@@ -1455,7 +1474,7 @@ app.whenReady().then(async () => {
 
                 const sendCommand = (cmd) => {
                   if (activeTcpSocket && !activeTcpSocket.destroyed) {
-                    activeTcpSocket.write(cmd + '\n');
+                    safeTcpWrite(cmd + '\n');
                     console.log(`[DB-SYNC -> TCP] Sent sync command: ${cmd}`);
                   } else if (activeSerialPort && activeSerialPort.isOpen) {
                     activeSerialPort.write(cmd + '\n');
@@ -2063,7 +2082,7 @@ function startTcpTelemetryServer() {
     // Auto-send FETCH_IMEI to query IMEI via AT+CGSN on connection
     setTimeout(() => {
       if (activeTcpSocket && !activeTcpSocket.destroyed) {
-        activeTcpSocket.write('FETCH_IMEI\n', (writeErr) => {
+        safeTcpWrite('FETCH_IMEI\n', (writeErr) => {
           if (writeErr) {
             console.error('[TCP] Failed to auto-send FETCH_IMEI:', writeErr.message);
           } else {
@@ -2222,7 +2241,7 @@ ipcMain.on('connect-tcp', (event, { ip, port, pcbNumber }) => {
 
 ipcMain.on('send-tcp-command', (event, command) => {
   if (activeTcpSocket && !activeTcpSocket.destroyed) {
-    activeTcpSocket.write(command + '\n', (err) => {
+    safeTcpWrite(command + '\n', (err) => {
       if (err) {
         event.reply('console-log', `[ERROR] Failed to send TCP command: ${err.message}`);
       } else {
@@ -3758,7 +3777,7 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip }) => {
     // Step 3: Sync to QCOM via serial channel
     event.reply('console-log', '[CERTS] [STEP 3/3] Initiating sync from ESP32 to QCOM co-processor storage...');
     if (activeTcpSocket && !activeTcpSocket.destroyed) {
-      activeTcpSocket.write('SYNC_CERTS_TO_QCOM\n');
+      safeTcpWrite('SYNC_CERTS_TO_QCOM\n');
     } else if (activeSerialPort && activeSerialPort.isOpen) {
       activeSerialPort.write('SYNC_CERTS_TO_QCOM\n');
     }
@@ -3907,7 +3926,7 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port, targe
 
           event.reply('cert-status-update', { file, status: 'uploading' });
           if (activeTcpSocket && !activeTcpSocket.destroyed) {
-            activeTcpSocket.write(formattedCertData);
+            safeTcpWrite(formattedCertData);
             event.reply('console-log', `[CERTS] Streamed ${file} directly to QCOM via TCP socket.`);
           } else if (activeSerialPort && activeSerialPort.isOpen) {
             activeSerialPort.write(formattedCertData);
@@ -4044,7 +4063,7 @@ ipcMain.on('download-and-provision-certs', async (event, { urls, ip, port, targe
       // Step 3 for ESP32: Sync to QCOM via serial channel
       event.reply('console-log', '[CERTS] [STEP 3/3] Initiating sync from ESP32 to QCOM co-processor storage...');
       if (activeTcpSocket && !activeTcpSocket.destroyed) {
-        activeTcpSocket.write('SYNC_CERTS_TO_QCOM\n');
+        safeTcpWrite('SYNC_CERTS_TO_QCOM\n');
       } else if (activeSerialPort && activeSerialPort.isOpen) {
         activeSerialPort.write('SYNC_CERTS_TO_QCOM\n');
       }
