@@ -71,7 +71,17 @@ function saveLocalTroubleshootLogs(logs) {
   }
 }
 
+function getCleanPcbNumber(pcbNumber, macAddress) {
+  const macClean = (macAddress || '').replace(/:/g, '').toUpperCase();
+  const suffix = macClean.slice(-6) || 'A530';
+  if (!pcbNumber || pcbNumber === 'AUTO-REGISTERED' || pcbNumber.startsWith('ESP') || pcbNumber.startsWith('esp')) {
+    return `RMS-Firmware-${suffix}`;
+  }
+  return pcbNumber;
+}
+
 // Schema Definition
+
 const TelemetrySchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now },
   pcbNumber: { type: String, default: '' },
@@ -249,7 +259,7 @@ async function saveTelemetrySnapshot(data) {
 
   const snapshot = {
     timestamp: new Date(),
-    pcbNumber: (device && device.pcbNumber) || data.pcbNumber || '',
+    pcbNumber: (device && device.pcbNumber) || getCleanPcbNumber(data.pcbNumber, data.mac),
     connectionType: (device && device.connectionType) || data.connectionType || 'tcp',
     target: (device && device.target) || data.target || '0.0.0.0:9000 (Listening)',
     imei: (device && device.imei) || data.imei || '',
@@ -480,7 +490,7 @@ async function getCertificateLogs() {
 async function createDeviceIdentification(data) {
   const record = {
     timestamp: new Date(),
-    pcbNumber: data.pcbNumber || '',
+    pcbNumber: getCleanPcbNumber(data.pcbNumber, data.mac),
     connectionType: data.connectionType,
     target: data.target,
     imei: data.imei || '',
@@ -566,7 +576,7 @@ async function registerOrUpdateDevice(data) {
     if (foundIdx !== -1) {
       updatedObj = {
         ...localDevices[foundIdx],
-        pcbNumber: data.pcbNumber || localDevices[foundIdx].pcbNumber,
+        pcbNumber: getCleanPcbNumber(data.pcbNumber || localDevices[foundIdx].pcbNumber, data.mac || localDevices[foundIdx].mac),
         remarks: data.remarks !== undefined ? data.remarks : localDevices[foundIdx].remarks,
         connectionType: data.connectionType || localDevices[foundIdx].connectionType,
         target: data.target || localDevices[foundIdx].target,
@@ -610,7 +620,7 @@ async function registerOrUpdateDevice(data) {
     } else {
       updatedObj = {
         imei: data.imei,
-        pcbNumber: data.pcbNumber || '',
+        pcbNumber: getCleanPcbNumber(data.pcbNumber, data.mac),
         remarks: data.remarks || '',
         connectionType: data.connectionType || 'unknown',
         target: data.target || '',
@@ -735,7 +745,7 @@ async function registerOrUpdateDevice(data) {
       } else {
         doc = await DeviceIdentificationModel.create({
           imei: data.imei,
-          pcbNumber: data.pcbNumber || '',
+          pcbNumber: getCleanPcbNumber(data.pcbNumber, data.mac),
           remarks: data.remarks || '',
           connectionType: data.connectionType || 'unknown',
           target: data.target || '',
@@ -827,7 +837,7 @@ async function syncDeviceConfig(imei, bootData) {
       device = await DeviceIdentificationModel.create({
         imei: imei,
         mac: bootData.mac || '',
-        pcbNumber: bootData.pcbNumber || 'AUTO-REGISTERED',
+        pcbNumber: getCleanPcbNumber(bootData.pcbNumber, bootData.mac),
         connectionType: bootData.connectionType || 'unknown',
         target: bootData.target || '',
         password: bootData.password || 'admin_secure_gate',

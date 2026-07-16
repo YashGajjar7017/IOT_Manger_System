@@ -1738,9 +1738,11 @@ function startBackgroundScanning(webContents) {
               const parts = line.split(':');
               if (parts.length > 1) {
                 const ssid = parts[1].trim();
-                if (ssid.startsWith('ESP32_GATEWAY_') || ssid.startsWith('RMS-Firmware-')) {
+                const upperSsid = ssid.toUpperCase();
+                if (upperSsid.startsWith('ESP32_GATEWAY_') || upperSsid.startsWith('RMS-FIRMWARE-') || upperSsid.startsWith('ESP-')) {
                   detectedSsids.push(ssid);
                 }
+
               }
             }
           }

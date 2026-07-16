@@ -1583,7 +1583,7 @@ Overall Status : ${overallStatus}
       const res = await fetch('/api/telemetry/history');
       if (res.ok) {
         const data = await res.json();
-        setDbHistory(data);
+        setDbHistory(Array.isArray(data) ? data : []);
       }
     } catch (err) {
       console.error('Failed to load database history logs:', err);
@@ -1596,7 +1596,7 @@ Overall Status : ${overallStatus}
       const res = await fetch('/api/status');
       if (res.ok) {
         const data = await res.json();
-        setDbStatus(data);
+        setDbStatus(data && typeof data === 'object' ? data : { mongodb: 'DISCONNECTED', recordsCount: 0 });
       }
     } catch (err) {
       console.error('Failed to load mongoose status:', err);
@@ -1609,7 +1609,7 @@ Overall Status : ${overallStatus}
       const res = await fetch('/api/devices');
       if (res.ok) {
         const data = await res.json();
-        setRegisteredDevices(data);
+        setRegisteredDevices(Array.isArray(data) ? data : []);
       }
     } catch (err) {
       console.error('Failed to fetch registered devices:', err);
@@ -3382,7 +3382,7 @@ Overall Status : ${overallStatus}
                 <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: isLoggedIn ? 'linear-gradient(135deg, var(--accent-blue), var(--accent-pink))' : 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', flexShrink: 0 }}>
                   {isLoggedIn ? (authUsername ? authUsername[0].toUpperCase() : '👤') : '👤'}
                 </span>
-                {isLoggedIn ? (authUsername || 'Setting') : 'Setting'}
+                {isLoggedIn ? (authUsername || 'Account') : 'Account'}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '12px', height: '12px', transition: 'transform 0.2s', transform: showAccountMenu ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                   <polyline points="6 9 12 15 18 9" />
                 </svg>
@@ -5054,7 +5054,7 @@ Overall Status : ${overallStatus}
                 </span>
               </div>
 
-              {(!wifiDetails.ap_clients_list || wifiDetails.ap_clients_list.length === 0) ? (
+              {(!Array.isArray(wifiDetails.ap_clients_list) || wifiDetails.ap_clients_list.length === 0) ? (
                 <div style={{ textAlign: 'center', padding: '15px', color: '#606080', fontSize: '12px', fontStyle: 'italic', background: 'rgba(255,255,255,0.01)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.05)' }}>
                   No external station clients connected to ESP32 Gateway AP network.
                 </div>
@@ -5071,7 +5071,7 @@ Overall Status : ${overallStatus}
                       </tr>
                     </thead>
                     <tbody>
-                      {wifiDetails.ap_clients_list.map((sta, idx) => (
+                      {Array.isArray(wifiDetails.ap_clients_list) && wifiDetails.ap_clients_list.map((sta, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                           <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{idx + 1}</td>
                           <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#00ffcc', fontWeight: 'bold' }}>{sta.mac}</td>
@@ -7775,7 +7775,7 @@ Overall Status : ${overallStatus}
                     <span className="spec-label" style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: '#a0a0c0' }}>
                       Connected Client MACs:
                     </span>
-                    {wifiDetails.ap_clients_list && wifiDetails.ap_clients_list.length > 0 ? (
+                    {Array.isArray(wifiDetails.ap_clients_list) && wifiDetails.ap_clients_list.length > 0 ? (
                       <div style={{ maxHeight: '90px', overflowY: 'auto', background: 'rgba(0, 0, 0, 0.2)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
                         {wifiDetails.ap_clients_list.map((cli, idx) => (
                           <div key={idx} style={{ fontSize: '0.8rem', fontFamily: 'monospace', padding: '3px 0', borderBottom: idx < wifiDetails.ap_clients_list.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none', color: '#00ffcc' }}>

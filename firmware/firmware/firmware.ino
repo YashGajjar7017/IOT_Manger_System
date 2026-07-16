@@ -136,7 +136,7 @@ String customApSSID = "RMS-FIRMWARE-A530";
 // ============================================================
 //  TEST IDs & STATUSES
 // ============================================================
-enum TestID : int {
+enum TestID {
   T_RS232 = 0,
   T_RS485 = 1,
   T_GPRS = 2,
@@ -152,13 +152,36 @@ enum TestID : int {
   T_COUNT = 12
 };
 
-enum TestStatus : uint8_t { S_PENDING, S_PASS, S_WARN, S_FAIL, S_SKIP };
+enum TestStatus { S_PENDING, S_PASS, S_WARN, S_FAIL, S_SKIP };
 
 struct TestResult {
   const char *name;
   TestStatus status;
   String detail;
 };
+
+String buildDeviceName() {
+  String mac = WiFi.softAPmacAddress();
+  if (mac.length() == 0 || mac == "00:00:00:00:00:00") {
+    mac = WiFi.macAddress();
+  }
+
+  mac.replace(":", "");
+  mac.replace(":", "");
+  mac.replace(":", "");
+  mac.replace(":", "");
+  mac.replace(":", "");
+  mac.replace(":", "");
+
+  String name = "RMS-FIRMWARE-";
+  if (mac.length() >= 6) {
+    name += mac.substring(mac.length() - 6);
+  } else {
+    name += "A530";
+  }
+  name.toUpperCase();
+  return name;
+}
 
 // ============================================================
 //  GLOBAL OBJECTS
@@ -324,33 +347,33 @@ void enableKeepAlive(WiFiClient& client) {
 }
 
 String testStatusJson(TestID id) {
-  String statusStr;
+  String statusText;
   switch (results[id].status) {
   case S_PASS:
-    statusStr = "PASS";
+    statusText = "PASS";
     break;
   case S_PENDING:
-    statusStr = "WAITING";
+    statusText = "WAITING";
     break;
   case S_WARN:
-    statusStr = "WARN";
+    statusText = "WARN";
     break;
   case S_FAIL:
-    statusStr = "FAIL";
+    statusText = "FAIL";
     break;
   case S_SKIP:
-    statusStr = "SKIP";
+    statusText = "SKIP";
     break;
   default:
-    statusStr = "WAITING";
+    statusText = "WAITING";
     break;
   }
-  
+
   // Escape potential double quotes in detail string
   String cleanDetail = results[id].detail;
   cleanDetail.replace("\"", "\\\"");
-  
-  return "{\"status\":\"" + statusStr + "\",\"detail\":\"" + cleanDetail + "\"}";
+
+  return "{\"status\":\"" + statusText + "\",\"detail\":\"" + cleanDetail + "\"}";
 }
 
 // ============================================================
@@ -2575,16 +2598,10 @@ void setupWiFi() {
     deviceMAC = WiFi.macAddress();
   }
 
-  String macClean = deviceMAC;
-  macClean.replace(":", "");
-  if (macClean.length() >= 6) {
-    customApSSID = "RMS-FIRMWARE-" + macClean.substring(macClean.length() - 6);
-    customApSSID.toUpperCase();
-  } else {
-    customApSSID = "RMS-FIRMWARE-A530";
-  }
+  customApSSID = buildDeviceName();
 
   WiFi.setHostname(customApSSID.c_str());
+  WiFi.softAPsetHostname(customApSSID.c_str());
 
   // Configure SoftAP to match MERN/Electron expected IP subnet 192.168.0.x
   IPAddress local_IP(192, 168, 0, 1);
