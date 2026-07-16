@@ -1025,6 +1025,11 @@ function createWindow() {
   // mainWindow.loadURL(`http://localhost:${appConfig.expressPort}`);
   mainWindow.loadURL(`http://127.0.0.1:${appConfig.expressPort}`);
 
+  // Clear HTTP cache on startup to prevent rendering cached resources
+  mainWindow.webContents.session.clearCache().then(() => {
+    console.log('[ELECTRON SESSION] Cache cleared successfully.');
+  });
+
   // Open Developer Tools to debug why the GUI is not loading
   // mainWindow.webContents.openDevTools();
 

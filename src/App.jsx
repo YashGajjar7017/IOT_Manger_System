@@ -253,9 +253,10 @@ export default function App() {
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [accountModalActiveTab, setAccountModalActiveTab] = useState('profile');
+  const [copiedTextIndex, setCopiedTextIndex] = useState(null);
   const [bgVideoEnabled, setBgVideoEnabled] = useState(() => {
-    const saved = localStorage.getItem('bgVideoEnabled');
-    return saved !== null ? saved === 'true' : true;
+    const saved = localStorage.getItem('bgVideo');
+    return saved !== null ? saved === 'false' : false;
   });
   const [bgVideoId, setBgVideoId] = useState(() => localStorage.getItem('bgVideoId') || 'FYH9n37B7Yw');
   const [bgVideoOpacity, setBgVideoOpacity] = useState(() => {
@@ -487,17 +488,16 @@ export default function App() {
   const [hackingAnimStage, setHackingAnimStage] = useState('idle');
   const hackerTimersRef = useRef([]);
 
-  // Forza Horizon theme cinematic state variables
-  const [showForzaAnim, setShowForzaAnim] = useState(false);
-  const [forzaAnimStage, setForzaAnimStage] = useState('idle');
-  const forzaTimersRef = useRef([]);
-  // Stores the video settings that were active before Forza override
-  const prevForzaVideo = useRef({ id: null, enabled: null });
 
-  // Forza Horizon 2 (Night Neon) variant — separate cinematic state
-  const [showForzaAnim2, setShowForzaAnim2] = useState(false);
-  const [forzaAnimStage2, setForzaAnimStage2] = useState('idle');
-  const forzaTimersRef2 = useRef([]);
+  useEffect(() => {
+    const storedVideo = localStorage.getItem('bgVideoId');
+    if (storedVideo === 'CdRhCdL8_wE') {
+      localStorage.removeItem('bgVideoId');
+      localStorage.setItem('bgVideoEnabled', 'false');
+      setBgVideoId('');
+      setBgVideoEnabled(true);
+    }
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', currentTheme);
@@ -587,62 +587,6 @@ export default function App() {
     hackerTimersRef.current = [t1, t2, t3, t4];
   };
 
-  // Forza Horizon cinematic entrance sequence (~9 seconds)
-  const triggerForzaAnimation = () => {
-    if (forzaTimersRef.current) {
-      forzaTimersRef.current.forEach(clearTimeout);
-    }
-    // Override background video to Forza Horizon 5 official trailer
-    prevForzaVideo.current = { id: bgVideoId, enabled: bgVideoEnabled };
-    setBgVideoId('CdRhCdL8_wE');
-    setBgVideoEnabled(true);
-    localStorage.setItem('bgVideoId', 'CdRhCdL8_wE');
-    localStorage.setItem('bgVideoEnabled', 'true');
-
-    setShowForzaAnim(true);
-    setForzaAnimStage('blackout');
-
-    const t1 = setTimeout(() => setForzaAnimStage('rev-engine'), 800);
-    const t2 = setTimeout(() => setForzaAnimStage('speed-lines'), 3000);
-    const t3 = setTimeout(() => setForzaAnimStage('horizon-flash'), 5500);
-    const t4 = setTimeout(() => setForzaAnimStage('logo-reveal'), 7000);
-    const t5 = setTimeout(() => {
-      setForzaAnimStage('done');
-      setShowForzaAnim(false);
-      setActiveTab('page-dashboard');
-    }, 9200);
-
-    forzaTimersRef.current = [t1, t2, t3, t4, t5];
-  };
-
-  // Forza Horizon 2 — Night Neon cinematic entrance sequence
-  const triggerForzaAnimation2 = () => {
-    if (forzaTimersRef2.current) {
-      forzaTimersRef2.current.forEach(clearTimeout);
-    }
-    // Override background video to Forza Horizon 5 official trailer (same video)
-    prevForzaVideo.current = { id: bgVideoId, enabled: bgVideoEnabled };
-    setBgVideoId('CdRhCdL8_wE');
-    setBgVideoEnabled(true);
-    localStorage.setItem('bgVideoId', 'CdRhCdL8_wE');
-    localStorage.setItem('bgVideoEnabled', 'true');
-
-    setShowForzaAnim2(true);
-    setForzaAnimStage2('blackout');
-
-    const t1 = setTimeout(() => setForzaAnimStage2('rev-engine'), 800);
-    const t2 = setTimeout(() => setForzaAnimStage2('speed-lines'), 3000);
-    const t3 = setTimeout(() => setForzaAnimStage2('horizon-flash'), 5500);
-    const t4 = setTimeout(() => setForzaAnimStage2('logo-reveal'), 7000);
-    const t5 = setTimeout(() => {
-      setForzaAnimStage2('done');
-      setShowForzaAnim2(false);
-      setActiveTab('page-dashboard');
-    }, 9200);
-
-    forzaTimersRef2.current = [t1, t2, t3, t4, t5];
-  };
-
   // Clean up timers on theme switch away
   useEffect(() => {
     if (currentTheme !== 'deep-sea-ocean') {
@@ -659,28 +603,6 @@ export default function App() {
       if (hackerTimersRef.current) {
         hackerTimersRef.current.forEach(clearTimeout);
         hackerTimersRef.current = [];
-      }
-    }
-    if (currentTheme !== 'forza-horizon' && currentTheme !== 'forza-horizon-2') {
-      setShowForzaAnim(false);
-      setForzaAnimStage('idle');
-      if (forzaTimersRef.current) {
-        forzaTimersRef.current.forEach(clearTimeout);
-        forzaTimersRef.current = [];
-      }
-      setShowForzaAnim2(false);
-      setForzaAnimStage2('idle');
-      if (forzaTimersRef2.current) {
-        forzaTimersRef2.current.forEach(clearTimeout);
-        forzaTimersRef2.current = [];
-      }
-      // Restore previous video ONLY when leaving any Forza theme
-      if (prevForzaVideo.current.id !== null) {
-        setBgVideoId(prevForzaVideo.current.id);
-        setBgVideoEnabled(prevForzaVideo.current.enabled);
-        localStorage.setItem('bgVideoId', prevForzaVideo.current.id);
-        localStorage.setItem('bgVideoEnabled', String(prevForzaVideo.current.enabled));
-        prevForzaVideo.current = { id: null, enabled: null };
       }
     }
   }, [currentTheme]);
@@ -1754,6 +1676,12 @@ Overall Status : ${overallStatus}
     } catch (err) {
       console.error('[DB] Failed to save diagnostic remark:', err);
     }
+  };
+
+  const copyToClipboard = (text, index) => {
+    navigator.clipboard.writeText(text);
+    setCopiedTextIndex(index);
+    setTimeout(() => setCopiedTextIndex(null), 2000);
   };
 
   // REST API: Register a new device configuration
@@ -3294,7 +3222,7 @@ Overall Status : ${overallStatus}
         </div>
       </div>
 
-      {bgVideoEnabled && (currentTheme === 'forza-horizon' || currentTheme === 'forza-horizon-2') && (
+      {bgVideoEnabled && bgVideoId && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -3992,24 +3920,6 @@ Overall Status : ${overallStatus}
                                 >
                                   <div className="theme-preview-bar"></div>
                                   <span className="theme-preset-name">Cyber Sunset</span>
-                                </div>
-
-                                <div
-                                  className={`theme-preset-card ${currentTheme === 'forza-horizon' ? 'active' : ''}`}
-                                  onClick={() => changeThemeWithTransition('forza-horizon', triggerForzaAnimation)}
-                                  style={{ '--theme-card-border': '#f97316', '--theme-card-bg-rgb': '249, 115, 22', '--theme-preview-grad': 'linear-gradient(135deg, #0c0f0a 15%, #1a0a00 50%, #f97316 100%)' }}
-                                >
-                                  <div className="theme-preview-bar"></div>
-                                  <span className="theme-preset-name">🏎️ Forza Horizon</span>
-                                </div>
-
-                                <div
-                                  className={`theme-preset-card ${currentTheme === 'forza-horizon-2' ? 'active' : ''}`}
-                                  onClick={() => changeThemeWithTransition('forza-horizon-2', triggerForzaAnimation2)}
-                                  style={{ '--theme-card-border': '#7c3aed', '--theme-card-bg-rgb': '124, 58, 237', '--theme-preview-grad': 'linear-gradient(135deg, #0a0010 10%, #1a003a 50%, #7c3aed 80%, #00f0ff 100%)' }}
-                                >
-                                  <div className="theme-preview-bar"></div>
-                                  <span className="theme-preset-name">🌃 Forza Night Neon</span>
                                 </div>
                               </div>
                             </div>
@@ -5776,7 +5686,7 @@ Overall Status : ${overallStatus}
               </div>
             </header>
 
-            <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px' }}>
+            <div className="security-layout-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
 
               {/* Arduino-CLI Installer Status Card */}
               <div className="glass-card">
@@ -5877,6 +5787,80 @@ Overall Status : ${overallStatus}
                 >
                   {isFlashingUsb ? '⚡ Compiling & Flashing...' : '⚡ Compile & Upload Firmware'}
                 </button>
+              </div>
+
+              {/* Software Downloads & Database Templates Card */}
+              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <h3><span className="icon">📦</span> Setup Resources & Database URLs</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '5px' }}>
+                  Quick setup guides, software downloads, and preformatted MongoDB connection strings.
+                </p>
+
+                {/* Connection Strings Copy Section */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, overflowY: 'auto' }}>
+                  <span style={{ fontSize: '10px', color: 'var(--accent-pink)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>MongoDB URI Templates</span>
+
+                  {[
+                    { label: 'Local Host Connection', val: 'mongodb://127.0.0.1:27017/IOT_Monitor_System' },
+                    { label: 'Atlas Cloud Database', val: 'mongodb+srv://<username>:<password>@cluster.mongodb.net/IOT_Monitor_System' },
+                    { label: 'Docker Container Network', val: 'mongodb://mongodb_container:27017/IOT_Monitor_System' },
+                    { label: 'Local Replica Set', val: 'mongodb://127.0.0.1:27017,127.0.0.1:27018/IOT_Monitor_System?replicaSet=rs0' }
+                  ].map((item, idx) => (
+                    <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '3px', background: 'rgba(0,0,0,0.2)', padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--accent-blue)' }}>{item.label}</span>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          readOnly
+                          value={item.val}
+                          style={{ flex: 1, fontSize: '10.5px', fontFamily: 'var(--font-mono)', background: 'transparent', border: 'none', color: '#ccc', margin: 0, padding: 0 }}
+                          onClick={(e) => e.target.select()}
+                        />
+                        <button
+                          className="btn btn-secondary small"
+                          onClick={() => copyToClipboard(item.val, idx)}
+                          style={{ margin: 0, padding: '2px 8px', fontSize: '9.5px', height: '22px', minWidth: '55px' }}
+                        >
+                          {copiedTextIndex === idx ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Software Downloads Section */}
+                <div style={{ borderTop: '1px dashed rgba(255,255,255,0.06)', paddingTop: '10px' }}>
+                  <span style={{ fontSize: '10px', color: 'var(--accent-pink)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '8px' }}>Tool Downloads</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <a
+                      href="https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary small"
+                      style={{ margin: 0, fontSize: '10.5px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', textDecoration: 'none' }}
+                    >
+                      🔌 CP210x USB to UART Driver
+                    </a>
+                    <a
+                      href="https://arduino.github.io/arduino-cli/latest/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary small"
+                      style={{ margin: 0, fontSize: '10.5px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', textDecoration: 'none' }}
+                    >
+                      🤖 Arduino CLI Official Download
+                    </a>
+                    <a
+                      href="https://mongodb.com/try/download/community"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary small"
+                      style={{ margin: 0, fontSize: '10.5px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', textDecoration: 'none' }}
+                    >
+                      🍃 MongoDB Community Server
+                    </a>
+                  </div>
+                </div>
               </div>
 
             </div>
@@ -9023,224 +9007,191 @@ Overall Status : ${overallStatus}
                 {/* Theme & Styling Tab */}
                 {accountModalActiveTab === 'theme-styling' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    {/* Color Theme Selector Grid */}
-                    <div className="glass-card" style={{ padding: '20px' }}>
-                      <h3>🎨 Active Color Theme Palette</h3>
-                      <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
-                        Choose a color style preset. Changes animate dynamically across the dashboard.
-                      </p>
-                      <div className="theme-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px' }}>
-                        <button
-                          className={`theme-preset-btn ${currentTheme === 'quantum-indigo' ? 'active' : ''}`}
-                          onClick={() => changeThemeWithTransition('quantum-indigo')}
-                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
-                        >
-                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #0a84ff 0%, #5e5ce6 100%)' }}></span>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Quantum Indigo</span>
-                        </button>
-                        <button
-                          className={`theme-preset-btn ${currentTheme === 'cyber-orchid' ? 'active' : ''}`}
-                          onClick={() => changeThemeWithTransition('cyber-orchid')}
-                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
-                        >
-                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #8e8e93 0%, #d1d1d6 100%)' }}></span>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Cyber Orchid</span>
-                        </button>
-                        <button
-                          className={`theme-preset-btn ${currentTheme === 'mint-aurora' ? 'active' : ''}`}
-                          onClick={() => changeThemeWithTransition('mint-aurora')}
-                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
-                        >
-                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #30d158 0%, #0a84ff 100%)' }}></span>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Mint Aurora</span>
-                        </button>
-                        <button
-                          className={`theme-preset-btn ${currentTheme === 'solar-flare' ? 'active' : ''}`}
-                          onClick={() => changeThemeWithTransition('solar-flare')}
-                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
-                        >
-                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #0a84ff 0%, #bf5af2 100%)' }}></span>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Solar Flare</span>
-                        </button>
-                        <button
-                          className={`theme-preset-btn ${currentTheme === 'minecraft' ? 'active' : ''}`}
-                          onClick={() => changeThemeWithTransition('minecraft')}
-                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
-                        >
-                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #855C33 0%, #3D8B2A 100%)' }}></span>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Minecraft Craft</span>
-                        </button>
-                        <button
-                          className={`theme-preset-btn ${currentTheme === 'cherry-grove' ? 'active' : ''}`}
-                          onClick={() => changeThemeWithTransition('cherry-grove')}
-                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
-                        >
-                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #ff79c6 0%, #ffb86c 100%)' }}></span>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Cherry Grove</span>
-                        </button>
-                        <button
-                          className={`theme-preset-btn ${currentTheme === 'deep-sea-ocean' ? 'active' : ''}`}
-                          onClick={() => changeThemeWithTransition('deep-sea-ocean', triggerOceanAnimation)}
-                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
-                        >
-                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)' }}></span>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Deep Sea Ocean</span>
-                        </button>
-                        <button
-                          className={`theme-preset-btn ${currentTheme === 'hacking' ? 'active' : ''}`}
-                          onClick={() => changeThemeWithTransition('hacking', triggerHackerAnimation)}
-                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
-                        >
-                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #000000 0%, #15803d 100%)' }}></span>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Terminal Hacking</span>
-                        </button>
-                        <button
-                          className={`theme-preset-btn ${currentTheme === 'mojang-studios' ? 'active' : ''}`}
-                          onClick={() => changeThemeWithTransition('mojang-studios')}
-                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
-                        >
-                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)' }}></span>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Mojang Studios</span>
-                        </button>
-                        <button
-                          className={`theme-preset-btn ${currentTheme === 'star-nova' ? 'active' : ''}`}
-                          onClick={() => changeThemeWithTransition('star-nova')}
-                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
-                        >
-                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%)' }}></span>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Star Nova</span>
-                        </button>
-                        <button
-                          className={`theme-preset-btn ${currentTheme === 'cyber-sunset' ? 'active' : ''}`}
-                          onClick={() => changeThemeWithTransition('cyber-sunset')}
-                          style={{ padding: '10px', border: '1px solid var(--glass-border)', borderRadius: '8px', cursor: 'pointer', outline: 'none', background: 'rgba(255,255,255,0.02)', color: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
-                        >
-                          <span style={{ width: '36px', height: '20px', borderRadius: '4px', background: 'linear-gradient(135deg, #ec4899 0%, #eab308 100%)' }}></span>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Cyber Sunset</span>
-                        </button>
-                        <div
-                          className={`theme-preset-card ${currentTheme === 'forza-horizon' ? 'active' : ''}`}
-                          onClick={() => changeThemeWithTransition('forza-horizon', triggerForzaAnimation)}
-                          style={{ '--theme-card-border': '#f97316', '--theme-card-bg-rgb': '249, 115, 22', '--theme-preview-grad': 'linear-gradient(135deg, #0c0f0a 15%, #1a0a00 50%, #f97316 100%)' }}
-                        >
-                          <div className="theme-preview-bar"></div>
-                          <span className="theme-preset-name">🏎️ Forza Horizon</span>
-                        </div>
 
-                        <div
-                          className={`theme-preset-card ${currentTheme === 'forza-horizon-2' ? 'active' : ''}`}
-                          onClick={() => changeThemeWithTransition('forza-horizon-2', triggerForzaAnimation2)}
-                          style={{ '--theme-card-border': '#7c3aed', '--theme-card-bg-rgb': '124, 58, 237', '--theme-preview-grad': 'linear-gradient(135deg, #0a0010 10%, #1a003a 50%, #7c3aed 80%, #00f0ff 100%)' }}
-                        >
-                          <div className="theme-preview-bar"></div>
-                          <span className="theme-preset-name">🌃 Forza Night Neon</span>
+                    {/* Color Theme Selector Section */}
+                    <div className="glass-card" style={{ padding: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: '15px', color: '#fff' }}>🎨 Select Visual Theme Preset</h3>
+                          <p style={{ fontSize: '11.5px', color: 'var(--text-dim)', margin: '4px 0 0 0' }}>
+                            Choose a visual accent color palette. Changes will instantly animate across the entire dashboard.
+                          </p>
+                        </div>
+                        <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.06)', padding: '4px 10px', borderRadius: '12px', border: '1px solid var(--glass-border)', color: '#fff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Theme: {currentTheme.replace('-', ' ')}
+                        </span>
+                      </div>
+
+                      <div className="theme-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
+                        {[
+                          { id: 'quantum-indigo', name: 'Quantum Indigo', desc: '⚛️ Modern digital blue', grad: 'linear-gradient(135deg, #0a84ff 0%, #5e5ce6 100%)', trigger: null },
+                          { id: 'cyber-orchid', name: 'Cyber Orchid', desc: '🌸 Premium metallic silver', grad: 'linear-gradient(135deg, #8e8e93 0%, #d1d1d6 100%)', trigger: null },
+                          { id: 'mint-aurora', name: 'Mint Aurora', desc: '🍵 Refreshing green glow', grad: 'linear-gradient(135deg, #30d158 0%, #0a84ff 100%)', trigger: null },
+                          { id: 'solar-flare', name: 'Solar Flare', desc: '☀️ Warm violet & blue', grad: 'linear-gradient(135deg, #0a84ff 0%, #bf5af2 100%)', trigger: null },
+                          { id: 'minecraft', name: 'Minecraft Craft', desc: '🧱 Pixel block earth tone', grad: 'linear-gradient(135deg, #855C33 0%, #3D8B2A 100%)', trigger: null },
+                          { id: 'cherry-grove', name: 'Cherry Grove', desc: '🍒 Sakura pink gradient', grad: 'linear-gradient(135deg, #ff79c6 0%, #ffb86c 100%)', trigger: null },
+                          { id: 'deep-sea-ocean', name: 'Deep Sea Ocean', desc: '🌊 Submerged navy blue', grad: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)', trigger: triggerOceanAnimation },
+                          { id: 'hacking', name: 'Terminal Hacking', desc: '💻 Matrix green terminal', grad: 'linear-gradient(135deg, #000000 0%, #15803d 100%)', trigger: triggerHackerAnimation },
+                          { id: 'mojang-studios', name: 'Mojang Studios', desc: '🟥 Classic red block brand', grad: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)', trigger: null },
+                          { id: 'star-nova', name: 'Star Nova', desc: '🌟 Cosmic indigo space', grad: 'linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%)', trigger: null },
+                          { id: 'cyber-sunset', name: 'Cyber Sunset', desc: '🌇 Vaporwave synth neon', grad: 'linear-gradient(135deg, #ec4899 0%, #eab308 100%)', trigger: null }
+                        ].map((theme) => {
+                          const isActive = currentTheme === theme.id;
+                          return (
+                            <div
+                              key={theme.id}
+                              onClick={() => changeThemeWithTransition(theme.id, theme.trigger)}
+                              style={{
+                                cursor: 'pointer',
+                                background: isActive ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.01)',
+                                border: isActive ? '1px solid var(--accent-blue)' : '1px solid var(--glass-border)',
+                                boxShadow: isActive ? '0 0 15px rgba(0, 240, 255, 0.15)' : 'none',
+                                borderRadius: '10px',
+                                padding: '12px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '8px',
+                                transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                                transform: isActive ? 'translateY(-2px)' : 'none',
+                                position: 'relative',
+                                overflow: 'hidden'
+                              }}
+                            >
+                              <div style={{ height: '32px', width: '100%', borderRadius: '6px', background: theme.grad, opacity: 0.9 }}></div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+                                <span style={{ fontSize: '12px', fontWeight: 'bold', color: isActive ? 'var(--accent-blue)' : '#fff' }}>
+                                  {theme.name}
+                                </span>
+                                <span style={{ fontSize: '10px', color: 'var(--text-dim)', lineHeight: '1.2' }}>
+                                  {theme.desc}
+                                </span>
+                              </div>
+                              {isActive && (
+                                <span style={{
+                                  position: 'absolute',
+                                  top: '6px',
+                                  right: '6px',
+                                  width: '8px',
+                                  height: '8px',
+                                  borderRadius: '50%',
+                                  background: 'var(--accent-blue)',
+                                  boxShadow: '0 0 8px var(--accent-blue)'
+                                }}></span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Font & Video custom styling in grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '20px' }}>
+                      {/* Typography Selection */}
+                      <div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', justifyBetween: 'space-between' }}>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: '14px', color: 'white' }}>🔤 Typography Font Face</h3>
+                          <p style={{ fontSize: '11px', color: 'var(--text-dim)', margin: '4px 0 15px 0' }}>
+                            Adjust application-wide text display styling.
+                          </p>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {[
+                            { id: 'outfit', name: 'Outfit Sans', desc: 'Modern Rounded aesthetic' },
+                            { id: 'mono', name: 'JetBrains Mono', desc: 'Hardware terminal code style' },
+                            { id: 'space', name: 'Space Grotesk', desc: 'Futuristic wide geometric' }
+                          ].map((f) => {
+                            const isFontActive = currentFont === f.id;
+                            return (
+                              <button
+                                key={f.id}
+                                className={`btn ${isFontActive ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => {
+                                  setCurrentFont(f.id);
+                                  localStorage.setItem('font', f.id);
+                                  document.documentElement.setAttribute('data-font', f.id);
+                                }}
+                                style={{
+                                  margin: 0,
+                                  textAlign: 'left',
+                                  padding: '10px 14px',
+                                  height: 'auto',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'flex-start',
+                                  gap: '2px',
+                                  border: isFontActive ? '1px solid var(--accent-blue)' : '1px solid var(--glass-border)',
+                                  background: isFontActive ? 'rgba(0, 240, 255, 0.08)' : 'rgba(255,255,255,0.02)'
+                                }}
+                              >
+                                <span style={{ fontSize: '12px', fontWeight: 'bold', color: isFontActive ? 'var(--accent-blue)' : '#fff' }}>{f.name}</span>
+                                <span style={{ fontSize: '9.5px', color: 'var(--text-dim)', textTransform: 'none', fontWeight: 'normal' }}>{f.desc}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* YouTube Background controls */}
+                      <div className="glass-card" style={{ padding: '20px' }}>
+                        <h3 style={{ margin: 0, fontSize: '14px', color: 'white' }}>🎬 Looping Video Background</h3>
+                        <p style={{ fontSize: '11px', color: 'var(--text-dim)', margin: '4px 0 15px 0' }}>
+                          Overlay a low-opacity video loop in the dashboard background.
+                        </p>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <div className="input-group" style={{ marginBottom: 0 }}>
+                            <label style={{ fontSize: '10px', color: 'var(--text-dim)', marginBottom: '4px' }}>Video Player State</label>
+                            <select
+                              value={String(bgVideoEnabled)}
+                              onChange={(e) => {
+                                const val = e.target.value === 'true';
+                                setBgVideoEnabled(val);
+                                localStorage.setItem('bgVideoEnabled', String(val));
+                              }}
+                              style={{ width: '100%', padding: '8px', background: 'rgba(0,0,0,0.2)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
+                            >
+                              <option value="true">Enabled (Looped Video)</option>
+                              <option value="false">Disabled (Solid Colors)</option>
+                            </select>
+                          </div>
+
+                          <div className="input-group" style={{ marginBottom: 0 }}>
+                            <label style={{ fontSize: '10px', color: 'var(--text-dim)', marginBottom: '4px' }}>YouTube Video ID</label>
+                            <input
+                              type="text"
+                              value={bgVideoId}
+                              onChange={(e) => {
+                                setBgVideoId(e.target.value);
+                                localStorage.setItem('bgVideoId', e.target.value);
+                              }}
+                              placeholder="e.g. FYH9n37B7Yw"
+                              style={{ height: '32px', fontSize: '11.5px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)' }}
+                            />
+                          </div>
+
+                          <div className="input-group" style={{ marginBottom: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                              <label style={{ fontSize: '10px', color: 'var(--text-dim)', margin: 0 }}>Video Opacity</label>
+                              <span style={{ fontSize: '10px', color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)' }}>{Math.round(bgVideoOpacity * 100)}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="0.4"
+                              step="0.01"
+                              value={bgVideoOpacity}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                setBgVideoOpacity(val);
+                                localStorage.setItem('bgVideoOpacity', String(val));
+                              }}
+                              style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', outline: 'none' }}
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Active Font Face Selector */}
-                    <div className="glass-card" style={{ padding: '20px' }}>
-                      <h3>🔤 Active Application Font Face</h3>
-                      <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
-                        Choose typographic layout spacing style.
-                      </p>
-                      <div style={{ display: 'flex', gap: '10px' }}>
-                        <button
-                          className={`btn ${currentFont === 'outfit' ? 'btn-primary' : 'btn-secondary'}`}
-                          onClick={() => {
-                            setCurrentFont('outfit');
-                            localStorage.setItem('font', 'outfit');
-                            document.documentElement.setAttribute('data-font', 'outfit');
-                          }}
-                          style={{ flex: 1, margin: 0 }}
-                        >
-                          Outfit Rounded
-                        </button>
-                        <button
-                          className={`btn ${currentFont === 'mono' ? 'btn-primary' : 'btn-secondary'}`}
-                          onClick={() => {
-                            setCurrentFont('mono');
-                            localStorage.setItem('font', 'mono');
-                            document.documentElement.setAttribute('data-font', 'mono');
-                          }}
-                          style={{ flex: 1, margin: 0 }}
-                        >
-                          JetBrains Mono
-                        </button>
-                        <button
-                          className={`btn ${currentFont === 'space' ? 'btn-primary' : 'btn-secondary'}`}
-                          onClick={() => {
-                            setCurrentFont('space');
-                            localStorage.setItem('font', 'space');
-                            document.documentElement.setAttribute('data-font', 'space');
-                          }}
-                          style={{ flex: 1, margin: 0 }}
-                        >
-                          Space Grotesk
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Looping YouTube Background Settings */}
-                    <div className="glass-card" style={{ padding: '20px' }}>
-                      <h3>🎬 Looping Video Background</h3>
-                      <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '15px' }}>
-                        Play a high-fidelity video loop in the dashboard background.
-                      </p>
-
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                        <div className="input-group" style={{ marginBottom: 0 }}>
-                          <label style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px', display: 'block' }}>Video Player State</label>
-                          <select
-                            value={String(bgVideoEnabled)}
-                            onChange={(e) => {
-                              const val = e.target.value === 'true';
-                              setBgVideoEnabled(val);
-                              localStorage.setItem('bgVideoEnabled', String(val));
-                            }}
-                            style={{ width: '100%', padding: '8px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
-                          >
-                            <option value="true">Enabled (Looping Trailer)</option>
-                            <option value="false">Disabled (Solid Theme Color)</option>
-                          </select>
-                        </div>
-
-                        <div className="input-group" style={{ marginBottom: 0 }}>
-                          <label style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px', display: 'block' }}>YouTube Video ID</label>
-                          <input
-                            type="text"
-                            value={bgVideoId}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setBgVideoId(val);
-                              localStorage.setItem('bgVideoId', val);
-                            }}
-                            placeholder="e.g. FYH9n37B7Yw"
-                            style={{ width: '100%', padding: '8px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="input-group" style={{ marginTop: '15px', marginBottom: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                          <label style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Video Opacity / Dim Level</label>
-                          <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 'bold' }}>{Math.round(bgVideoOpacity * 100)}%</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0.05"
-                          max="0.80"
-                          step="0.05"
-                          value={bgVideoOpacity}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value);
-                            setBgVideoOpacity(val);
-                            localStorage.setItem('bgVideoOpacity', String(val));
-                          }}
-                          style={{ width: '100%', accentColor: 'var(--accent-pink)', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', height: '6px' }}
-                        />
-                      </div>
-                    </div>
                   </div>
                 )}
 
