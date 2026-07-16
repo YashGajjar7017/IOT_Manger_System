@@ -86,7 +86,10 @@ let appConfig = {
   udpPort: 5002,
   defaultBaudRate: 115200,
   githubClientId: '',
-  githubClientSecret: ''
+  githubClientSecret: '',
+  githubRepoUrl: 'https://github.com/YashGajjar7017/IOT_Manger_System',
+  githubRepoBranch: 'main',
+  lastSyncedCommitSha: ''
 };
 
 function loadConfig() {
@@ -2296,70 +2299,13 @@ function readModbusTcpChunk(ip, port, slaveId, regType, startReg, count) {
 }
 
 ipcMain.handle('query-modbus-tcp', async (event, { ip, port, startReg, count, slaveId, regType }) => {
-  const chunk_size = 100;
-  const values = [];
-  let currentAddr = startReg;
-  const endReg = startReg + count - 1;
-
   try {
-    while (currentAddr <= endReg) {
-      const chunkCount = Math.min(chunk_size, endReg - currentAddr + 1);
-      
-      let chunkValues = null;
-      let lastErr = null;
-      // Retry 3 times
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          chunkValues = await readModbusTcpChunk(ip, port, slaveId, regType, currentAddr, chunkCount);
-          break;
-        } catch (err) {
-          lastErr = err;
-          await new Promise(r => setTimeout(r, 100));
-        }
-      }
-
-      if (chunkValues) {
-        values.push(...chunkValues);
-      } else {
-        values.push(...new Array(chunkCount).fill(null));
-        console.error(`[MODBUS] Failed to read chunk starting at ${currentAddr}:`, lastErr);
-      }
-
-      currentAddr += chunkCount;
-      await new Promise(r => setTimeout(r, 50));
-    }
-
-    // Convert 16-bit to 32-bit (Big Endian)
-    const values32 = {};
-    for (let i = 0; i < values.length; i += 2) {
-      const regAddr = startReg + i;
-      const val1 = values[i];
-      const val2 = (i + 1 < values.length) ? values[i + 1] : null;
-      if (val1 !== null && val1 !== undefined && val2 !== null && val2 !== undefined) {
-        const longVal = (val1 << 16) | val2;
-        values32[String(regAddr)] = longVal;
-      } else {
-        values32[String(regAddr)] = null;
-      }
-    }
-
-    try {
-      const outputData = {
-        ip: ip,
-        start_register: startReg,
-        end_register: endReg,
-        register_type: regType,
-        timestamp: new Date().toISOString(),
-        values: values32
-      };
-      fs.writeFileSync('registers_2.json', JSON.stringify(outputData, null, 2));
-      console.log(`[MODBUS] Saved ${Object.keys(values32).length} registers to registers_2.json`);
-    } catch (e) {
-      console.error('[MODBUS] Failed to write registers_2.json:', e);
-    }
-
-    return { success: true, values: values32, raw16: values };
+    const { runFetcher } = require('./backend/Modbus_Fetcher');
+    const endReg = startReg + count - 1;
+    const result = await runFetcher(ip, port, slaveId, startReg, endReg, regType);
+    return result;
   } catch (err) {
+    console.error('[MODBUS IPC ERROR] Failed to run Modbus fetcher:', err);
     return { success: false, error: err.message };
   }
 });
@@ -3129,53 +3075,68 @@ ipcMain.handle('check-software-update', async (event, params) => {
   });
 });
 
-// IPC Handler: Sync/Update app code from GitHub without removing the wrapper .exe
-ipcMain.on('sync-code-from-github', async (event, { repoUrl, branch }) => {
+// Helper to execute code sync and download to updates/ folder
+async function performCodeSync(repoUrl, branch, event = null) {
   const { exec } = require('child_process');
   const fs = require('fs');
   const path = require('path');
   const https = require('https');
 
-  const targetBranch = branch || 'main';
+  const targetBranch = branch || appConfig.githubRepoBranch || 'main';
+  const targetRepoUrl = repoUrl || appConfig.githubRepoUrl || 'https://github.com/YashGajjar7017/IOT_Manger_System';
   const localDir = __dirname;
+  const updatesDir = path.join(localDir, 'updates');
 
-  event.reply('console-log', `[GITHUB SYNC] Checking for local git repository in: ${localDir}...`);
+  const log = (msg, type = 'info') => {
+    console.log(`[GITHUB UPDATE] ${msg}`);
+    if (event && !event.destroyed) {
+      event.reply('console-log', `[GITHUB UPDATE] ${msg}`);
+    }
+  };
+
+  // Ensure updates folder exists
+  if (!fs.existsSync(updatesDir)) {
+    fs.mkdirSync(updatesDir, { recursive: true });
+  }
+
+  log(`Checking for local git repository in: ${localDir}...`);
 
   if (fs.existsSync(path.join(localDir, '.git'))) {
-    event.reply('console-log', `[GITHUB SYNC] Detected local Git repository. Running git pull origin ${targetBranch}...`);
-    exec(`git pull origin ${targetBranch}`, (err, stdout, stderr) => {
-      if (stdout) event.reply('console-log', `[GITHUB SYNC STDOUT] ${stdout}`);
-      if (stderr) event.reply('console-log', `[GITHUB SYNC STDERR] ${stderr}`);
-      if (err) {
-        event.reply('console-log', `[GITHUB SYNC ERROR] Git pull failed: ${err.message}`);
-        event.reply('github-sync-result', { success: false, message: `Git pull failed: ${err.message}` });
-      } else {
-        event.reply('console-log', `[GITHUB SYNC SUCCESS] Git pull completed successfully. Restarting application...`);
-        event.reply('github-sync-result', { success: true, message: 'Code updated successfully via Git pull!' });
-        setTimeout(() => {
-          app.relaunch();
-          app.exit(0);
-        }, 1500);
-      }
+    log(`Detected local Git repository. Running git pull origin ${targetBranch}...`);
+    return new Promise((resolve) => {
+      exec(`git pull origin ${targetBranch}`, (err, stdout, stderr) => {
+        if (stdout) log(`STDOUT: ${stdout}`);
+        if (stderr) log(`STDERR: ${stderr}`);
+        if (err) {
+          log(`Git pull failed: ${err.message}`, 'error');
+          if (event && !event.destroyed) event.reply('github-sync-result', { success: false, message: `Git pull failed: ${err.message}` });
+          resolve(false);
+        } else {
+          log(`Git pull completed successfully. Relaunching application...`);
+          if (event && !event.destroyed) event.reply('github-sync-result', { success: true, message: 'Code updated successfully via Git pull!' });
+          setTimeout(() => {
+            app.relaunch();
+            app.exit(0);
+          }, 1500);
+          resolve(true);
+        }
+      });
     });
   } else {
-    event.reply('console-log', `[GITHUB SYNC] Local Git not found. Downloading repository zip from GitHub...`);
+    log(`Local Git not found. Downloading repository zip from GitHub...`);
 
     let repoPath = "YashGajjar7017/IOT_Manger_System";
-    if (repoUrl) {
-      const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    if (targetRepoUrl) {
+      const match = targetRepoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
       if (match) {
         repoPath = `${match[1]}/${match[2].replace(/\.git$/, '')}`;
       }
     }
 
     const zipUrl = `https://github.com/${repoPath}/archive/refs/heads/${targetBranch}.zip`;
-    event.reply('console-log', `[GITHUB SYNC] Target Zip URL: ${zipUrl}`);
+    log(`Target Zip URL: ${zipUrl}`);
 
     const tempZipPath = path.join(app.getPath('userData'), 'repo-update.zip');
-    const extractDir = path.join(app.getPath('userData'), 'repo-update-extract');
-
-    const file = fs.createWriteStream(tempZipPath);
 
     const download = (url) => {
       https.get(url, (res) => {
@@ -3184,52 +3145,53 @@ ipcMain.on('sync-code-from-github', async (event, { repoUrl, branch }) => {
           return;
         }
         if (res.statusCode !== 200) {
-          event.reply('console-log', `[GITHUB SYNC ERROR] Download failed: Status Code ${res.statusCode}`);
-          event.reply('github-sync-result', { success: false, message: `GitHub returned status code ${res.statusCode}` });
+          log(`Download failed: Status Code ${res.statusCode}`, 'error');
+          if (event && !event.destroyed) event.reply('github-sync-result', { success: false, message: `GitHub returned status code ${res.statusCode}` });
           return;
         }
 
+        const file = fs.createWriteStream(tempZipPath);
         res.pipe(file);
 
         file.on('finish', () => {
           file.close();
-          event.reply('console-log', `[GITHUB SYNC] Download completed. Size: ${fs.statSync(tempZipPath).size} bytes. Extracting...`);
+          log(`Download completed. Size: ${fs.statSync(tempZipPath).size} bytes. Extracting to updates folder...`);
 
-          const unzipCmd = `powershell -Command "Expand-Archive -Path '${tempZipPath}' -DestinationPath '${extractDir}' -Force"`;
-          event.reply('console-log', `[GITHUB SYNC] Unzipping: ${unzipCmd}`);
+          // Extract directly into updates folder
+          const unzipCmd = `powershell -Command "Expand-Archive -Path '${tempZipPath}' -DestinationPath '${updatesDir}' -Force"`;
+          log(`Unzipping to updates: ${unzipCmd}`);
 
           exec(unzipCmd, (unzipErr) => {
             if (unzipErr) {
-              event.reply('console-log', `[GITHUB SYNC ERROR] Unzip failed: ${unzipErr.message}`);
-              event.reply('github-sync-result', { success: false, message: `Unzip failed: ${unzipErr.message}` });
+              log(`Unzip failed: ${unzipErr.message}`, 'error');
+              if (event && !event.destroyed) event.reply('github-sync-result', { success: false, message: `Unzip failed: ${unzipErr.message}` });
               return;
             }
 
-            event.reply('console-log', `[GITHUB SYNC] Unzipped successfully. Copying new source files...`);
+            log(`Unzipped successfully into updates folder. Copying new source files to app root...`);
 
-            const extractedFolders = fs.readdirSync(extractDir);
+            const extractedFolders = fs.readdirSync(updatesDir);
             if (extractedFolders.length === 0) {
-              event.reply('console-log', `[GITHUB SYNC ERROR] No extracted folder found.`);
-              event.reply('github-sync-result', { success: false, message: 'Extracted folder structure not found.' });
+              log(`No extracted folder found.`, 'error');
+              if (event && !event.destroyed) event.reply('github-sync-result', { success: false, message: 'Extracted folder structure not found.' });
               return;
             }
 
-            const sourceFolder = path.join(extractDir, extractedFolders[0]);
+            const sourceFolder = path.join(updatesDir, extractedFolders[0]);
             const copyCmd = `powershell -Command "Copy-Item -Path '${sourceFolder}\\*' -Destination '${localDir}' -Recurse -Force"`;
-            event.reply('console-log', `[GITHUB SYNC] Copying: ${copyCmd}`);
+            log(`Copying: ${copyCmd}`);
 
             exec(copyCmd, (copyErr) => {
               try {
                 fs.unlinkSync(tempZipPath);
-                fs.rmdirSync(extractDir, { recursive: true });
               } catch (e) { }
 
               if (copyErr) {
-                event.reply('console-log', `[GITHUB SYNC ERROR] Copy failed: ${copyErr.message}`);
-                event.reply('github-sync-result', { success: false, message: `Copy failed: ${copyErr.message}` });
+                log(`Copy failed: ${copyErr.message}`, 'error');
+                if (event && !event.destroyed) event.reply('github-sync-result', { success: false, message: `Copy failed: ${copyErr.message}` });
               } else {
-                event.reply('console-log', `[GITHUB SYNC SUCCESS] Application code updated successfully! Restarting...`);
-                event.reply('github-sync-result', { success: true, message: 'Code updated successfully from GitHub Zip!' });
+                log(`Application code updated successfully! Relaunching...`);
+                if (event && !event.destroyed) event.reply('github-sync-result', { success: true, message: 'Code updated successfully from GitHub Zip!' });
                 setTimeout(() => {
                   app.relaunch();
                   app.exit(0);
@@ -3246,6 +3208,111 @@ ipcMain.on('sync-code-from-github', async (event, { repoUrl, branch }) => {
 
     download(zipUrl);
   }
+}
+
+// Background commit checker that triggers automatic downloads
+async function checkForUpdates(manual = false, event = null) {
+  const https = require('https');
+  const repoUrl = appConfig.githubRepoUrl || 'https://github.com/YashGajjar7017/IOT_Manger_System';
+  const branch = appConfig.githubRepoBranch || 'main';
+
+  let repoPath = "YashGajjar7017/IOT_Manger_System";
+  const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+  if (match) {
+    repoPath = `${match[1]}/${match[2].replace(/\.git$/, '')}`;
+  }
+
+  const log = (msg) => {
+    console.log(`[UPDATE CHECK] ${msg}`);
+    if (event && !event.destroyed) {
+      event.reply('console-log', `[UPDATE CHECK] ${msg}`);
+    }
+  };
+
+  log(`Checking GitHub commits for update: ${repoPath} (branch: ${branch})...`);
+
+  const options = {
+    hostname: 'api.github.com',
+    port: 443,
+    path: `/repos/${repoPath}/commits/${branch}`,
+    method: 'GET',
+    headers: {
+      'User-Agent': 'Electron-IoT-Monitor',
+      'Accept': 'application/vnd.github.v3+json'
+    }
+  };
+
+  // Support OAuth credentials if provided in configuration
+  const clientId = appConfig.githubClientId || process.env.GITHUB_CLIENT_ID;
+  const clientSecret = appConfig.githubClientSecret || process.env.GITHUB_CLIENT_SECRET;
+  if (clientId && clientSecret) {
+    options.auth = `${clientId}:${clientSecret}`;
+  }
+
+  return new Promise((resolve) => {
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk.toString());
+      res.on('end', async () => {
+        try {
+          if (res.statusCode !== 200) {
+            log(`GitHub API returned status code ${res.statusCode}`);
+            if (manual && event && !event.destroyed) {
+              event.reply('github-sync-result', { success: false, message: `GitHub API returned status code ${res.statusCode}` });
+            }
+            return resolve(false);
+          }
+          const commitInfo = JSON.parse(body);
+          const latestSha = commitInfo.sha;
+          if (!latestSha) {
+            resolve(false);
+            return;
+          }
+
+          const currentSha = appConfig.lastSyncedCommitSha || '';
+
+          if (latestSha !== currentSha) {
+            log(`New update found! Latest SHA: ${latestSha}. Syncing...`);
+            saveConfig({ lastSyncedCommitSha: latestSha });
+            await performCodeSync(repoUrl, branch, event);
+            resolve(true);
+          } else {
+            log(`App is already up-to-date (SHA: ${currentSha})`);
+            if (manual && event && !event.destroyed) {
+              event.reply('github-sync-result', { success: true, message: 'App is already up-to-date!' });
+            }
+            resolve(false);
+          }
+        } catch (err) {
+          log(`Error parsing update info: ${err.message}`);
+          if (manual && event && !event.destroyed) {
+            event.reply('github-sync-result', { success: false, message: `Parse error: ${err.message}` });
+          }
+          resolve(false);
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      log(`Update connection check failed: ${err.message}`);
+      if (manual && event && !event.destroyed) {
+        event.reply('github-sync-result', { success: false, message: `Check failed: ${err.message}` });
+      }
+      resolve(false);
+    });
+    req.end();
+  });
+}
+
+// IPC Handler: Sync/Update app code from GitHub without removing the wrapper .exe
+ipcMain.on('sync-code-from-github', async (event, { repoUrl, branch }) => {
+  if (repoUrl) appConfig.githubRepoUrl = repoUrl;
+  if (branch) appConfig.githubRepoBranch = branch;
+  saveConfig({ githubRepoUrl: repoUrl, githubRepoBranch: branch });
+  checkForUpdates(true, event).catch(err => {
+    console.error('[GITHUB IPC SYNC ERROR]', err);
+    if (!event.destroyed) event.reply('github-sync-result', { success: false, message: err.message });
+  });
 });
 
 // IPC Handler: compile and upload firmware using arduino-cli
@@ -4674,3 +4741,15 @@ ipcMain.handle('github-oauth-sign-in', async (event) => {
     });
   });
 });
+
+// Schedule background hourly updates check
+setInterval(() => {
+  console.log('[AUTO UPDATE] Running background hourly update check...');
+  checkForUpdates().catch(err => console.error('[AUTO UPDATE ERROR]', err));
+}, 3600000);
+
+// Run an initial update check on startup after a 5 second delay
+setTimeout(() => {
+  console.log('[AUTO UPDATE] Running startup update check...');
+  checkForUpdates().catch(err => console.error('[AUTO UPDATE ERROR]', err));
+}, 5000);

@@ -364,6 +364,7 @@ export default function App() {
   const [otaTarget, setOtaTarget] = useState('esp32'); // 'esp32' or 'qcom'
   const fileInputRef = useRef(null);
   const accountContainerRef = useRef(null);
+  const accountModalRef = useRef(null);
 
   // Sync refs to bypass stale React closures in async/event listener callbacks
   const otaIpRef = useRef(otaIp);
@@ -471,6 +472,13 @@ export default function App() {
   const [hackingAnimStage, setHackingAnimStage] = useState('idle');
   const hackerTimersRef = useRef([]);
 
+  // Forza Horizon theme cinematic state variables
+  const [showForzaAnim, setShowForzaAnim] = useState(false);
+  const [forzaAnimStage, setForzaAnimStage] = useState('idle');
+  const forzaTimersRef = useRef([]);
+  // Stores the video settings that were active before Forza override
+  const prevForzaVideo = useRef({ id: null, enabled: null });
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', currentTheme);
     localStorage.setItem('theme', currentTheme);
@@ -559,6 +567,34 @@ export default function App() {
     hackerTimersRef.current = [t1, t2, t3, t4];
   };
 
+  // Forza Horizon cinematic entrance sequence (~9 seconds)
+  const triggerForzaAnimation = () => {
+    if (forzaTimersRef.current) {
+      forzaTimersRef.current.forEach(clearTimeout);
+    }
+    // Override background video to Forza Horizon 5 official trailer
+    prevForzaVideo.current = { id: bgVideoId, enabled: bgVideoEnabled };
+    setBgVideoId('CdRhCdL8_wE');
+    setBgVideoEnabled(true);
+    localStorage.setItem('bgVideoId', 'CdRhCdL8_wE');
+    localStorage.setItem('bgVideoEnabled', 'true');
+
+    setShowForzaAnim(true);
+    setForzaAnimStage('blackout');
+
+    const t1 = setTimeout(() => setForzaAnimStage('rev-engine'), 800);
+    const t2 = setTimeout(() => setForzaAnimStage('speed-lines'), 3000);
+    const t3 = setTimeout(() => setForzaAnimStage('horizon-flash'), 5500);
+    const t4 = setTimeout(() => setForzaAnimStage('logo-reveal'), 7000);
+    const t5 = setTimeout(() => {
+      setForzaAnimStage('done');
+      setShowForzaAnim(false);
+      setActiveTab('page-dashboard');
+    }, 9200);
+
+    forzaTimersRef.current = [t1, t2, t3, t4, t5];
+  };
+
   // Clean up timers on theme switch away
   useEffect(() => {
     if (currentTheme !== 'deep-sea-ocean') {
@@ -575,6 +611,22 @@ export default function App() {
       if (hackerTimersRef.current) {
         hackerTimersRef.current.forEach(clearTimeout);
         hackerTimersRef.current = [];
+      }
+    }
+    if (currentTheme !== 'forza-horizon') {
+      setShowForzaAnim(false);
+      setForzaAnimStage('idle');
+      if (forzaTimersRef.current) {
+        forzaTimersRef.current.forEach(clearTimeout);
+        forzaTimersRef.current = [];
+      }
+      // Restore previous video when leaving Forza theme
+      if (prevForzaVideo.current.id !== null) {
+        setBgVideoId(prevForzaVideo.current.id);
+        setBgVideoEnabled(prevForzaVideo.current.enabled);
+        localStorage.setItem('bgVideoId', prevForzaVideo.current.id);
+        localStorage.setItem('bgVideoEnabled', String(prevForzaVideo.current.enabled));
+        prevForzaVideo.current = { id: null, enabled: null };
       }
     }
   }, [currentTheme]);
@@ -793,6 +845,13 @@ export default function App() {
             addLogLine(`[GUI] Dynamically updated WiFi/OTA target IP address to: ${connectedIp}`, 'success');
           }
         }
+      } else if (data.status === 'awaiting-reconnect') {
+        // ESP32 dropped connection (e.g. WiFi blip / ECONNRESET) — TCP server is still listening
+        setConnection({ type: 'awaiting-reconnect', target: null });
+        setBootTriggerEnabled(false);
+        setControlsDisabled(true);
+        setPingLatency({ value: 'Reconnecting...', status: 'offline' });
+        addLogLine('[TCP] ESP32 link dropped — server is listening, waiting for ESP32 to reconnect...', 'system');
       } else {
         setConnection({ type: data.status === 'error' ? 'failed' : null, target: data.message || null });
         setBootTriggerEnabled(false);
@@ -2215,7 +2274,10 @@ Overall Status : ${overallStatus}
 
   useEffect(() => {
     const handleOutsideClick = (e) => {
-      if (accountContainerRef.current && !accountContainerRef.current.contains(e.target)) {
+      // Close only if the click is outside BOTH the header button container AND the modal itself
+      const outsideContainer = accountContainerRef.current && !accountContainerRef.current.contains(e.target);
+      const outsideModal = accountModalRef.current && !accountModalRef.current.contains(e.target);
+      if (outsideContainer && outsideModal) {
         setShowAccountModal(false);
       }
     };
@@ -3768,6 +3830,15 @@ Overall Status : ${overallStatus}
                                   <div className="theme-preview-bar"></div>
                                   <span className="theme-preset-name">Cyber Sunset</span>
                                 </div>
+
+                                <div
+                                  className={`theme-preset-card ${currentTheme === 'forza-horizon' ? 'active' : ''}`}
+                                  onClick={() => changeThemeWithTransition('forza-horizon', triggerForzaAnimation)}
+                                  style={{ '--theme-card-border': '#f97316', '--theme-card-bg-rgb': '249, 115, 22', '--theme-preview-grad': 'linear-gradient(135deg, #0c0f0a 15%, #1a0a00 50%, #f97316 100%)' }}
+                                >
+                                  <div className="theme-preview-bar"></div>
+                                  <span className="theme-preset-name">🏎️ Forza Horizon</span>
+                                </div>
                               </div>
                             </div>
 
@@ -4310,7 +4381,7 @@ Overall Status : ${overallStatus}
                         {/* Scope Toggle Switch */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', padding: '8px 12px', background: 'rgba(255, 0, 127, 0.04)', border: '1px solid rgba(255, 0, 127, 0.12)', borderRadius: '6px' }}>
                           <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--accent-pink)', textTransform: 'uppercase' }}>
-                            {connectionMode === 'ap' ? '📶 Direct ESP32 AP Mode' : '🌐 Router / WiFi Scope'}
+                            {connectionMode === 'ap' ? '📶 RMS-FIRMWARE Direct SoftAP' : '🌐 Router / WiFi Scope'}
                           </span>
                           <label className="switch-toggle" style={{ margin: 0 }}>
                             <input
@@ -8380,6 +8451,7 @@ Overall Status : ${overallStatus}
           onClick={() => setShowAccountModal(false)}
         >
           <div
+            ref={accountModalRef}
             style={{
               width: '50vw',
               minWidth: '850px',
@@ -8824,6 +8896,14 @@ Overall Status : ${overallStatus}
                           <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'linear-gradient(135deg, #ec4899 0%, #eab308 100%)' }}></span>
                           <span style={{ fontSize: '11px', fontWeight: 'bold' }}>Cyber Sunset</span>
                         </button>
+                        <div
+                          className={`theme-preset-card ${currentTheme === 'forza-horizon' ? 'active' : ''}`}
+                          onClick={() => changeThemeWithTransition('forza-horizon', triggerForzaAnimation)}
+                          style={{ '--theme-card-border': '#f97316', '--theme-card-bg-rgb': '249, 115, 22', '--theme-preview-grad': 'linear-gradient(135deg, #0c0f0a 15%, #1a0a00 50%, #f97316 100%)' }}
+                        >
+                          <div className="theme-preview-bar"></div>
+                          <span className="theme-preset-name">🏎️ Forza Horizon</span>
+                        </div>
                       </div>
                     </div>
 
@@ -8982,7 +9062,7 @@ Overall Status : ${overallStatus}
                       <input
                         type="text"
                         value={githubClientIdInput}
-                        onChange={(e) => setGitHubRepoUrlInput(e.target.value)}
+                        onChange={(e) => setGithubClientIdInput(e.target.value)}
                         placeholder="Enter Client ID"
                       />
                     </div>
