@@ -482,6 +482,29 @@ export default function App() {
   });
   const [isUpdatingSoftware, setIsUpdatingSoftware] = useState(false);
   const [hwAccelInput, setHwAccelInput] = useState(true);
+  const [showGpuBrakeAnim, setShowGpuBrakeAnim] = useState(false);
+  const [gpuBrakeFading, setGpuBrakeFading] = useState(false);
+  const [gpuBrakeSpeed, setGpuBrakeSpeed] = useState(100);
+  const gpuBrakeTimerRef = React.useRef(null);
+
+  // Diag item ordering (draggable items in diagnostics board)
+  const [diagItemOrder, setDiagItemOrder] = useState(() => {
+    try {
+      const saved = localStorage.getItem('diag_item_order');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length >= 9) return parsed;
+      }
+    } catch (e) {}
+    return ['rs232', 'rs485', 'gprs', 'flash', 'di', 'driver', 'rtc', 'psram', 'bus', 'ap'];
+  });
+  const [diagDraggedKey, setDiagDraggedKey] = useState(null);
+  const [diagDraggedOverKey, setDiagDraggedOverKey] = useState(null);
+
+  // Social Auth state
+  const [socialAuthUser, setSocialAuthUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('social_auth_user') || 'null'); } catch(e) { return null; }
+  });
 
   // Dynamic Theme, Font, and GitHub Integration States
   // Default to the 1st theme 'quantum-indigo' on startup
@@ -1787,6 +1810,52 @@ Overall Status : ${overallStatus}
   const handleCardDragEnd = () => {
     setDraggedCardId(null);
     setDraggedOverCardId(null);
+  };
+
+  // Diagnostic item drag-and-drop handlers
+  const handleDiagDragStart = (e, key) => {
+    setDiagDraggedKey(key);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+  const handleDiagDragOver = (e, key) => {
+    e.preventDefault();
+    if (key !== diagDraggedKey) setDiagDraggedOverKey(key);
+  };
+  const handleDiagDrop = (e, targetKey) => {
+    e.preventDefault();
+    if (!diagDraggedKey || diagDraggedKey === targetKey) return;
+    const newOrder = [...diagItemOrder];
+    const fromIdx = newOrder.indexOf(diagDraggedKey);
+    const toIdx = newOrder.indexOf(targetKey);
+    if (fromIdx !== -1 && toIdx !== -1) {
+      newOrder.splice(fromIdx, 1);
+      newOrder.splice(toIdx, 0, diagDraggedKey);
+      setDiagItemOrder(newOrder);
+      localStorage.setItem('diag_item_order', JSON.stringify(newOrder));
+    }
+    setDiagDraggedKey(null);
+    setDiagDraggedOverKey(null);
+  };
+  const handleDiagDragEnd = () => {
+    setDiagDraggedKey(null);
+    setDiagDraggedOverKey(null);
+  };
+
+  // GPU Brake animation trigger
+  const triggerGpuBrakeAnim = () => {
+    setGpuBrakeSpeed(100);
+    setGpuBrakeFading(false);
+    setShowGpuBrakeAnim(true);
+    let speed = 100;
+    const decreaseInterval = setInterval(() => {
+      speed = Math.max(0, speed - (speed > 30 ? 8 : speed > 10 ? 3 : 1));
+      setGpuBrakeSpeed(speed);
+      if (speed <= 0) clearInterval(decreaseInterval);
+    }, 80);
+    gpuBrakeTimerRef.current = setTimeout(() => {
+      setGpuBrakeFading(true);
+      setTimeout(() => setShowGpuBrakeAnim(false), 700);
+    }, 3800);
   };
 
   const handleForceSyncActiveDeviceToDb = async () => {
@@ -5095,7 +5164,7 @@ Overall Status : ${overallStatus}
                                   <input
                                     type="checkbox"
                                     checked={hwAccelInput}
-                                    onChange={(e) => setHwAccelInput(e.target.checked)}
+                                    onChange={(e) => { setHwAccelInput(e.target.checked); if (!e.target.checked) triggerGpuBrakeAnim(); }}
                                   />
                                   <span className="switch-slider"></span>
                                 </label>
@@ -9779,7 +9848,7 @@ Overall Status : ${overallStatus}
                           <input
                             type="checkbox"
                             checked={hwAccelInput}
-                            onChange={(e) => setHwAccelInput(e.target.checked)}
+                            onChange={(e) => { setHwAccelInput(e.target.checked); if (!e.target.checked) triggerGpuBrakeAnim(); }}
                           />
                           <span className="switch-slider"></span>
                         </label>

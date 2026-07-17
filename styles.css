@@ -816,7 +816,7 @@ select {
    ========================================================================== */
 .dashboard-top-grid {
   display: grid;
-  grid-template-columns: 310px 1fr 340px;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 20px;
   width: 100%;
 }
@@ -5772,14 +5772,13 @@ html.theme-slide-in-active .app-container {
   }
 }
 
-/* Draggable Grid Cards & Placeholder States */
 .glass-card[draggable="true"] {
-  cursor: grab;
+  cursor: default;
   user-select: none;
   transition: transform 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
 }
 .glass-card[draggable="true"]:active {
-  cursor: grabbing;
+  cursor: default;
 }
 .glass-card.drag-over {
   border: 2px dotted var(--accent-pink) !important;
@@ -5787,4 +5786,156 @@ html.theme-slide-in-active .app-container {
   opacity: 0.7;
   transform: scale(0.98);
   box-shadow: 0 0 15px rgba(255, 0, 127, 0.15) !important;
+}
+
+/* Card Drag Handle */
+.card-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 0 8px;
+  margin-bottom: 4px;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  border-bottom: 1px solid transparent;
+  border-radius: 4px 4px 0 0;
+  user-select: none;
+}
+.card-drag-handle:active {
+  cursor: grabbing;
+}
+.card-drag-handle .drag-handle-dots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.card-drag-handle .drag-handle-dots span {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.35);
+  transition: background 0.2s ease;
+}
+.glass-card:hover .card-drag-handle {
+  opacity: 1;
+  border-bottom-color: rgba(255,255,255,0.06);
+}
+.glass-card:hover .card-drag-handle .drag-handle-dots span {
+  background: var(--accent-pink);
+}
+.card-drag-handle .drag-handle-label {
+  font-size: 9px;
+  color: rgba(255,255,255,0.25);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: color 0.2s ease;
+}
+.glass-card:hover .card-drag-handle .drag-handle-label {
+  color: var(--accent-pink);
+}
+
+/* Diagnostic Item Drag */
+.diag-item {
+  position: relative;
+  transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
+}
+.diag-item.diag-dragging {
+  opacity: 0.45;
+  transform: scale(0.97);
+}
+.diag-item.diag-drag-over {
+  border-color: var(--accent-secondary) !important;
+  background: rgba(0, 198, 255, 0.06) !important;
+  box-shadow: 0 0 8px rgba(0, 198, 255, 0.15) !important;
+}
+.diag-item-drag-handle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: grab;
+  padding: 2px 4px;
+  opacity: 0.3;
+  transition: opacity 0.15s ease;
+  flex-shrink: 0;
+}
+.diag-item:hover .diag-item-drag-handle {
+  opacity: 0.8;
+}
+.diag-item-drag-handle:active {
+  cursor: grabbing;
+}
+.diag-item-drag-handle span {
+  display: block;
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent-secondary);
+}
+
+/* GPU Brake Animation Overlay */
+.gpu-brake-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(0, 0, 0, 0.88);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  animation: gpu-brake-fade-in 0.3s ease forwards;
+}
+@keyframes gpu-brake-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.gpu-brake-overlay.fading-out {
+  animation: gpu-brake-fade-out 0.6s ease forwards;
+}
+@keyframes gpu-brake-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+.gpu-speedometer-wrap {
+  position: relative;
+  width: 320px;
+  height: 200px;
+}
+.gpu-brake-label {
+  font-size: 14px;
+  color: #ff4444;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-top: 18px;
+  text-align: center;
+  animation: gpu-brake-pulse 0.4s ease infinite alternate;
+}
+@keyframes gpu-brake-pulse {
+  from { opacity: 0.6; text-shadow: none; }
+  to { opacity: 1; text-shadow: 0 0 14px #ff4444; }
+}
+.gpu-brake-subtitle {
+  font-size: 11px;
+  color: rgba(255,255,255,0.45);
+  margin-top: 8px;
+  text-align: center;
+}
+@keyframes gpu-screen-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  10% { transform: translate(-3px, 2px) rotate(-0.5deg); }
+  20% { transform: translate(3px, -2px) rotate(0.5deg); }
+  30% { transform: translate(-2px, 3px) rotate(-0.3deg); }
+  40% { transform: translate(2px, -1px) rotate(0.3deg); }
+  50% { transform: translate(-1px, 2px) rotate(-0.2deg); }
+  60% { transform: translate(1px, -2px) rotate(0.2deg); }
+  70% { transform: translate(-1px, 1px) rotate(0); }
+  80%, 90% { transform: translate(0, 0); }
+}
+.gpu-brake-shaking {
+  animation: gpu-screen-shake 0.5s ease;
 }
