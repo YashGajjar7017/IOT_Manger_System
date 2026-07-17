@@ -118,7 +118,7 @@ bool swState[SW_COUNT] = {false, false, false, false};
 #define FR_START_REG 0
 #define FR_REG_COUNT 2
 
-#define CONT_TEST_MS 5000
+#define CONT_TEST_MS 1000
 #define CONT_INTERVAL 500
 
 #define GPRS_BAUD_RATE 115200

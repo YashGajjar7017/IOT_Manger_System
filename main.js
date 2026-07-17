@@ -28,6 +28,7 @@ if (fs.existsSync(sourcePath)) {
 }
 
 let mainWindow;
+let terminalWindow = null;
 let activeSerialPort = null;
 let activeTcpSocket = null;
 function safeTcpWrite(data, callback) {
@@ -2243,6 +2244,38 @@ function startTcpTelemetryServer() {
     }
   });
 }
+
+ipcMain.on('open-terminal-window', () => {
+  if (terminalWindow && !terminalWindow.isDestroyed()) {
+    terminalWindow.focus();
+    return;
+  }
+
+  terminalWindow = new BrowserWindow({
+    width: 900,
+    height: 600,
+    title: 'IoT Debug Console Terminal',
+    backgroundColor: '#070b16',
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+      backgroundThrottling: false
+    }
+  });
+
+  terminalWindow.loadURL(`http://127.0.0.1:${appConfig.expressPort || 8000}?popout=terminal`);
+
+  terminalWindow.on('closed', () => {
+    terminalWindow = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('terminal-popout-status', { popped: false });
+    }
+  });
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('terminal-popout-status', { popped: true });
+  }
+});
 
 ipcMain.on('connect-tcp', (event, { ip, port, pcbNumber }) => {
   isExplicitlyDisconnected = false;

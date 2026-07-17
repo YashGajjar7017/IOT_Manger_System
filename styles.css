@@ -5771,3 +5771,20 @@ html.theme-slide-in-active .app-container {
     opacity: 1;
   }
 }
+
+/* Draggable Grid Cards & Placeholder States */
+.glass-card[draggable="true"] {
+  cursor: grab;
+  user-select: none;
+  transition: transform 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
+}
+.glass-card[draggable="true"]:active {
+  cursor: grabbing;
+}
+.glass-card.drag-over {
+  border: 2px dotted var(--accent-pink) !important;
+  background: rgba(255, 0, 127, 0.05) !important;
+  opacity: 0.7;
+  transform: scale(0.98);
+  box-shadow: 0 0 15px rgba(255, 0, 127, 0.15) !important;
+}

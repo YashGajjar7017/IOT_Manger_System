@@ -423,6 +423,31 @@ export default function App() {
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [certHistoryLogs, setCertHistoryLogs] = useState([]);
 
+  // Draggable Dashboard Layout States
+  const [dashboardLayout, setDashboardLayout] = useState(() => {
+    try {
+      const saved = localStorage.getItem('dashboard_layout');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length >= 6) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return [
+      'connection-panel',
+      'diagnostic-board',
+      'detected-devices-panel',
+      'direct-ap-panel',
+      'direct-config-panel',
+      'ap-clients-panel'
+    ];
+  });
+  const [draggedCardId, setDraggedCardId] = useState(null);
+  const [draggedOverCardId, setDraggedOverCardId] = useState(null);
+
   // Advanced Multi-File Flashing states
   const [otaMode, setOtaMode] = useState('standard');
   const [otaSlots, setOtaSlots] = useState([
@@ -823,10 +848,48 @@ export default function App() {
   }, []);
 
   // Terminal Console Logs State
-  const [consoleLogs, setConsoleLogs] = useState([
-    { text: 'System Initialized. Awaiting interface connectivity...', type: 'system', time: new Date().toLocaleTimeString() }
-  ]);
+  const [consoleLogs, setConsoleLogs] = useState(() => {
+    try {
+      const saved = localStorage.getItem('consoleLogs');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return [
+      { text: 'System Initialized. Awaiting interface connectivity...', type: 'system', time: new Date().toLocaleTimeString() }
+    ];
+  });
   const consoleEndRef = useRef(null);
+  const consoleLogsRef = useRef(consoleLogs);
+  useEffect(() => {
+    consoleLogsRef.current = consoleLogs;
+    localStorage.setItem('consoleLogs', JSON.stringify(consoleLogs));
+  }, [consoleLogs]);
+
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'consoleLogs' && e.newValue) {
+        if (e.newValue === JSON.stringify(consoleLogsRef.current)) {
+          return;
+        }
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setConsoleLogs(parsed);
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
 
   // Ping Latency Refs
   const lastPingTimeRef = useRef(0);
@@ -1633,7 +1696,7 @@ Overall Status : ${overallStatus}
   };
 
   // REST API: Load log documents
-  const fetchDatabaseHistory = async (range = historyRange) => {
+  const fetchDatabaseHistory = async (range = historyRange, showAlert = false) => {
     try {
       const res = await fetch(`/api/telemetry/history?range=${encodeURIComponent(range)}&limit=100`);
       if (res.ok) {
@@ -1644,7 +1707,9 @@ Overall Status : ${overallStatus}
         const count = Array.isArray(data) ? payload.length : (data.count ?? payload.length);
         const label = range === '1d' ? '1 day' : range === '7d' ? '7 days' : range === '30d' ? '30 days' : range === '90d' ? '90 days' : 'all time';
         setHistoryFetchSummary(`Fetched ${count} records for the last ${label}.`);
-        alert(`Fetched ${count} telemetry records for the last ${label}.`);
+        if (showAlert) {
+          alert(`Fetched ${count} telemetry records for the last ${label}.`);
+        }
       }
     } catch (err) {
       console.error('Failed to load database history logs:', err);
@@ -1675,6 +1740,49 @@ Overall Status : ${overallStatus}
     } catch (err) {
       console.error('Failed to fetch registered devices:', err);
     }
+  };
+
+  // Draggable Card Handlers
+  const handleCardDragStart = (e, id) => {
+    setDraggedCardId(id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleCardDragOver = (e, id) => {
+    e.preventDefault();
+    if (id !== draggedCardId) {
+      setDraggedOverCardId(id);
+    }
+  };
+
+  const handleCardDragLeave = (e, id) => {
+    if (draggedOverCardId === id) {
+      setDraggedOverCardId(null);
+    }
+  };
+
+  const handleCardDrop = (e, targetId) => {
+    e.preventDefault();
+    if (!draggedCardId || draggedCardId === targetId) return;
+
+    const newLayout = [...dashboardLayout];
+    const sourceIdx = newLayout.indexOf(draggedCardId);
+    const targetIdx = newLayout.indexOf(targetId);
+
+    if (sourceIdx !== -1 && targetIdx !== -1) {
+      newLayout[sourceIdx] = targetId;
+      newLayout[targetIdx] = draggedCardId;
+      setDashboardLayout(newLayout);
+      localStorage.setItem('dashboard_layout', JSON.stringify(newLayout));
+    }
+
+    setDraggedCardId(null);
+    setDraggedOverCardId(null);
+  };
+
+  const handleCardDragEnd = () => {
+    setDraggedCardId(null);
+    setDraggedOverCardId(null);
   };
 
   const handleForceSyncActiveDeviceToDb = async () => {
@@ -3325,6 +3433,752 @@ Overall Status : ${overallStatus}
     );
   }
 
+
+  const connectionPanelCard = (
+    {/* Interface Control Panel */}
+              <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'connection-panel')} onDragOver={(e) => handleCardDragOver(e, 'connection-panel')} onDragLeave={(e) => handleCardDragLeave(e, 'connection-panel')} onDrop={(e) => handleCardDrop(e, 'connection-panel')} onDragEnd={handleCardDragEnd} className={`glass-card connection-panel ${draggedOverCardId === 'connection-panel' ? 'drag-over' : ''}`}>
+                <h3><span className="icon">&#128268;</span> Connect Gateway</h3>
+
+                {(!connection.type || connection.type === 'failed') ? (
+                  <>
+                    <div className="input-group" style={{ marginBottom: '15px' }}>
+                      <label>Select Registered Device Profile</label>
+                      <select
+                        value={selectedRegDeviceImei}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedRegDeviceImei(val);
+                          if (val === 'custom') {
+                            setPcbNumber('');
+                          } else {
+                            const profile = registeredDevices.find(d => (d._id || d.imei || d.pcbNumber) === val);
+                            if (profile) {
+                              setPcbNumber(profile.pcbNumber || '');
+                              if (profile.imei) {
+                                setImei(profile.imei);
+                              }
+                            }
+                          }
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '6px',
+                          color: '#fff',
+                          outline: 'none',
+                          fontSize: '13px'
+                        }}
+                      >
+                        <option value="">-- Select Registered Profile --</option>
+                        {[...registeredDevices].sort((a, b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((d) => (
+                          <option key={d._id || d.imei || d.pcbNumber} value={d._id || d.imei || d.pcbNumber}>
+                            Device #{d.deviceNumber || '1'} - {d.pcbNumber || d.imei}
+                          </option>
+                        ))}
+                        <option value="custom">✍️ Custom Manual Input...</option>
+                      </select>
+                    </div>
+
+                    {(selectedRegDeviceImei === 'custom' || !selectedRegDeviceImei) && (
+                      <div className="input-group" style={{ marginBottom: '15px' }}>
+                        <label>PCB Serial Number</label>
+                        <input
+                          type="text"
+                          value={pcbNumber}
+                          onChange={(e) => setPcbNumber(e.target.value)}
+                          placeholder="e.g. PCB-ESP32-v3-987"
+                        />
+                      </div>
+                    )}
+
+                    <div className="tabs-control">
+                      <button className={`tab-btn ${activeConnTab === 'tab-wifi' ? 'active' : ''}`} onClick={() => setActiveConnTab('tab-wifi')}>WiFi IP</button>
+                      <button className={`tab-btn ${activeConnTab === 'tab-serial' ? 'active' : ''}`} onClick={() => setActiveConnTab('tab-serial')}>Serial</button>
+                    </div>
+
+                    {activeConnTab === 'tab-wifi' ? (
+                      <div className="tab-content active">
+                        {/* Scope Toggle Switch */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', padding: '8px 12px', background: 'rgba(255, 0, 127, 0.04)', border: '1px solid rgba(255, 0, 127, 0.12)', borderRadius: '6px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--accent-pink)', textTransform: 'uppercase' }}>
+                            {connectionMode === 'ap' ? '📶 RMS-FIRMWARE Direct SoftAP' : '🌐 Router / WiFi Scope'}
+                          </span>
+                          <label className="switch-toggle" style={{ margin: 0 }}>
+                            <input
+                              type="checkbox"
+                              checked={connectionMode === 'router'}
+                              onChange={(e) => {
+                                const mode = e.target.checked ? 'router' : 'ap';
+                                setConnectionMode(mode);
+                                if (mode === 'ap') {
+                                  setWifiIp('192.168.0.1'); // Fixed default SoftAP IP
+                                } else {
+                                  setWifiIp(''); // Clear for router scan
+                                }
+                              }}
+                            />
+                            <span className="switch-slider"></span>
+                          </label>
+                        </div>
+
+                        {connectionMode === 'ap' ? (
+                          <>
+                            <div className="input-group">
+                              <label>Gateway IP Address</label>
+                              <input type="text" value={wifiIp} onChange={(e) => setWifiIp(e.target.value)} />
+                            </div>
+                            <div className="input-group">
+                              <label>Telemetry Socket Port</label>
+                              <input type="text" value={wifiPort} onChange={(e) => setWifiPort(e.target.value)} />
+                            </div>
+                            <div className="button-row" style={{ display: 'flex', gap: '10px' }}>
+                              <button className="btn btn-primary" style={{ flex: 1 }} onClick={connectWifi}>Open Socket (9000)</button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="button-row" style={{ display: 'flex', gap: '10px' }}>
+                              <button className="btn btn-accent" style={{ flex: 1 }} onClick={scanNetworkForGateway} disabled={isScanningNetwork}>
+                                {isScanningNetwork ? 'Scanning...' : '🔍 Scan network gateways'}
+                              </button>
+                            </div>
+                          </>
+                        )}
+
+                        {nearbyHotspots.length > 0 && (
+                          <div className="nearby-hotspots-list" style={{ marginTop: '15px', padding: '10px', background: 'rgba(0,255,200,0.03)', borderRadius: '8px', border: '1px solid rgba(0,255,200,0.1)' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#00ffcc', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '5px' }}>
+                              📶 Wireless APs Visible Nearby:
+                            </span>
+                            {nearbyHotspots.map((ssid, index) => (
+                              <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: index < nearbyHotspots.length - 1 ? '1px dashed rgba(0,255,200,0.05)' : 'none' }}>
+                                <span style={{ fontSize: '11.5px', fontFamily: 'monospace', color: '#00ffcc' }}>{ssid}</span>
+                                <span style={{ fontSize: '10px', color: '#8080a0', fontStyle: 'italic' }}>Connect PC to this SSID</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {connectionMode === 'router' && discoveredGateways.length > 0 && (
+                          <div className="discovered-gateways-list" style={{ marginTop: '15px', padding: '10px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--accent-pink)', display: 'block', marginBottom: '5px' }}>Discovered Devices:</span>
+                            {discoveredGateways.map((gw, index) => (
+                              <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: index < discoveredGateways.length - 1 ? '1px dashed rgba(255,255,255,0.05)' : 'none' }}>
+                                <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)' }}>{gw.ip} ({gw.imei})</span>
+                                <button className="btn btn-secondary small" style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px' }} onClick={() => connectDiscoveredGateway(gw)}>Connect</button>
+                              </div>
+                            ))}
+                            <button className="btn btn-accent" style={{ width: '100%', marginTop: '10px', padding: '6px 0', fontSize: '11px', height: '30px' }} onClick={runBatchTesting} disabled={isBatchTesting}>
+                              {isBatchTesting ? 'Testing Batch...' : '🧪 Run Batch Test All'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="tab-content active">
+
+                        {/* Auto / Manual connection mode toggle */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', padding: '8px 12px', background: 'rgba(0,198,255,0.04)', borderRadius: '8px', border: '1px solid rgba(0,198,255,0.12)' }}>
+                          <span style={{ fontSize: '12px', color: '#a0a0c0', fontWeight: '600' }}>
+                            {autoConnectMode ? '⚡ Auto-Connect Mode' : '🔧 Manual Mode'}
+                          </span>
+                          <label className="switch-toggle" style={{ margin: 0 }}>
+                            <input type="checkbox" checked={autoConnectMode} onChange={e => setAutoConnectMode(e.target.checked)} />
+                            <span className="switch-slider"></span>
+                          </label>
+                        </div>
+
+                        {autoConnectMode ? (
+                          <>
+                            <p style={{ fontSize: '11.5px', color: '#8080a0', marginBottom: '12px', lineHeight: 1.5 }}>
+                              Auto mode scans all COM ports and connects to the first ESP32-compatible device found at 115200 baud.
+                            </p>
+                            {serialPorts.length > 0 && (
+                              <div style={{ marginBottom: '10px', padding: '8px', background: 'rgba(0,255,150,0.04)', borderRadius: '6px', border: '1px solid rgba(0,255,150,0.1)' }}>
+                                <span style={{ fontSize: '11px', color: '#8080a0', display: 'block', marginBottom: '4px' }}>Detected Ports:</span>
+                                {serialPorts.map((p, i) => (
+                                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '2px 0' }}>
+                                    <span style={{ fontFamily: 'monospace', color: '#00c6ff' }}>{p.path}</span>
+                                    <span style={{ color: '#6060a0' }}>{p.manufacturer || 'Generic'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <button className="btn btn-primary" style={{ width: '100%' }} onClick={autoScanAndConnect}>
+                              ⚡ Auto-Scan &amp; Connect
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="input-group">
+                              <label>USB COM Target Port</label>
+                              <div className="select-wrapper">
+                                <select value={selectedSerialPort === 'CUSTOM_PORT' || (selectedSerialPort && !serialPorts.some(p => p.path === selectedSerialPort)) ? 'CUSTOM_PORT' : selectedSerialPort} onChange={(e) => {
+                                  if (e.target.value === 'CUSTOM_PORT') {
+                                    setSelectedSerialPort('CUSTOM_PORT');
+                                  } else {
+                                    setSelectedSerialPort(e.target.value);
+                                  }
+                                }}>
+                                  {serialPorts.length === 0 ? (
+                                    <option value="">No COM ports scanned</option>
+                                  ) : (
+                                    serialPorts.map(p => <option key={p.path} value={p.path}>{p.path} — {p.manufacturer || 'Generic'}</option>)
+                                  )}
+                                  <option value="CUSTOM_PORT">-- Enter Custom COM Port --</option>
+                                </select>
+                                <button className="btn btn-secondary small" onClick={refreshPorts}>&#8635;</button>
+                              </div>
+                            </div>
+                            {(selectedSerialPort === 'CUSTOM_PORT' || (selectedSerialPort && !serialPorts.some(p => p.path === selectedSerialPort))) && (
+                              <div className="input-group" style={{ marginTop: '10px' }}>
+                                <label>Custom COM Port Path</label>
+                                <input
+                                  type="text"
+                                  value={selectedSerialPort === 'CUSTOM_PORT' ? '' : selectedSerialPort}
+                                  onChange={(e) => setSelectedSerialPort(e.target.value)}
+                                  placeholder="e.g. COM3 or /dev/ttyUSB0"
+                                  style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#fff', border: '1px solid var(--glass-border)', padding: '8px 12px', borderRadius: '6px' }}
+                                />
+                              </div>
+                            )}
+                            <div className="input-group">
+                              <label>Baud Rate</label>
+                              <select value={selectedBaud} onChange={(e) => setSelectedBaud(e.target.value)}>
+                                <option value="115200">115200 (Firmware default)</option>
+                                <option value="9600">9600</option>
+                                <option value="74880">74880 (ROM bootloader)</option>
+                              </select>
+                            </div>
+                            <div className="button-row" style={{ display: 'flex', gap: '8px', width: '100%', marginBottom: '8px' }}>
+                              <button className="btn btn-primary" style={{ width: '80%', margin: 0 }} onClick={connectSerial}>Open COM Port</button>
+                              <button
+                                className="btn btn-secondary"
+                                style={{ width: '20%', margin: 0, minWidth: 'auto', padding: 0, fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                onClick={() => setShowGprsConsole(true)}
+                                title="Open GPRS Modem AT Command Debug Console"
+                              >
+                                📟
+                              </button>
+                            </div>
+                            <div className="button-row" style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                              <button className="btn btn-accent" style={{ flex: 1, margin: 0 }} onClick={triggerBoot} disabled={!bootTriggerEnabled}>START_BOOT</button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div className="button-row" style={{ display: 'flex', gap: '8px', width: '100%', marginBottom: '8px' }}>
+                      <button className="btn btn-danger" style={{ width: '80%', margin: 0 }} onClick={disconnectGateway}>Disconnect active link</button>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ width: '20%', margin: 0, minWidth: 'auto', padding: 0, fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                        onClick={() => setShowGprsConsole(true)}
+                        title="Open GPRS Modem AT Command Debug Console"
+                      >
+                        📟
+                      </button>
+                    </div>
+                    <div className="button-row" style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ flex: 1, margin: 0 }}
+                        onClick={() => ipcRenderer.send('reset-serial-device')}
+                        title="Pulses the EN/RTS line to reboot firmware normally (NOT bootloader mode)"
+                      >
+                        ↺ Reset ESP32
+                      </button>
+                      <button
+                        className="btn btn-accent"
+                        style={{ flex: 1, margin: 0 }}
+                        onClick={() => sendControlCommand('FORMAT_SPIFFS')}
+                        title="Send FORMAT_SPIFFS command to reformat SPIFFS if it failed to mount"
+                      >
+                        🗂 Format SPIFFS
+                      </button>
+                    </div>
+                    {/* Small scrollable side list of registered devices */}
+                    <div style={{ marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '15px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-dim)', display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        📋 Registered Profiles:
+                      </span>
+                      <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        {registeredDevices.length === 0 ? (
+                          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontStyle: 'italic' }}>No registered devices</div>
+                        ) : (
+                          [...registeredDevices].sort((a, b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((d) => (
+                            <div
+                              key={d._id || d.imei || d.pcbNumber}
+                              onClick={() => {
+                                const val = d._id || d.imei || d.pcbNumber;
+                                setSelectedRegDeviceImei(val);
+                                setPcbNumber(d.pcbNumber || '');
+                                setImei(d.imei || '');
+                                if (d.routerSSID) setWifiRouterSsid(d.routerSSID);
+                                if (d.routerPassword) setWifiRouterPass(d.routerPassword);
+                              }}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '6px 8px',
+                                background: selectedRegDeviceImei === (d._id || d.imei || d.pcbNumber) ? 'rgba(0, 240, 255, 0.08)' : 'rgba(255,255,255,0.01)',
+                                border: selectedRegDeviceImei === (d._id || d.imei || d.pcbNumber) ? '1px solid rgba(0, 240, 255, 0.3)' : '1px solid rgba(255,255,255,0.04)',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '10.5px'
+                              }}
+                            >
+                              <span style={{ fontWeight: 'bold', color: '#ff007f' }}>#{d.deviceNumber || '1'}</span>
+                              <span style={{ color: '#fff', fontFamily: 'monospace' }}>{d.pcbNumber || d.imei}</span>
+                              <span className={`pulse-dot ${selectedRegDeviceImei === (d._id || d.imei || d.pcbNumber) ? 'connected' : 'idle'}`} style={{ width: '6px', height: '6px' }}></span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+  );
+
+  const diagnosticBoardCard = (
+    {/* Diagnostic Checklist Panel */}
+              <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'diagnostic-board')} onDragOver={(e) => handleCardDragOver(e, 'diagnostic-board')} onDragLeave={(e) => handleCardDragLeave(e, 'diagnostic-board')} onDrop={(e) => handleCardDrop(e, 'diagnostic-board')} onDragEnd={handleCardDragEnd} className={`glass-card diagnostic-board ${draggedOverCardId === 'diagnostic-board' ? 'drag-over' : ''}`}>
+                <div className="diag-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <h3><span className="icon">&#9881;</span> Diagnostics status</h3>
+                    <div className="diag-meta">
+                      <span>IMEI: {imei}</span>
+                      <span>MAC: {mac}</span>
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-secondary small"
+                    style={{ width: 'auto', padding: '6px 12px', fontSize: '11px', height: 'auto', margin: 0 }}
+                    onClick={handleDownloadReport}
+                  >
+                    Download Report
+                  </button>
+                </div>
+
+                <div className="diag-checklist">
+                  {Object.keys(diagnostics).map(key => (
+                    <div key={key} className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : diagnostics[key] === 'TESTING' ? 'warning' : ''}`} title={diagnosticsDetails[key] || ''}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                        <div className="diag-indicator" style={{ marginRight: '8px' }}></div>
+                        <div className="diag-label" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span>{key.toUpperCase()} Module</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div className="diag-value" style={{ fontSize: '11px', fontWeight: 'bold' }}>{diagnostics[key]}</div>
+                          {connection.type && diagnostics[key] !== 'TESTING' && (
+                            key === 'gprs' ? (
+                              <div style={{ display: 'flex', gap: '6px', width: '130px', flexShrink: 0 }}>
+                                <button
+                                  className="btn btn-secondary small"
+                                  style={{ flex: 1, margin: 0, padding: '2px 4px', fontSize: '10px', height: '22px', minWidth: 'auto', border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
+                                  onClick={() => testModule(key)}
+                                >
+                                  Test
+                                </button>
+                                <button
+                                  className="btn btn-secondary small"
+                                  style={{ flex: 1, margin: 0, padding: '2px 4px', fontSize: '10px', height: '22px', minWidth: 'auto', border: '1px solid rgba(0, 240, 255, 0.4)', color: '#00f0ff', background: 'rgba(0, 240, 255, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', cursor: 'pointer' }}
+                                  onClick={() => setShowGprsConsole(true)}
+                                  title="Open GPRS Modem Interactive AT Command Debug Console"
+                                >
+                                  📟 Debug
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                className="btn btn-secondary small"
+                                style={{ padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', margin: 0, border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
+                                onClick={() => testModule(key)}
+                              >
+                                Test
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+                      {/* Remarks textarea for each diagnostic module */}
+                      <textarea
+                        placeholder={`${key.toUpperCase()} remarks — what was not working, next steps...`}
+                        value={diagnosticRemarks[key] || ''}
+                        onChange={e => {
+                          const updated = { ...diagnosticRemarks, [key]: e.target.value };
+                          setDiagnosticRemarks(updated);
+                          localStorage.setItem('diagnosticRemarks', JSON.stringify(updated));
+                        }}
+                        onMouseLeave={e => {
+                          saveModuleRemarkToDb(key, e.target.value);
+                        }}
+                        onMouseOut={e => {
+                          saveModuleRemarkToDb(key, e.target.value);
+                        }}
+                        onBlur={e => {
+                          saveModuleRemarkToDb(key, e.target.value);
+                        }}
+                        rows={2}
+                        style={{
+                          width: '100%',
+                          marginTop: '6px',
+                          background: 'rgba(0,0,0,0.3)',
+                          border: '1px solid rgba(255,255,255,0.07)',
+                          borderRadius: '5px',
+                          color: 'rgba(255,255,255,0.6)',
+                          fontSize: '10px',
+                          padding: '5px 8px',
+                          resize: 'vertical',
+                          outline: 'none',
+                          fontFamily: 'var(--font-mono)',
+                          lineHeight: 1.5,
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                      {key === 'di' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                          <div className="di-pins-container" style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(2, 1fr)',
+                            gap: '8px',
+                            marginTop: '8px',
+                            width: '100%',
+                            borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                            paddingTop: '8px'
+                          }}>
+                            {[0, 1, 2, 3].map(index => {
+                              const isPinShorted = diPinsSimulated[index] || diPinsHardware[index];
+                              return (
+                                <div key={index} className={`di-pin-item ${isPinShorted ? 'shorted' : ''}`} style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  background: 'rgba(5, 2, 18, 0.4)',
+                                  border: '1px solid rgba(255, 0, 127, 0.1)',
+                                  padding: '6px 8px',
+                                  borderRadius: '6px',
+                                  transition: 'all 0.2s ease'
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <div className="pin-indicator" style={{
+                                      width: '6px',
+                                      height: '6px',
+                                      borderRadius: '50%',
+                                      background: isPinShorted ? 'var(--accent-emerald)' : 'var(--accent-red)',
+                                      boxShadow: isPinShorted ? '0 0 6px var(--accent-emerald)' : '0 0 6px var(--accent-red)'
+                                    }} />
+                                    <span style={{ fontSize: '11px', fontWeight: '700', color: isPinShorted ? '#fff' : 'var(--text-dim)' }}>DI {index + 1}</span>
+                                  </div>
+                                  <button
+                                    className={`btn ${isPinShorted ? 'btn-accent' : 'btn-secondary'} small`}
+                                    style={{ padding: '2px 8px', fontSize: '9px', height: '20px', minWidth: '54px', margin: 0, cursor: 'pointer', userSelect: 'none' }}
+                                    onMouseDown={() => handleDiPinSimChange(index, true)}
+                                    onMouseUp={() => handleDiPinSimChange(index, false)}
+                                    onMouseLeave={() => handleDiPinSimChange(index, false)}
+                                    onTouchStart={() => handleDiPinSimChange(index, true)}
+                                    onTouchEnd={() => handleDiPinSimChange(index, false)}
+                                  >
+                                    {isPinShorted ? 'Shorted' : 'Push'}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="tester-switch-container" style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: 'rgba(3, 0, 10, 0.5)',
+                            border: `1px solid ${testerSwitch ? 'rgba(0, 255, 102, 0.2)' : 'rgba(255, 255, 255, 0.05)'}`,
+                            padding: '6px 10px',
+                            borderRadius: '8px',
+                            marginTop: '4px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div className="pin-indicator" style={{
+                                width: '8px',
+                                height: '8px',
+                                borderRadius: '50%',
+                                background: testerSwitch ? 'var(--accent-emerald)' : 'var(--text-muted)',
+                                boxShadow: testerSwitch ? '0 0 8px var(--accent-emerald)' : 'none'
+                              }} />
+                              <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff' }}>Tester Switch (Pin 38)</span>
+                            </div>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: testerSwitch ? 'var(--accent-emerald)' : 'var(--text-dim)', textTransform: 'uppercase' }}>
+                              {testerSwitch ? 'ON' : 'OFF'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+  );
+
+  const detectedDevicesPanelCard = (
+    {/* Detected Devices Panel */}
+              <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'detected-devices-panel')} onDragOver={(e) => handleCardDragOver(e, 'detected-devices-panel')} onDragLeave={(e) => handleCardDragLeave(e, 'detected-devices-panel')} onDrop={(e) => handleCardDrop(e, 'detected-devices-panel')} onDragEnd={handleCardDragEnd} className={`glass-card detected-devices-panel ${draggedOverCardId === 'detected-devices-panel' ? 'drag-over' : ''}`}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                  <h3><span className="icon">📡</span> Detected Devices</h3>
+                  <button className="btn btn-secondary small" onClick={scanNetworkForGateway} disabled={isScanningNetwork}>
+                    {isScanningNetwork ? 'Scanning...' : 'Scan'}
+                  </button>
+                </div>
+                <p className="section-desc" style={{ fontSize: '12px', marginTop: '-4px', marginBottom: '12px' }}>
+                  Discovered gateways appear here so you can connect, register them to the database, or disconnect the active link.
+                </p>
+
+                {discoveredGateways.length === 0 ? (
+                  <div className="detected-device-empty">
+                    No devices detected yet. Start a scan to populate this panel.
+                  </div>
+                ) : (
+                  <div className="detected-device-list">
+                    {discoveredGateways.map((gw, index) => {
+                      const isConnected = connection.type === 'tcp' && connection.target && connection.target.startsWith(gw.ip);
+                      const isRegistered = registeredDevices.some((device) => device.imei === gw.imei || device.pcbNumber === gw.pcbNumber || device.imei === gw.id);
+                      return (
+                        <div key={`${gw.ip}-${index}`} className="detected-device-card">
+                          <div className="detected-device-meta">
+                            <span className="detected-device-ip">{gw.ip}</span>
+                            <span className="detected-device-imei">{gw.imei || 'Unknown IMEI'}</span>
+                          </div>
+                          <div className="detected-device-actions">
+                            <button
+                              className="btn btn-secondary"
+                              style={{ padding: '6px 10px', fontSize: '10px', height: '28px', margin: 0 }}
+                              onClick={() => (isConnected ? disconnectGateway() : connectDiscoveredGateway(gw))}
+                            >
+                              {isConnected ? 'Disconnect' : 'Connect'}
+                            </button>
+                            <button
+                              className={`btn ${isRegistered ? 'btn-secondary' : 'btn-accent'}`}
+                              style={{ padding: '6px 10px', fontSize: '10px', height: '28px', margin: 0 }}
+                              onClick={() => !isRegistered && handleRegisterDetectedDevice(gw)}
+                              disabled={isRegistered}
+                            >
+                              {isRegistered ? 'Registered' : 'Register'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+  );
+
+  const directApPanelCard = (
+    {/* Direct AP Diagnostics & Manual Socket Link */}
+                <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'direct-ap-panel')} onDragOver={(e) => handleCardDragOver(e, 'direct-ap-panel')} onDragLeave={(e) => handleCardDragLeave(e, 'direct-ap-panel')} onDrop={(e) => handleCardDrop(e, 'direct-ap-panel')} onDragEnd={handleCardDragEnd} className={`glass-card direct-ap-panel ${draggedOverCardId === 'direct-ap-panel' ? 'drag-over' : ''}`}>
+                  <h3><span className="icon">📶</span> Direct Wireless AP & Manual Link</h3>
+                  <p className="section-desc" style={{ fontSize: '12px', color: '#8080a0', marginTop: '-15px', marginBottom: '15px' }}>
+                    Query diagnostics or establish links manually if Serial Auto-Scan fails.
+                  </p>
+
+                  <div className="form-row-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '15px' }}>
+                    <div className="input-group">
+                      <label>Gateway IP Address</label>
+                      <input type="text" value={directConnectIp} onChange={(e) => setDirectConnectIp(e.target.value)} placeholder="192.168.0.1" />
+                    </div>
+                    <div className="input-group">
+                      <label>HTTP Port (Info/Config)</label>
+                      <input type="text" value={directHttpPort} onChange={(e) => setDirectHttpPort(e.target.value)} placeholder="8000" />
+                    </div>
+                    <div className="input-group">
+                      <label>Socket Port (Telemetry)</label>
+                      <input type="text" value={directSocketPort} onChange={(e) => setDirectSocketPort(e.target.value)} placeholder="9000" />
+                    </div>
+                    <div className="input-group">
+                      <label>PCB Serial Number</label>
+                      <input type="text" value={pcbNumber} onChange={(e) => setPcbNumber(e.target.value)} placeholder="PCB-ESP32-v3-987" />
+                    </div>
+                  </div>
+
+                  <div className="button-row" style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                    <button className="btn btn-primary" style={{ flex: 1 }} onClick={queryDeviceDiagnostics} disabled={isQuerying}>
+                      {isQuerying ? 'Querying...' : 'Query Device Info'}
+                    </button>
+                    <button className="btn btn-accent" style={{ flex: 1 }} onClick={connectDirectWifi}>
+                      Open Telemetry Socket
+                    </button>
+                  </div>
+
+                  {queryError && (
+                    <div className="query-error-box" style={{ background: 'rgba(255, 0, 80, 0.08)', border: '1px solid rgba(255, 0, 80, 0.25)', color: '#ff4d6a', padding: '10px', borderRadius: '8px', fontSize: '11.5px', fontFamily: 'monospace', marginBottom: '15px' }}>
+                      ⚠️ {queryError}
+                    </div>
+                  )}
+
+                  {queriedInfo && (
+                    <div className="queried-info-hud" style={{ background: 'rgba(0, 255, 200, 0.04)', border: '1px solid rgba(0, 255, 200, 0.15)', padding: '12px', borderRadius: '8px', fontSize: '12px' }}>
+                      <div style={{ fontWeight: 'bold', color: '#00ffcc', marginBottom: '8px', borderBottom: '1px solid rgba(0,255,200,0.1)', paddingBottom: '4px' }}>
+                        🛰️ Gateway Connected: ESP32 Gateway Active
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontFamily: 'monospace' }}>
+                        <div><span style={{ color: '#8080a0' }}>SSID:</span> {queriedInfo.ssid || '(None)'}</div>
+                        <div><span style={{ color: '#8080a0' }}>AP SSID:</span> {queriedInfo.ap_ssid}</div>
+                        <div><span style={{ color: '#8080a0' }}>MAC:</span> {queriedInfo.mac}</div>
+                        <div><span style={{ color: '#8080a0' }}>IMEI:</span> {queriedInfo.imei}</div>
+                        <div><span style={{ color: '#8080a0' }}>WiFi IP:</span> {queriedInfo.wifi_ip}</div>
+                        <div><span style={{ color: '#8080a0' }}>SoftAP IP:</span> {queriedInfo.ap_ip}</div>
+                        <div><span style={{ color: '#8080a0' }}>WiFi Status:</span> <span style={{ color: queriedInfo.wifi_status === 'CONNECTED' ? '#00e676' : '#ff3366', fontWeight: 'bold' }}>{queriedInfo.wifi_status}</span></div>
+                        <div><span style={{ color: '#8080a0' }}>AP Clients:</span> {queriedInfo.ap_clients}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+  );
+
+  const directConfigPanelCard = (
+    {/* Direct HTTP Configurator & Tech Specs */}
+                <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'direct-config-panel')} onDragOver={(e) => handleCardDragOver(e, 'direct-config-panel')} onDragLeave={(e) => handleCardDragLeave(e, 'direct-config-panel')} onDrop={(e) => handleCardDrop(e, 'direct-config-panel')} onDragEnd={handleCardDragEnd} className={`glass-card direct-config-panel ${draggedOverCardId === 'direct-config-panel' ? 'drag-over' : ''}` style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <h3><span className="icon">⚙️</span> HTTP WiFi Settings & Admin Control</h3>
+                    <p className="section-desc" style={{ fontSize: '12px', color: '#8080a0', marginTop: '-15px', marginBottom: '15px' }}>
+                      Update Wi-Fi credentials on the gateway and trigger reboots via HTTP API.
+                    </p>
+
+                    <div className="form-row-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '15px' }}>
+                      <div className="input-group">
+                        <label>Router Wi-Fi SSID</label>
+                        <input type="text" value={wifiRouterSsid} onChange={(e) => setWifiRouterSsid(e.target.value)} placeholder="Enter Router SSID" />
+                      </div>
+                      <div className="input-group">
+                        <label>Router Wi-Fi Password</label>
+                        <input type="password" value={wifiRouterPass} onChange={(e) => setWifiRouterPass(e.target.value)} placeholder="Enter Password" />
+                      </div>
+                    </div>
+
+                    <div className="button-row" style={{ display: 'flex', gap: '10px' }}>
+                      <button className="btn btn-accent" style={{ flex: 1 }} onClick={saveWiFiRouterSettingsHTTP}>
+                        Save Credentials (HTTP)
+                      </button>
+                      <button className="btn btn-danger" style={{ flex: 1 }} onClick={rebootDeviceHTTP}>
+                        Reboot Gateway (HTTP)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Micro-controller Firmware Tech Specifications */}
+                  <div className="firmware-tech-spec" style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid var(--glass-border)' }}>
+                    <div style={{ fontSize: '12.5px', fontWeight: 'bold', color: 'var(--accent-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      🛠️ Firmware Architecture & Stack (ESP32 Gateway)
+                    </div>
+                    <div className="specs-list-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontSize: '11px', fontFamily: 'monospace' }}>
+                      <div><span style={{ color: '#8080a0' }}>Processor:</span> Dual-Core Tensilica LX6</div>
+                      <div><span style={{ color: '#8080a0' }}>Firmware OS:</span> FreeRTOS Kernel</div>
+                      <div><span style={{ color: '#8080a0' }}>Framework:</span> Arduino v2.0.6 & ESP-IDF</div>
+                      <div><span style={{ color: '#8080a0' }}>Filesystem:</span> SPIFFS (credential storage)</div>
+                      <div><span style={{ color: '#8080a0' }}>Active Fw:</span> v{queriedInfo?.fw_version || '3.2.0'} (Updated)</div>
+                      <div><span style={{ color: '#8080a0' }}>Free Heap:</span> {queriedInfo?.free_heap ? `${(queriedInfo.free_heap / 1024).toFixed(1)} KB` : '182.4 KB (Estimated)'}</div>
+                      <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#8080a0' }}>Telemetry Ports:</span> TCP/9000 (Data), UDP/5002 (Discovery)</div>
+                      <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#8080a0' }}>HTTP API Services:</span> TCP/8000 (Diagnostics, OTA, Files)</div>
+                    </div>
+                  </div>
+                </div>
+  );
+
+  const apClientsPanelCard = (
+    {/* Wireless Gateway Client Devices (SoftAP Stations) */}
+            <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'ap-clients-panel')} onDragOver={(e) => handleCardDragOver(e, 'ap-clients-panel')} onDragLeave={(e) => handleCardDragLeave(e, 'ap-clients-panel')} onDrop={(e) => handleCardDrop(e, 'ap-clients-panel')} onDragEnd={handleCardDragEnd} className={`glass-card ap-clients-panel ${draggedOverCardId === 'ap-clients-panel' ? 'drag-over' : ''}` style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                <h3 style={{ margin: 0 }}><span className="icon">📡</span> Connected Station Clients (Gateway Hotspot AP)</h3>
+                <span className="badge badge-primary" style={{ fontSize: '11px', background: 'rgba(0,198,255,0.15)', border: '1px solid var(--accent-secondary)', color: 'var(--accent-secondary)', padding: '3px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
+                  {wifiDetails.ap_clients || queriedInfo?.ap_clients || 0} client(s) active
+                </span>
+              </div>
+
+              {(!Array.isArray(wifiDetails.ap_clients_list) || wifiDetails.ap_clients_list.length === 0) ? (
+                <div style={{ textAlign: 'center', padding: '15px', color: '#606080', fontSize: '12px', fontStyle: 'italic', background: 'rgba(255,255,255,0.01)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.05)' }}>
+                  No external station clients connected to ESP32 Gateway AP network.
+                </div>
+              ) : (
+                <div className="table-responsive" style={{ overflowX: 'auto' }}>
+                  <table className="station-clients-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--glass-border)', color: '#8080a0', textTransform: 'uppercase', fontSize: '10.5px', letterSpacing: '0.05em' }}>
+                        <th style={{ padding: '8px 12px' }}>#</th>
+                        <th style={{ padding: '8px 12px' }}>Station MAC Address</th>
+                        <th style={{ padding: '8px 12px' }}>Connection Link</th>
+                        <th style={{ padding: '8px 12px' }}>Estimated RSSI</th>
+                        <th style={{ padding: '8px 12px' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.isArray(wifiDetails.ap_clients_list) && wifiDetails.ap_clients_list.map((sta, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                          <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{idx + 1}</td>
+                          <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#00ffcc', fontWeight: 'bold' }}>{sta.mac}</td>
+                          <td style={{ padding: '8px 12px' }}>
+                            <span style={{ fontSize: '11px', background: 'rgba(112,0,255,0.15)', color: '#b070ff', border: '1px solid rgba(112,0,255,0.25)', padding: '2px 8px', borderRadius: '4px' }}>
+                              Wi-Fi Client (AP Mode)
+                            </span>
+                          </td>
+                          <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#00c6ff' }}>-45 dBm (Strong)</td>
+                          <td style={{ padding: '8px 12px' }}>
+                            <span style={{ fontSize: '10px', background: 'rgba(0,230,118,0.15)', color: '#00e676', border: '1px solid rgba(0,230,118,0.25)', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
+                              ONLINE & STREAMING
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+  );
+
+  const renderDashboardCard = (cardId) => {
+    if (cardId === 'connection-panel') return connectionPanelCard;
+    if (cardId === 'diagnostic-board') return diagnosticBoardCard;
+    if (cardId === 'detected-devices-panel') return detectedDevicesPanelCard;
+    if (cardId === 'direct-ap-panel') return directApPanelCard;
+    if (cardId === 'direct-config-panel') return directConfigPanelCard;
+    if (cardId === 'ap-clients-panel') return apClientsPanelCard;
+    return null;
+  };
+
+  const isPopoutTerminal = window.location.search.includes('popout=terminal');
+
+  if (isPopoutTerminal) {
+    return (
+      <div className="page-view active" style={{ height: '100vh', padding: '20px', display: 'flex', flexDirection: 'column', background: '#070b16' }}>
+        <header className="view-header" style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <div>
+            <h1>Engineering Debug Console (Popout)</h1>
+            <p>Diagnostic logging stream monitoring active serial interfaces and raw socket frames</p>
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button className="btn btn-secondary small" style={{ width: 'auto' }} onClick={handleSaveConsoleLogs}>Export Logs</button>
+            <button className="btn btn-danger small" style={{ width: 'auto' }} onClick={() => setConsoleLogs([])}>Clear Terminal</button>
+          </div>
+        </header>
+
+        <div className="console-box" style={{ flex: '1 1 auto', height: '0', display: 'flex', flexDirection: 'column', margin: 0, padding: 0 }}>
+          <div className="console-terminal" style={{ flex: 1, overflowY: 'auto' }}>
+            {consoleLogs.map((log, idx) => (
+              <div key={idx} className={'terminal-line ' + log.type}>
+                {'[' + log.time + '] ' + log.text}
+              </div>
+            ))}
+            <div ref={consoleEndRef}></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       {/* Frameless window header bar */}
@@ -3428,7 +4282,13 @@ Overall Status : ${overallStatus}
               <span>Wireless OTA</span>
             </button>
 
-            <button className={`header-nav-item ${activeTab === 'page-console' ? 'active' : ''}`} onClick={() => setActiveTab('page-console')}>
+            <button
+              className={`header-nav-item ${activeTab === 'page-console' ? 'active' : ''}`}
+              onClick={() => setActiveTab('page-console')}
+              draggable={true}
+              onDragStart={() => ipcRenderer.send('open-terminal-window')}
+              title="Click to view, or Drag to pop out into a separate window"
+            >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="4 17 10 11 4 5" />
                 <line x1="12" y1="19" x2="20" y2="19" />
@@ -4518,708 +5378,16 @@ Overall Status : ${overallStatus}
             </header>
 
             <div className="dashboard-top-grid">
-
-              {/* Interface Control Panel */}
-              <div className="glass-card connection-panel">
-                <h3><span className="icon">&#128268;</span> Connect Gateway</h3>
-
-                {(!connection.type || connection.type === 'failed') ? (
-                  <>
-                    <div className="input-group" style={{ marginBottom: '15px' }}>
-                      <label>Select Registered Device Profile</label>
-                      <select
-                        value={selectedRegDeviceImei}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setSelectedRegDeviceImei(val);
-                          if (val === 'custom') {
-                            setPcbNumber('');
-                          } else {
-                            const profile = registeredDevices.find(d => (d._id || d.imei || d.pcbNumber) === val);
-                            if (profile) {
-                              setPcbNumber(profile.pcbNumber || '');
-                              if (profile.imei) {
-                                setImei(profile.imei);
-                              }
-                            }
-                          }
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '10px 12px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '6px',
-                          color: '#fff',
-                          outline: 'none',
-                          fontSize: '13px'
-                        }}
-                      >
-                        <option value="">-- Select Registered Profile --</option>
-                        {[...registeredDevices].sort((a, b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((d) => (
-                          <option key={d._id || d.imei || d.pcbNumber} value={d._id || d.imei || d.pcbNumber}>
-                            Device #{d.deviceNumber || '1'} - {d.pcbNumber || d.imei}
-                          </option>
-                        ))}
-                        <option value="custom">✍️ Custom Manual Input...</option>
-                      </select>
-                    </div>
-
-                    {(selectedRegDeviceImei === 'custom' || !selectedRegDeviceImei) && (
-                      <div className="input-group" style={{ marginBottom: '15px' }}>
-                        <label>PCB Serial Number</label>
-                        <input
-                          type="text"
-                          value={pcbNumber}
-                          onChange={(e) => setPcbNumber(e.target.value)}
-                          placeholder="e.g. PCB-ESP32-v3-987"
-                        />
-                      </div>
-                    )}
-
-                    <div className="tabs-control">
-                      <button className={`tab-btn ${activeConnTab === 'tab-wifi' ? 'active' : ''}`} onClick={() => setActiveConnTab('tab-wifi')}>WiFi IP</button>
-                      <button className={`tab-btn ${activeConnTab === 'tab-serial' ? 'active' : ''}`} onClick={() => setActiveConnTab('tab-serial')}>Serial</button>
-                    </div>
-
-                    {activeConnTab === 'tab-wifi' ? (
-                      <div className="tab-content active">
-                        {/* Scope Toggle Switch */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', padding: '8px 12px', background: 'rgba(255, 0, 127, 0.04)', border: '1px solid rgba(255, 0, 127, 0.12)', borderRadius: '6px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--accent-pink)', textTransform: 'uppercase' }}>
-                            {connectionMode === 'ap' ? '📶 RMS-FIRMWARE Direct SoftAP' : '🌐 Router / WiFi Scope'}
-                          </span>
-                          <label className="switch-toggle" style={{ margin: 0 }}>
-                            <input
-                              type="checkbox"
-                              checked={connectionMode === 'router'}
-                              onChange={(e) => {
-                                const mode = e.target.checked ? 'router' : 'ap';
-                                setConnectionMode(mode);
-                                if (mode === 'ap') {
-                                  setWifiIp('192.168.0.1'); // Fixed default SoftAP IP
-                                } else {
-                                  setWifiIp(''); // Clear for router scan
-                                }
-                              }}
-                            />
-                            <span className="switch-slider"></span>
-                          </label>
-                        </div>
-
-                        {connectionMode === 'ap' ? (
-                          <>
-                            <div className="input-group">
-                              <label>Gateway IP Address</label>
-                              <input type="text" value={wifiIp} onChange={(e) => setWifiIp(e.target.value)} />
-                            </div>
-                            <div className="input-group">
-                              <label>Telemetry Socket Port</label>
-                              <input type="text" value={wifiPort} onChange={(e) => setWifiPort(e.target.value)} />
-                            </div>
-                            <div className="button-row" style={{ display: 'flex', gap: '10px' }}>
-                              <button className="btn btn-primary" style={{ flex: 1 }} onClick={connectWifi}>Open Socket (9000)</button>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="button-row" style={{ display: 'flex', gap: '10px' }}>
-                              <button className="btn btn-accent" style={{ flex: 1 }} onClick={scanNetworkForGateway} disabled={isScanningNetwork}>
-                                {isScanningNetwork ? 'Scanning...' : '🔍 Scan network gateways'}
-                              </button>
-                            </div>
-                          </>
-                        )}
-
-                        {nearbyHotspots.length > 0 && (
-                          <div className="nearby-hotspots-list" style={{ marginTop: '15px', padding: '10px', background: 'rgba(0,255,200,0.03)', borderRadius: '8px', border: '1px solid rgba(0,255,200,0.1)' }}>
-                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#00ffcc', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '5px' }}>
-                              📶 Wireless APs Visible Nearby:
-                            </span>
-                            {nearbyHotspots.map((ssid, index) => (
-                              <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: index < nearbyHotspots.length - 1 ? '1px dashed rgba(0,255,200,0.05)' : 'none' }}>
-                                <span style={{ fontSize: '11.5px', fontFamily: 'monospace', color: '#00ffcc' }}>{ssid}</span>
-                                <span style={{ fontSize: '10px', color: '#8080a0', fontStyle: 'italic' }}>Connect PC to this SSID</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {connectionMode === 'router' && discoveredGateways.length > 0 && (
-                          <div className="discovered-gateways-list" style={{ marginTop: '15px', padding: '10px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--accent-pink)', display: 'block', marginBottom: '5px' }}>Discovered Devices:</span>
-                            {discoveredGateways.map((gw, index) => (
-                              <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: index < discoveredGateways.length - 1 ? '1px dashed rgba(255,255,255,0.05)' : 'none' }}>
-                                <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)' }}>{gw.ip} ({gw.imei})</span>
-                                <button className="btn btn-secondary small" style={{ margin: 0, padding: '2px 8px', fontSize: '10px', height: '22px' }} onClick={() => connectDiscoveredGateway(gw)}>Connect</button>
-                              </div>
-                            ))}
-                            <button className="btn btn-accent" style={{ width: '100%', marginTop: '10px', padding: '6px 0', fontSize: '11px', height: '30px' }} onClick={runBatchTesting} disabled={isBatchTesting}>
-                              {isBatchTesting ? 'Testing Batch...' : '🧪 Run Batch Test All'}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="tab-content active">
-
-                        {/* Auto / Manual connection mode toggle */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', padding: '8px 12px', background: 'rgba(0,198,255,0.04)', borderRadius: '8px', border: '1px solid rgba(0,198,255,0.12)' }}>
-                          <span style={{ fontSize: '12px', color: '#a0a0c0', fontWeight: '600' }}>
-                            {autoConnectMode ? '⚡ Auto-Connect Mode' : '🔧 Manual Mode'}
-                          </span>
-                          <label className="switch-toggle" style={{ margin: 0 }}>
-                            <input type="checkbox" checked={autoConnectMode} onChange={e => setAutoConnectMode(e.target.checked)} />
-                            <span className="switch-slider"></span>
-                          </label>
-                        </div>
-
-                        {autoConnectMode ? (
-                          <>
-                            <p style={{ fontSize: '11.5px', color: '#8080a0', marginBottom: '12px', lineHeight: 1.5 }}>
-                              Auto mode scans all COM ports and connects to the first ESP32-compatible device found at 115200 baud.
-                            </p>
-                            {serialPorts.length > 0 && (
-                              <div style={{ marginBottom: '10px', padding: '8px', background: 'rgba(0,255,150,0.04)', borderRadius: '6px', border: '1px solid rgba(0,255,150,0.1)' }}>
-                                <span style={{ fontSize: '11px', color: '#8080a0', display: 'block', marginBottom: '4px' }}>Detected Ports:</span>
-                                {serialPorts.map((p, i) => (
-                                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '2px 0' }}>
-                                    <span style={{ fontFamily: 'monospace', color: '#00c6ff' }}>{p.path}</span>
-                                    <span style={{ color: '#6060a0' }}>{p.manufacturer || 'Generic'}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            <button className="btn btn-primary" style={{ width: '100%' }} onClick={autoScanAndConnect}>
-                              ⚡ Auto-Scan &amp; Connect
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <div className="input-group">
-                              <label>USB COM Target Port</label>
-                              <div className="select-wrapper">
-                                <select value={selectedSerialPort === 'CUSTOM_PORT' || (selectedSerialPort && !serialPorts.some(p => p.path === selectedSerialPort)) ? 'CUSTOM_PORT' : selectedSerialPort} onChange={(e) => {
-                                  if (e.target.value === 'CUSTOM_PORT') {
-                                    setSelectedSerialPort('CUSTOM_PORT');
-                                  } else {
-                                    setSelectedSerialPort(e.target.value);
-                                  }
-                                }}>
-                                  {serialPorts.length === 0 ? (
-                                    <option value="">No COM ports scanned</option>
-                                  ) : (
-                                    serialPorts.map(p => <option key={p.path} value={p.path}>{p.path} — {p.manufacturer || 'Generic'}</option>)
-                                  )}
-                                  <option value="CUSTOM_PORT">-- Enter Custom COM Port --</option>
-                                </select>
-                                <button className="btn btn-secondary small" onClick={refreshPorts}>&#8635;</button>
-                              </div>
-                            </div>
-                            {(selectedSerialPort === 'CUSTOM_PORT' || (selectedSerialPort && !serialPorts.some(p => p.path === selectedSerialPort))) && (
-                              <div className="input-group" style={{ marginTop: '10px' }}>
-                                <label>Custom COM Port Path</label>
-                                <input
-                                  type="text"
-                                  value={selectedSerialPort === 'CUSTOM_PORT' ? '' : selectedSerialPort}
-                                  onChange={(e) => setSelectedSerialPort(e.target.value)}
-                                  placeholder="e.g. COM3 or /dev/ttyUSB0"
-                                  style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#fff', border: '1px solid var(--glass-border)', padding: '8px 12px', borderRadius: '6px' }}
-                                />
-                              </div>
-                            )}
-                            <div className="input-group">
-                              <label>Baud Rate</label>
-                              <select value={selectedBaud} onChange={(e) => setSelectedBaud(e.target.value)}>
-                                <option value="115200">115200 (Firmware default)</option>
-                                <option value="9600">9600</option>
-                                <option value="74880">74880 (ROM bootloader)</option>
-                              </select>
-                            </div>
-                            <div className="button-row" style={{ display: 'flex', gap: '8px', width: '100%', marginBottom: '8px' }}>
-                              <button className="btn btn-primary" style={{ width: '80%', margin: 0 }} onClick={connectSerial}>Open COM Port</button>
-                              <button
-                                className="btn btn-secondary"
-                                style={{ width: '20%', margin: 0, minWidth: 'auto', padding: 0, fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                                onClick={() => setShowGprsConsole(true)}
-                                title="Open GPRS Modem AT Command Debug Console"
-                              >
-                                📟
-                              </button>
-                            </div>
-                            <div className="button-row" style={{ display: 'flex', gap: '8px', width: '100%' }}>
-                              <button className="btn btn-accent" style={{ flex: 1, margin: 0 }} onClick={triggerBoot} disabled={!bootTriggerEnabled}>START_BOOT</button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div className="button-row" style={{ display: 'flex', gap: '8px', width: '100%', marginBottom: '8px' }}>
-                      <button className="btn btn-danger" style={{ width: '80%', margin: 0 }} onClick={disconnectGateway}>Disconnect active link</button>
-                      <button
-                        className="btn btn-secondary"
-                        style={{ width: '20%', margin: 0, minWidth: 'auto', padding: 0, fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                        onClick={() => setShowGprsConsole(true)}
-                        title="Open GPRS Modem AT Command Debug Console"
-                      >
-                        📟
-                      </button>
-                    </div>
-                    <div className="button-row" style={{ display: 'flex', gap: '8px', width: '100%' }}>
-                      <button
-                        className="btn btn-secondary"
-                        style={{ flex: 1, margin: 0 }}
-                        onClick={() => ipcRenderer.send('reset-serial-device')}
-                        title="Pulses the EN/RTS line to reboot firmware normally (NOT bootloader mode)"
-                      >
-                        ↺ Reset ESP32
-                      </button>
-                      <button
-                        className="btn btn-accent"
-                        style={{ flex: 1, margin: 0 }}
-                        onClick={() => sendControlCommand('FORMAT_SPIFFS')}
-                        title="Send FORMAT_SPIFFS command to reformat SPIFFS if it failed to mount"
-                      >
-                        🗂 Format SPIFFS
-                      </button>
-                    </div>
-                    {/* Small scrollable side list of registered devices */}
-                    <div style={{ marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '15px' }}>
-                      <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-dim)', display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        📋 Registered Profiles:
-                      </span>
-                      <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                        {registeredDevices.length === 0 ? (
-                          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontStyle: 'italic' }}>No registered devices</div>
-                        ) : (
-                          [...registeredDevices].sort((a, b) => (a.deviceNumber || 0) - (b.deviceNumber || 0)).map((d) => (
-                            <div
-                              key={d._id || d.imei || d.pcbNumber}
-                              onClick={() => {
-                                const val = d._id || d.imei || d.pcbNumber;
-                                setSelectedRegDeviceImei(val);
-                                setPcbNumber(d.pcbNumber || '');
-                                setImei(d.imei || '');
-                                if (d.routerSSID) setWifiRouterSsid(d.routerSSID);
-                                if (d.routerPassword) setWifiRouterPass(d.routerPassword);
-                              }}
-                              style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                padding: '6px 8px',
-                                background: selectedRegDeviceImei === (d._id || d.imei || d.pcbNumber) ? 'rgba(0, 240, 255, 0.08)' : 'rgba(255,255,255,0.01)',
-                                border: selectedRegDeviceImei === (d._id || d.imei || d.pcbNumber) ? '1px solid rgba(0, 240, 255, 0.3)' : '1px solid rgba(255,255,255,0.04)',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '10.5px'
-                              }}
-                            >
-                              <span style={{ fontWeight: 'bold', color: '#ff007f' }}>#{d.deviceNumber || '1'}</span>
-                              <span style={{ color: '#fff', fontFamily: 'monospace' }}>{d.pcbNumber || d.imei}</span>
-                              <span className={`pulse-dot ${selectedRegDeviceImei === (d._id || d.imei || d.pcbNumber) ? 'connected' : 'idle'}`} style={{ width: '6px', height: '6px' }}></span>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Diagnostic Checklist Panel */}
-              <div className="glass-card diagnostic-board">
-                <div className="diag-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <h3><span className="icon">&#9881;</span> Diagnostics status</h3>
-                    <div className="diag-meta">
-                      <span>IMEI: {imei}</span>
-                      <span>MAC: {mac}</span>
-                    </div>
-                  </div>
-                  <button
-                    className="btn btn-secondary small"
-                    style={{ width: 'auto', padding: '6px 12px', fontSize: '11px', height: 'auto', margin: 0 }}
-                    onClick={handleDownloadReport}
-                  >
-                    Download Report
-                  </button>
-                </div>
-
-                <div className="diag-checklist">
-                  {Object.keys(diagnostics).map(key => (
-                    <div key={key} className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : diagnostics[key] === 'TESTING' ? 'warning' : ''}`} title={diagnosticsDetails[key] || ''}>
-                      <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                        <div className="diag-indicator" style={{ marginRight: '8px' }}></div>
-                        <div className="diag-label" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span>{key.toUpperCase()} Module</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <div className="diag-value" style={{ fontSize: '11px', fontWeight: 'bold' }}>{diagnostics[key]}</div>
-                          {connection.type && diagnostics[key] !== 'TESTING' && (
-                            key === 'gprs' ? (
-                              <div style={{ display: 'flex', gap: '6px', width: '130px', flexShrink: 0 }}>
-                                <button
-                                  className="btn btn-secondary small"
-                                  style={{ flex: 1, margin: 0, padding: '2px 4px', fontSize: '10px', height: '22px', minWidth: 'auto', border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
-                                  onClick={() => testModule(key)}
-                                >
-                                  Test
-                                </button>
-                                <button
-                                  className="btn btn-secondary small"
-                                  style={{ flex: 1, margin: 0, padding: '2px 4px', fontSize: '10px', height: '22px', minWidth: 'auto', border: '1px solid rgba(0, 240, 255, 0.4)', color: '#00f0ff', background: 'rgba(0, 240, 255, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', cursor: 'pointer' }}
-                                  onClick={() => setShowGprsConsole(true)}
-                                  title="Open GPRS Modem Interactive AT Command Debug Console"
-                                >
-                                  📟 Debug
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                className="btn btn-secondary small"
-                                style={{ padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', margin: 0, border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
-                                onClick={() => testModule(key)}
-                              >
-                                Test
-                              </button>
-                            )
-                          )}
-                        </div>
-                      </div>
-                      {/* Remarks textarea for each diagnostic module */}
-                      <textarea
-                        placeholder={`${key.toUpperCase()} remarks — what was not working, next steps...`}
-                        value={diagnosticRemarks[key] || ''}
-                        onChange={e => {
-                          const updated = { ...diagnosticRemarks, [key]: e.target.value };
-                          setDiagnosticRemarks(updated);
-                          localStorage.setItem('diagnosticRemarks', JSON.stringify(updated));
-                        }}
-                        onMouseLeave={e => {
-                          saveModuleRemarkToDb(key, e.target.value);
-                        }}
-                        onMouseOut={e => {
-                          saveModuleRemarkToDb(key, e.target.value);
-                        }}
-                        onBlur={e => {
-                          saveModuleRemarkToDb(key, e.target.value);
-                        }}
-                        rows={2}
-                        style={{
-                          width: '100%',
-                          marginTop: '6px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.07)',
-                          borderRadius: '5px',
-                          color: 'rgba(255,255,255,0.6)',
-                          fontSize: '10px',
-                          padding: '5px 8px',
-                          resize: 'vertical',
-                          outline: 'none',
-                          fontFamily: 'var(--font-mono)',
-                          lineHeight: 1.5,
-                          boxSizing: 'border-box'
-                        }}
-                      />
-                      {key === 'di' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-                          <div className="di-pins-container" style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(2, 1fr)',
-                            gap: '8px',
-                            marginTop: '8px',
-                            width: '100%',
-                            borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-                            paddingTop: '8px'
-                          }}>
-                            {[0, 1, 2, 3].map(index => {
-                              const isPinShorted = diPinsSimulated[index] || diPinsHardware[index];
-                              return (
-                                <div key={index} className={`di-pin-item ${isPinShorted ? 'shorted' : ''}`} style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  background: 'rgba(5, 2, 18, 0.4)',
-                                  border: '1px solid rgba(255, 0, 127, 0.1)',
-                                  padding: '6px 8px',
-                                  borderRadius: '6px',
-                                  transition: 'all 0.2s ease'
-                                }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <div className="pin-indicator" style={{
-                                      width: '6px',
-                                      height: '6px',
-                                      borderRadius: '50%',
-                                      background: isPinShorted ? 'var(--accent-emerald)' : 'var(--accent-red)',
-                                      boxShadow: isPinShorted ? '0 0 6px var(--accent-emerald)' : '0 0 6px var(--accent-red)'
-                                    }} />
-                                    <span style={{ fontSize: '11px', fontWeight: '700', color: isPinShorted ? '#fff' : 'var(--text-dim)' }}>DI {index + 1}</span>
-                                  </div>
-                                  <button
-                                    className={`btn ${isPinShorted ? 'btn-accent' : 'btn-secondary'} small`}
-                                    style={{ padding: '2px 8px', fontSize: '9px', height: '20px', minWidth: '54px', margin: 0, cursor: 'pointer', userSelect: 'none' }}
-                                    onMouseDown={() => handleDiPinSimChange(index, true)}
-                                    onMouseUp={() => handleDiPinSimChange(index, false)}
-                                    onMouseLeave={() => handleDiPinSimChange(index, false)}
-                                    onTouchStart={() => handleDiPinSimChange(index, true)}
-                                    onTouchEnd={() => handleDiPinSimChange(index, false)}
-                                  >
-                                    {isPinShorted ? 'Shorted' : 'Push'}
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <div className="tester-switch-container" style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            background: 'rgba(3, 0, 10, 0.5)',
-                            border: `1px solid ${testerSwitch ? 'rgba(0, 255, 102, 0.2)' : 'rgba(255, 255, 255, 0.05)'}`,
-                            padding: '6px 10px',
-                            borderRadius: '8px',
-                            marginTop: '4px'
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <div className="pin-indicator" style={{
-                                width: '8px',
-                                height: '8px',
-                                borderRadius: '50%',
-                                background: testerSwitch ? 'var(--accent-emerald)' : 'var(--text-muted)',
-                                boxShadow: testerSwitch ? '0 0 8px var(--accent-emerald)' : 'none'
-                              }} />
-                              <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff' }}>Tester Switch (Pin 38)</span>
-                            </div>
-                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: testerSwitch ? 'var(--accent-emerald)' : 'var(--text-dim)', textTransform: 'uppercase' }}>
-                              {testerSwitch ? 'ON' : 'OFF'}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Detected Devices Panel */}
-              <div className="glass-card detected-devices-panel">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <h3><span className="icon">📡</span> Detected Devices</h3>
-                  <button className="btn btn-secondary small" onClick={scanNetworkForGateway} disabled={isScanningNetwork}>
-                    {isScanningNetwork ? 'Scanning...' : 'Scan'}
-                  </button>
-                </div>
-                <p className="section-desc" style={{ fontSize: '12px', marginTop: '-4px', marginBottom: '12px' }}>
-                  Discovered gateways appear here so you can connect, register them to the database, or disconnect the active link.
-                </p>
-
-                {discoveredGateways.length === 0 ? (
-                  <div className="detected-device-empty">
-                    No devices detected yet. Start a scan to populate this panel.
-                  </div>
-                ) : (
-                  <div className="detected-device-list">
-                    {discoveredGateways.map((gw, index) => {
-                      const isConnected = connection.type === 'tcp' && connection.target && connection.target.startsWith(gw.ip);
-                      const isRegistered = registeredDevices.some((device) => device.imei === gw.imei || device.pcbNumber === gw.pcbNumber || device.imei === gw.id);
-                      return (
-                        <div key={`${gw.ip}-${index}`} className="detected-device-card">
-                          <div className="detected-device-meta">
-                            <span className="detected-device-ip">{gw.ip}</span>
-                            <span className="detected-device-imei">{gw.imei || 'Unknown IMEI'}</span>
-                          </div>
-                          <div className="detected-device-actions">
-                            <button
-                              className="btn btn-secondary"
-                              style={{ padding: '6px 10px', fontSize: '10px', height: '28px', margin: 0 }}
-                              onClick={() => (isConnected ? disconnectGateway() : connectDiscoveredGateway(gw))}
-                            >
-                              {isConnected ? 'Disconnect' : 'Connect'}
-                            </button>
-                            <button
-                              className={`btn ${isRegistered ? 'btn-secondary' : 'btn-accent'}`}
-                              style={{ padding: '6px 10px', fontSize: '10px', height: '28px', margin: 0 }}
-                              onClick={() => !isRegistered && handleRegisterDetectedDevice(gw)}
-                              disabled={isRegistered}
-                            >
-                              {isRegistered ? 'Registered' : 'Register'}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
+              {dashboardLayout.slice(0, 3).map(id => renderDashboardCard(id))}
             </div>
 
-            {/* Direct Wireless AP & Manual Connection Manager */}
             {connectionMode !== 'ap' && (
               <div className="dashboard-middle-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px', marginBottom: '20px' }}>
-
-                {/* Direct AP Diagnostics & Manual Socket Link */}
-                <div className="glass-card direct-ap-panel">
-                  <h3><span className="icon">📶</span> Direct Wireless AP & Manual Link</h3>
-                  <p className="section-desc" style={{ fontSize: '12px', color: '#8080a0', marginTop: '-15px', marginBottom: '15px' }}>
-                    Query diagnostics or establish links manually if Serial Auto-Scan fails.
-                  </p>
-
-                  <div className="form-row-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '15px' }}>
-                    <div className="input-group">
-                      <label>Gateway IP Address</label>
-                      <input type="text" value={directConnectIp} onChange={(e) => setDirectConnectIp(e.target.value)} placeholder="192.168.0.1" />
-                    </div>
-                    <div className="input-group">
-                      <label>HTTP Port (Info/Config)</label>
-                      <input type="text" value={directHttpPort} onChange={(e) => setDirectHttpPort(e.target.value)} placeholder="8000" />
-                    </div>
-                    <div className="input-group">
-                      <label>Socket Port (Telemetry)</label>
-                      <input type="text" value={directSocketPort} onChange={(e) => setDirectSocketPort(e.target.value)} placeholder="9000" />
-                    </div>
-                    <div className="input-group">
-                      <label>PCB Serial Number</label>
-                      <input type="text" value={pcbNumber} onChange={(e) => setPcbNumber(e.target.value)} placeholder="PCB-ESP32-v3-987" />
-                    </div>
-                  </div>
-
-                  <div className="button-row" style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-                    <button className="btn btn-primary" style={{ flex: 1 }} onClick={queryDeviceDiagnostics} disabled={isQuerying}>
-                      {isQuerying ? 'Querying...' : 'Query Device Info'}
-                    </button>
-                    <button className="btn btn-accent" style={{ flex: 1 }} onClick={connectDirectWifi}>
-                      Open Telemetry Socket
-                    </button>
-                  </div>
-
-                  {queryError && (
-                    <div className="query-error-box" style={{ background: 'rgba(255, 0, 80, 0.08)', border: '1px solid rgba(255, 0, 80, 0.25)', color: '#ff4d6a', padding: '10px', borderRadius: '8px', fontSize: '11.5px', fontFamily: 'monospace', marginBottom: '15px' }}>
-                      ⚠️ {queryError}
-                    </div>
-                  )}
-
-                  {queriedInfo && (
-                    <div className="queried-info-hud" style={{ background: 'rgba(0, 255, 200, 0.04)', border: '1px solid rgba(0, 255, 200, 0.15)', padding: '12px', borderRadius: '8px', fontSize: '12px' }}>
-                      <div style={{ fontWeight: 'bold', color: '#00ffcc', marginBottom: '8px', borderBottom: '1px solid rgba(0,255,200,0.1)', paddingBottom: '4px' }}>
-                        🛰️ Gateway Connected: ESP32 Gateway Active
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontFamily: 'monospace' }}>
-                        <div><span style={{ color: '#8080a0' }}>SSID:</span> {queriedInfo.ssid || '(None)'}</div>
-                        <div><span style={{ color: '#8080a0' }}>AP SSID:</span> {queriedInfo.ap_ssid}</div>
-                        <div><span style={{ color: '#8080a0' }}>MAC:</span> {queriedInfo.mac}</div>
-                        <div><span style={{ color: '#8080a0' }}>IMEI:</span> {queriedInfo.imei}</div>
-                        <div><span style={{ color: '#8080a0' }}>WiFi IP:</span> {queriedInfo.wifi_ip}</div>
-                        <div><span style={{ color: '#8080a0' }}>SoftAP IP:</span> {queriedInfo.ap_ip}</div>
-                        <div><span style={{ color: '#8080a0' }}>WiFi Status:</span> <span style={{ color: queriedInfo.wifi_status === 'CONNECTED' ? '#00e676' : '#ff3366', fontWeight: 'bold' }}>{queriedInfo.wifi_status}</span></div>
-                        <div><span style={{ color: '#8080a0' }}>AP Clients:</span> {queriedInfo.ap_clients}</div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Direct HTTP Configurator & Tech Specs */}
-                <div className="glass-card direct-config-panel" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <div>
-                    <h3><span className="icon">⚙️</span> HTTP WiFi Settings & Admin Control</h3>
-                    <p className="section-desc" style={{ fontSize: '12px', color: '#8080a0', marginTop: '-15px', marginBottom: '15px' }}>
-                      Update Wi-Fi credentials on the gateway and trigger reboots via HTTP API.
-                    </p>
-
-                    <div className="form-row-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '15px' }}>
-                      <div className="input-group">
-                        <label>Router Wi-Fi SSID</label>
-                        <input type="text" value={wifiRouterSsid} onChange={(e) => setWifiRouterSsid(e.target.value)} placeholder="Enter Router SSID" />
-                      </div>
-                      <div className="input-group">
-                        <label>Router Wi-Fi Password</label>
-                        <input type="password" value={wifiRouterPass} onChange={(e) => setWifiRouterPass(e.target.value)} placeholder="Enter Password" />
-                      </div>
-                    </div>
-
-                    <div className="button-row" style={{ display: 'flex', gap: '10px' }}>
-                      <button className="btn btn-accent" style={{ flex: 1 }} onClick={saveWiFiRouterSettingsHTTP}>
-                        Save Credentials (HTTP)
-                      </button>
-                      <button className="btn btn-danger" style={{ flex: 1 }} onClick={rebootDeviceHTTP}>
-                        Reboot Gateway (HTTP)
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Micro-controller Firmware Tech Specifications */}
-                  <div className="firmware-tech-spec" style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid var(--glass-border)' }}>
-                    <div style={{ fontSize: '12.5px', fontWeight: 'bold', color: 'var(--accent-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      🛠️ Firmware Architecture & Stack (ESP32 Gateway)
-                    </div>
-                    <div className="specs-list-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontSize: '11px', fontFamily: 'monospace' }}>
-                      <div><span style={{ color: '#8080a0' }}>Processor:</span> Dual-Core Tensilica LX6</div>
-                      <div><span style={{ color: '#8080a0' }}>Firmware OS:</span> FreeRTOS Kernel</div>
-                      <div><span style={{ color: '#8080a0' }}>Framework:</span> Arduino v2.0.6 & ESP-IDF</div>
-                      <div><span style={{ color: '#8080a0' }}>Filesystem:</span> SPIFFS (credential storage)</div>
-                      <div><span style={{ color: '#8080a0' }}>Active Fw:</span> v{queriedInfo?.fw_version || '3.2.0'} (Updated)</div>
-                      <div><span style={{ color: '#8080a0' }}>Free Heap:</span> {queriedInfo?.free_heap ? `${(queriedInfo.free_heap / 1024).toFixed(1)} KB` : '182.4 KB (Estimated)'}</div>
-                      <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#8080a0' }}>Telemetry Ports:</span> TCP/9000 (Data), UDP/5002 (Discovery)</div>
-                      <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#8080a0' }}>HTTP API Services:</span> TCP/8000 (Diagnostics, OTA, Files)</div>
-                    </div>
-                  </div>
-                </div>
-
+                {dashboardLayout.slice(3, 5).map(id => renderDashboardCard(id))}
               </div>
             )}
 
-            {/* Wireless Gateway Client Devices (SoftAP Stations) */}
-            <div className="glass-card ap-clients-panel" style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                <h3 style={{ margin: 0 }}><span className="icon">📡</span> Connected Station Clients (Gateway Hotspot AP)</h3>
-                <span className="badge badge-primary" style={{ fontSize: '11px', background: 'rgba(0,198,255,0.15)', border: '1px solid var(--accent-secondary)', color: 'var(--accent-secondary)', padding: '3px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-                  {wifiDetails.ap_clients || queriedInfo?.ap_clients || 0} client(s) active
-                </span>
-              </div>
-
-              {(!Array.isArray(wifiDetails.ap_clients_list) || wifiDetails.ap_clients_list.length === 0) ? (
-                <div style={{ textAlign: 'center', padding: '15px', color: '#606080', fontSize: '12px', fontStyle: 'italic', background: 'rgba(255,255,255,0.01)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.05)' }}>
-                  No external station clients connected to ESP32 Gateway AP network.
-                </div>
-              ) : (
-                <div className="table-responsive" style={{ overflowX: 'auto' }}>
-                  <table className="station-clients-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--glass-border)', color: '#8080a0', textTransform: 'uppercase', fontSize: '10.5px', letterSpacing: '0.05em' }}>
-                        <th style={{ padding: '8px 12px' }}>#</th>
-                        <th style={{ padding: '8px 12px' }}>Station MAC Address</th>
-                        <th style={{ padding: '8px 12px' }}>Connection Link</th>
-                        <th style={{ padding: '8px 12px' }}>Estimated RSSI</th>
-                        <th style={{ padding: '8px 12px' }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Array.isArray(wifiDetails.ap_clients_list) && wifiDetails.ap_clients_list.map((sta, idx) => (
-                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                          <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{idx + 1}</td>
-                          <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#00ffcc', fontWeight: 'bold' }}>{sta.mac}</td>
-                          <td style={{ padding: '8px 12px' }}>
-                            <span style={{ fontSize: '11px', background: 'rgba(112,0,255,0.15)', color: '#b070ff', border: '1px solid rgba(112,0,255,0.25)', padding: '2px 8px', borderRadius: '4px' }}>
-                              Wi-Fi Client (AP Mode)
-                            </span>
-                          </td>
-                          <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#00c6ff' }}>-45 dBm (Strong)</td>
-                          <td style={{ padding: '8px 12px' }}>
-                            <span style={{ fontSize: '10px', background: 'rgba(0,230,118,0.15)', color: '#00e676', border: '1px solid rgba(0,230,118,0.25)', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
-                              ONLINE & STREAMING
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            {renderDashboardCard(dashboardLayout[5])}
 
             {/* System Boot & Update Orchestrator */}
             {false && (
@@ -6490,7 +6658,7 @@ Overall Status : ${overallStatus}
                     <option value="90d">90 Days</option>
                     <option value="all">All Time</option>
                   </select>
-                  <button className="btn btn-secondary small" style={{ width: 'auto', padding: '6px 12px', fontSize: '11px', height: '30px' }} onClick={() => fetchDatabaseHistory(historyRange)}>🔄 Fetch History</button>
+                  <button className="btn btn-secondary small" style={{ width: 'auto', padding: '6px 12px', fontSize: '11px', height: '30px' }} onClick={() => fetchDatabaseHistory(historyRange, true)}>🔄 Fetch History</button>
                   <button className="btn btn-danger small" style={{ width: 'auto', padding: '6px 12px', fontSize: '11px', height: '30px', background: 'rgba(255, 50, 50, 0.1)', border: '1px solid rgba(255, 50, 50, 0.3)', color: '#ff3333' }} onClick={clearDatabaseLogs}>Clear database logs</button>
                 </div>
               </div>
@@ -7381,68 +7549,6 @@ Overall Status : ${overallStatus}
                   </div>
                 )}
 
-                {/* UUID Presets manager (5 slots) */}
-                <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '15px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--accent-pink)', fontWeight: 'bold', display: 'block', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    🎛️ Inverter & Meter UUID Presets Slot Manager (EPROM)
-                  </span>
-                  
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {uuidPresets.map((preset) => (
-                      <div 
-                        key={preset.id} 
-                        style={{ 
-                          background: 'rgba(255,255,255,0.01)', 
-                          border: '1px solid rgba(255,255,255,0.04)', 
-                          borderRadius: '6px', 
-                          padding: '10px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '6px'
-                        }}
-                      >
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-dim)', minWidth: '45px' }}>Slot #{preset.id}:</span>
-                          <input
-                            type="text"
-                            value={preset.label}
-                            onChange={(e) => handleUpdatePresetField(preset.id, 'label', e.target.value)}
-                            placeholder="Preset Label (e.g. Inverter #1)"
-                            style={{ flex: 1, fontSize: '11px', padding: '4px 8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '4px' }}
-                          />
-                        </div>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <input
-                            type="text"
-                            value={preset.uuid}
-                            onChange={(e) => handleUpdatePresetField(preset.id, 'uuid', e.target.value)}
-                            placeholder="Enter Inverter/Meter UUID Token"
-                            style={{ flex: 2, fontSize: '11.5px', padding: '4px 8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '4px', fontFamily: 'monospace' }}
-                          />
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
-                            <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>BusID:</span>
-                            <input
-                              type="number"
-                              value={preset.busId}
-                              onChange={(e) => handleUpdatePresetField(preset.id, 'busId', e.target.value)}
-                              placeholder="BusID"
-                              style={{ width: '45px', fontSize: '11.5px', padding: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '4px', textAlign: 'center' }}
-                            />
-                          </div>
-                          <button
-                            className="btn btn-secondary"
-                            onClick={() => handleLoadPresetToEeprom(preset)}
-                            disabled={isUploadingUuid || !connection.type || connection.type === 'failed'}
-                            style={{ margin: 0, padding: '4px 8px', fontSize: '10px', height: '24px', background: 'var(--accent-primary)', border: 'none', color: '#fff' }}
-                            title="Flash this preset configuration to ESP32 /uuid.json SPIFFS"
-                          >
-                            💾 Load to EEPROM
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               </div>
 
               {/* Provisioning Verification Stepper */}
@@ -7614,6 +7720,69 @@ Overall Status : ${overallStatus}
                   </div>
                 </div>
 
+                {/* UUID Presets manager (5 slots) */}
+                <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '15px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--accent-pink)', fontWeight: 'bold', display: 'block', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    🎛️ Inverter & Meter UUID Presets Slot Manager (EPROM)
+                  </span>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {uuidPresets.map((preset) => (
+                      <div 
+                        key={preset.id} 
+                        style={{ 
+                          background: 'rgba(255,255,255,0.01)', 
+                          border: '1px solid rgba(255,255,255,0.04)', 
+                          borderRadius: '6px', 
+                          padding: '10px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-dim)', minWidth: '45px' }}>Slot #{preset.id}:</span>
+                          <input
+                            type="text"
+                            value={preset.label}
+                            onChange={(e) => handleUpdatePresetField(preset.id, 'label', e.target.value)}
+                            placeholder="Preset Label (e.g. Inverter #1)"
+                            style={{ flex: 1, fontSize: '11px', padding: '4px 8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '4px' }}
+                          />
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            value={preset.uuid}
+                            onChange={(e) => handleUpdatePresetField(preset.id, 'uuid', e.target.value)}
+                            placeholder="Enter Inverter/Meter UUID Token"
+                            style={{ flex: 2, fontSize: '11.5px', padding: '4px 8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '4px', fontFamily: 'monospace' }}
+                          />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
+                            <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>BusID:</span>
+                            <input
+                              type="number"
+                              value={preset.busId}
+                              onChange={(e) => handleUpdatePresetField(preset.id, 'busId', e.target.value)}
+                              placeholder="BusID"
+                              style={{ width: '45px', fontSize: '11.5px', padding: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '4px', textAlign: 'center' }}
+                            />
+                          </div>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => handleLoadPresetToEeprom(preset)}
+                            disabled={isUploadingUuid || !connection.type || connection.type === 'failed'}
+                            style={{ margin: 0, padding: '4px 8px', fontSize: '10px', height: '24px', background: 'var(--accent-primary)', border: 'none', color: '#fff' }}
+                            title="Flash this preset configuration to ESP32 /uuid.json SPIFFS"
+                          >
+                            💾 Load to EEPROM
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <button
                   className="btn btn-accent"
                   onClick={handleUploadConfigPartition}
@@ -7727,12 +7896,13 @@ Overall Status : ${overallStatus}
 
           {/* ================= VIEW 4: DEBUG LOGS ================= */}
           <section id="page-console" className={`page-view ${activeTab === 'page-console' ? 'active' : ''}`}>
-            <header className="view-header">
+            <header className="view-header" draggable={true} onDragStart={() => ipcRenderer.send('open-terminal-window')} title="Drag this header to pop out the console terminal" style={{ cursor: 'grab' }}>
               <div>
                 <h1>Engineering Debug Console</h1>
                 <p>Diagnostic logging stream monitoring active serial interfaces and raw socket frames</p>
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
+                <button className="btn btn-accent small" style={{ width: 'auto' }} onClick={() => ipcRenderer.send('open-terminal-window')} title="Pop out debug console to a separate floating window">↗ Pop Out</button>
                 <button className="btn btn-secondary small" style={{ width: 'auto' }} onClick={handleSaveConsoleLogs}>Export Logs</button>
                 <button className="btn btn-danger small" style={{ width: 'auto' }} onClick={() => setConsoleLogs([])}>Clear Terminal</button>
               </div>
