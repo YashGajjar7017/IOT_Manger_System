@@ -169,7 +169,8 @@ export default function App() {
     flash: 'WAITING',
     di: 'WAITING',
     driver: 'WAITING',
-    rtc: 'WAITING'
+    rtc: 'WAITING',
+    psram: 'WAITING'
   });
   const [diagnosticsDetails, setDiagnosticsDetails] = useState({
     rs232: '',
@@ -180,7 +181,8 @@ export default function App() {
     flash: '',
     di: '',
     driver: '',
-    rtc: ''
+    rtc: '',
+    psram: ''
   });
   const [diPinsSimulated, setDiPinsSimulated] = useState([false, false, false, false]);
   const [diPinsHardware, setDiPinsHardware] = useState([false, false, false, false]);
@@ -1680,7 +1682,8 @@ Overall Status : ${overallStatus}
       flash: 'WAITING',
       di: 'WAITING',
       driver: 'WAITING',
-      rtc: 'WAITING'
+      rtc: 'WAITING',
+      psram: 'WAITING'
     });
     setDiagnosticsDetails({
       rs232: '',
@@ -1691,7 +1694,8 @@ Overall Status : ${overallStatus}
       flash: '',
       di: '',
       driver: '',
-      rtc: ''
+      rtc: '',
+      psram: ''
     });
   };
 
@@ -3435,7 +3439,6 @@ Overall Status : ${overallStatus}
 
 
   const connectionPanelCard = (
-    {/* Interface Control Panel */}
               <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'connection-panel')} onDragOver={(e) => handleCardDragOver(e, 'connection-panel')} onDragLeave={(e) => handleCardDragLeave(e, 'connection-panel')} onDrop={(e) => handleCardDrop(e, 'connection-panel')} onDragEnd={handleCardDragEnd} className={`glass-card connection-panel ${draggedOverCardId === 'connection-panel' ? 'drag-over' : ''}`}>
                 <h3><span className="icon">&#128268;</span> Connect Gateway</h3>
 
@@ -3748,7 +3751,6 @@ Overall Status : ${overallStatus}
   );
 
   const diagnosticBoardCard = (
-    {/* Diagnostic Checklist Panel */}
               <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'diagnostic-board')} onDragOver={(e) => handleCardDragOver(e, 'diagnostic-board')} onDragLeave={(e) => handleCardDragLeave(e, 'diagnostic-board')} onDrop={(e) => handleCardDrop(e, 'diagnostic-board')} onDragEnd={handleCardDragEnd} className={`glass-card diagnostic-board ${draggedOverCardId === 'diagnostic-board' ? 'drag-over' : ''}`}>
                 <div className="diag-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
@@ -3918,6 +3920,36 @@ Overall Status : ${overallStatus}
                           </div>
                         </div>
                       )}
+                      {key === 'psram' && (
+                        <div style={{ marginTop: '8px', padding: '10px', background: 'rgba(0, 255, 200, 0.04)', border: '1px solid rgba(0, 255, 200, 0.12)', borderRadius: '8px' }}>
+                          <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--accent-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            💾 PSRAM Memory Info
+                          </div>
+                          {queriedInfo?.free_psram != null ? (
+                            <div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontSize: '11px', fontFamily: 'monospace', marginBottom: '8px' }}>
+                                <div><span style={{ color: '#8080a0' }}>Free PSRAM:</span> <span style={{ color: queriedInfo.free_psram > 0 ? '#00e676' : '#ff3366', fontWeight: 'bold' }}>{queriedInfo.free_psram === 0 ? 'Not Detected' : `${(queriedInfo.free_psram / 1024).toFixed(1)} KB`}</span></div>
+                                <div><span style={{ color: '#8080a0' }}>Status:</span> <span style={{ color: queriedInfo.free_psram > 0 ? '#00e676' : '#ff3366', fontWeight: 'bold' }}>{queriedInfo.free_psram > 0 ? 'Present & Active' : 'Not Available'}</span></div>
+                              </div>
+                              {queriedInfo.free_psram > 0 && (
+                                <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '4px', overflow: 'hidden', height: '6px' }}>
+                                  <div style={{
+                                    height: '100%',
+                                    width: `${Math.min(100, (queriedInfo.free_psram / (4 * 1024 * 1024)) * 100).toFixed(0)}%`,
+                                    background: 'linear-gradient(90deg, #00e676, #00ffcc)',
+                                    borderRadius: '4px',
+                                    transition: 'width 0.4s ease'
+                                  }} />
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '11px', color: '#8080a0', fontStyle: 'italic' }}>
+                              Connect via HTTP and query device info to see live PSRAM readings.
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -3925,7 +3957,6 @@ Overall Status : ${overallStatus}
   );
 
   const detectedDevicesPanelCard = (
-    {/* Detected Devices Panel */}
               <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'detected-devices-panel')} onDragOver={(e) => handleCardDragOver(e, 'detected-devices-panel')} onDragLeave={(e) => handleCardDragLeave(e, 'detected-devices-panel')} onDrop={(e) => handleCardDrop(e, 'detected-devices-panel')} onDragEnd={handleCardDragEnd} className={`glass-card detected-devices-panel ${draggedOverCardId === 'detected-devices-panel' ? 'drag-over' : ''}`}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                   <h3><span className="icon">📡</span> Detected Devices</h3>
@@ -3978,7 +4009,6 @@ Overall Status : ${overallStatus}
   );
 
   const directApPanelCard = (
-    {/* Direct AP Diagnostics & Manual Socket Link */}
                 <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'direct-ap-panel')} onDragOver={(e) => handleCardDragOver(e, 'direct-ap-panel')} onDragLeave={(e) => handleCardDragLeave(e, 'direct-ap-panel')} onDrop={(e) => handleCardDrop(e, 'direct-ap-panel')} onDragEnd={handleCardDragEnd} className={`glass-card direct-ap-panel ${draggedOverCardId === 'direct-ap-panel' ? 'drag-over' : ''}`}>
                   <h3><span className="icon">📶</span> Direct Wireless AP & Manual Link</h3>
                   <p className="section-desc" style={{ fontSize: '12px', color: '#8080a0', marginTop: '-15px', marginBottom: '15px' }}>
@@ -4040,8 +4070,7 @@ Overall Status : ${overallStatus}
   );
 
   const directConfigPanelCard = (
-    {/* Direct HTTP Configurator & Tech Specs */}
-                <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'direct-config-panel')} onDragOver={(e) => handleCardDragOver(e, 'direct-config-panel')} onDragLeave={(e) => handleCardDragLeave(e, 'direct-config-panel')} onDrop={(e) => handleCardDrop(e, 'direct-config-panel')} onDragEnd={handleCardDragEnd} className={`glass-card direct-config-panel ${draggedOverCardId === 'direct-config-panel' ? 'drag-over' : ''}` style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'direct-config-panel')} onDragOver={(e) => handleCardDragOver(e, 'direct-config-panel')} onDragLeave={(e) => handleCardDragLeave(e, 'direct-config-panel')} onDrop={(e) => handleCardDrop(e, 'direct-config-panel')} onDragEnd={handleCardDragEnd} className={`glass-card direct-config-panel ${draggedOverCardId === 'direct-config-panel' ? 'drag-over' : ''}`} style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                   <div>
                     <h3><span className="icon">⚙️</span> HTTP WiFi Settings & Admin Control</h3>
                     <p className="section-desc" style={{ fontSize: '12px', color: '#8080a0', marginTop: '-15px', marginBottom: '15px' }}>
@@ -4081,6 +4110,7 @@ Overall Status : ${overallStatus}
                       <div><span style={{ color: '#8080a0' }}>Filesystem:</span> SPIFFS (credential storage)</div>
                       <div><span style={{ color: '#8080a0' }}>Active Fw:</span> v{queriedInfo?.fw_version || '3.2.0'} (Updated)</div>
                       <div><span style={{ color: '#8080a0' }}>Free Heap:</span> {queriedInfo?.free_heap ? `${(queriedInfo.free_heap / 1024).toFixed(1)} KB` : '182.4 KB (Estimated)'}</div>
+                      <div><span style={{ color: '#8080a0' }}>Free PSRAM:</span> <span style={{ color: queriedInfo?.free_psram > 0 ? '#00e676' : queriedInfo?.free_psram === 0 ? '#ff3366' : '#8080a0' }}>{queriedInfo?.free_psram != null ? (queriedInfo.free_psram === 0 ? 'Not Detected' : `${(queriedInfo.free_psram / 1024).toFixed(1)} KB`) : 'N/A'}</span></div>
                       <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#8080a0' }}>Telemetry Ports:</span> TCP/9000 (Data), UDP/5002 (Discovery)</div>
                       <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#8080a0' }}>HTTP API Services:</span> TCP/8000 (Diagnostics, OTA, Files)</div>
                     </div>
@@ -4089,8 +4119,7 @@ Overall Status : ${overallStatus}
   );
 
   const apClientsPanelCard = (
-    {/* Wireless Gateway Client Devices (SoftAP Stations) */}
-            <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'ap-clients-panel')} onDragOver={(e) => handleCardDragOver(e, 'ap-clients-panel')} onDragLeave={(e) => handleCardDragLeave(e, 'ap-clients-panel')} onDrop={(e) => handleCardDrop(e, 'ap-clients-panel')} onDragEnd={handleCardDragEnd} className={`glass-card ap-clients-panel ${draggedOverCardId === 'ap-clients-panel' ? 'drag-over' : ''}` style={{ marginBottom: '20px' }}>
+            <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'ap-clients-panel')} onDragOver={(e) => handleCardDragOver(e, 'ap-clients-panel')} onDragLeave={(e) => handleCardDragLeave(e, 'ap-clients-panel')} onDrop={(e) => handleCardDrop(e, 'ap-clients-panel')} onDragEnd={handleCardDragEnd} className={`glass-card ap-clients-panel ${draggedOverCardId === 'ap-clients-panel' ? 'drag-over' : ''}`} style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                 <h3 style={{ margin: 0 }}><span className="icon">📡</span> Connected Station Clients (Gateway Hotspot AP)</h3>
                 <span className="badge badge-primary" style={{ fontSize: '11px', background: 'rgba(0,198,255,0.15)', border: '1px solid var(--accent-secondary)', color: 'var(--accent-secondary)', padding: '3px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
