@@ -237,6 +237,8 @@ export default function App() {
   // Database History State
   const [dbStatus, setDbStatus] = useState({ mongodb: 'CONNECTING', recordsCount: 0 });
   const [dbHistory, setDbHistory] = useState([]);
+  const [historyRange, setHistoryRange] = useState('30d');
+  const [historyFetchSummary, setHistoryFetchSummary] = useState('');
   const [expandedLogId, setExpandedLogId] = useState(null);
   const [registeredDevices, setRegisteredDevices] = useState([]);
   const [dbSubTab, setDbSubTab] = useState('tab-db-history');
@@ -398,8 +400,10 @@ export default function App() {
   // Refs to allow reading latest state inside async loop without closure issues
   const connectionRef = useRef(connection);
   const diagnosticsRef = useRef(diagnostics);
+  const diagnosticsDetailsRef = useRef(diagnosticsDetails);
   useEffect(() => { connectionRef.current = connection; }, [connection]);
   useEffect(() => { diagnosticsRef.current = diagnostics; }, [diagnostics]);
+  useEffect(() => { diagnosticsDetailsRef.current = diagnosticsDetails; }, [diagnosticsDetails]);
 
   useEffect(() => {
     if (!continuousDiagnostics || !connection.type) return;
@@ -446,7 +450,8 @@ export default function App() {
     onlineVersion: '',
     changes: '',
     downloadUrl: '',
-    error: null
+    error: null,
+    lastChecked: localStorage.getItem('lastUpdateCheck') || 'Never'
   });
   const [isUpdatingSoftware, setIsUpdatingSoftware] = useState(false);
   const [hwAccelInput, setHwAccelInput] = useState(true);
@@ -710,6 +715,33 @@ export default function App() {
     }
   }, [activeTab]);
 
+  const handleLoadPresetToEeprom = (preset) => {
+    const payload = {
+      uuid: preset.uuid,
+      busId: parseInt(preset.busId) || 1,
+      deviceMode: 'solaryan inverter',
+      presetSlot: preset.id,
+      timestamp: new Date().toISOString()
+    };
+    const targetIp = otaIp || '192.168.4.1';
+    const targetPort = otaPort || '80';
+    setIsUploadingUuid(true);
+    setUuidUpdateAck(null);
+    addLogLine(`[SPIFFS] Uploading preset slot ${preset.id} (${preset.label}) to EEPROM SPIFFS location '/uuid.json'...`);
+    ipcRenderer.send('update-spiffs-file', {
+      ip: targetIp,
+      port: targetPort,
+      filename: '/uuid.json',
+      content: JSON.stringify(payload, null, 2)
+    });
+  };
+
+  const handleUpdatePresetField = (id, field, val) => {
+    const updated = uuidPresets.map(p => p.id === id ? { ...p, [field]: val } : p);
+    setUuidPresets(updated);
+    localStorage.setItem('uuid_presets', JSON.stringify(updated));
+  };
+
   const triggerCertificateProvision = async () => {
     if (!imeiProvisionInput || !passwordProvisionInput || !gatewayIpProvisionInput) {
       alert('IMEI, Password, and Gateway IP are required.');
@@ -734,6 +766,22 @@ export default function App() {
   const [certDownloadStatus, setCertDownloadStatus] = useState('');
   const [uuidToken, setUuidToken] = useState('');
   const [isUploadingUuid, setIsUploadingUuid] = useState(false);
+  const [uuidUpdateAck, setUuidUpdateAck] = useState(null);
+  const [uuidPresets, setUuidPresets] = useState(() => {
+    try {
+      const saved = localStorage.getItem('uuid_presets');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return [
+      { id: 1, label: 'Preset Slot 1 (Inverter #1)', uuid: 'inverter-uuid-1', busId: '1' },
+      { id: 2, label: 'Preset Slot 2 (Inverter #2)', uuid: 'inverter-uuid-2', busId: '2' },
+      { id: 3, label: 'Preset Slot 3 (3-Phase Meter)', uuid: 'meter-uuid-15', busId: '15' },
+      { id: 4, label: 'Preset Slot 4 (Auxiliary Node)', uuid: 'aux-uuid-4', busId: '4' },
+      { id: 5, label: 'Preset Slot 5 (Custom Gateway)', uuid: 'gate-uuid-99', busId: '99' }
+    ];
+  });
 
   // App Config Settings State (Requirement 6)
   const [dbUriInput, setDbUriInput] = useState('mongodb://127.0.0.1:27017/IOT_Monitor_System');
@@ -942,31 +990,32 @@ export default function App() {
 
         addLogLine('[SYS] Boot diagnostics report sync complete.', 'success');
 
-        setDiagnostics(prev => {
-          const updated = { ...prev };
-          Object.keys(payload.diagnostics || {}).forEach(key => {
-            const val = payload.diagnostics[key];
-            let statusVal = val;
-            let detailVal = '';
+        const nextDiagnostics = { ...diagnosticsRef.current };
+        const nextDetails = { ...diagnosticsDetailsRef.current };
+        Object.keys(payload.diagnostics || {}).forEach(key => {
+          const val = payload.diagnostics[key];
+          let statusVal = val;
+          let detailVal = '';
 
-            if (val && typeof val === 'object') {
-              statusVal = val.status;
-              detailVal = val.detail || '';
-            }
+          if (val && typeof val === 'object') {
+            statusVal = val.status;
+            detailVal = val.detail || '';
+          }
 
-            const nextVal = (statusVal === 'WAITING' || statusVal === 'PENDING')
-              ? 'WAITING'
-              : (statusVal === true || statusVal === 'true' || statusVal === 'OK' || statusVal === 'PASSED' || statusVal === 'PASS' ? 'OK' : 'ERROR');
+          const nextVal = (statusVal === 'WAITING' || statusVal === 'PENDING')
+            ? 'WAITING'
+            : (statusVal === true || statusVal === 'true' || statusVal === 'OK' || statusVal === 'PASSED' || statusVal === 'PASS' ? 'OK' : 'ERROR');
 
-            if (nextVal === 'WAITING' && (prev[key] === 'OK' || prev[key] === 'ERROR')) {
-              // Preserve existing OK/ERROR status
-            } else {
-              updated[key] = nextVal;
-              setDiagnosticsDetails(prevDetails => ({ ...prevDetails, [key]: detailVal }));
-            }
-          });
-          return updated;
+          if (nextVal === 'WAITING' && (diagnosticsRef.current[key] === 'OK' || diagnosticsRef.current[key] === 'ERROR')) {
+            // Preserve existing OK/ERROR status
+          } else {
+            nextDiagnostics[key] = nextVal;
+            nextDetails[key] = detailVal;
+          }
         });
+        setDiagnostics(nextDiagnostics);
+        setDiagnosticsDetails(nextDetails);
+        persistDiagnosticsStateToDb({ diagnosticsOverride: nextDiagnostics, detailsOverride: nextDetails, source: 'hardware' });
         if (payload.wifi) {
           setWifiDetails(payload.wifi);
         }
@@ -1282,6 +1331,12 @@ export default function App() {
         addLogLine(`[SPIFFS] Saved file ${result.filename} successfully to ESP32.`, 'success');
         if (result.filename === '/uuid.json') {
           setUuidToken(''); // Automatically change token area back
+          setUuidUpdateAck({
+            filename: '/uuid.json',
+            location: 'SPIFFS (EEPROM Partition /uuid.json)',
+            timestamp: new Date().toLocaleTimeString(),
+            success: true
+          });
           addLogLine('[SYS] uuid.json uploaded successfully. Token input reset.', 'success');
         }
         ipcRenderer.send('get-spiffs-storage', { ip: otaIpRef.current, port: otaPortRef.current });
@@ -1578,12 +1633,18 @@ Overall Status : ${overallStatus}
   };
 
   // REST API: Load log documents
-  const fetchDatabaseHistory = async () => {
+  const fetchDatabaseHistory = async (range = historyRange) => {
     try {
-      const res = await fetch('/api/telemetry/history');
+      const res = await fetch(`/api/telemetry/history?range=${encodeURIComponent(range)}&limit=100`);
       if (res.ok) {
         const data = await res.json();
-        setDbHistory(Array.isArray(data) ? data : []);
+        const payload = Array.isArray(data) ? data : (Array.isArray(data.history) ? data.history : []);
+        setDbHistory(payload);
+
+        const count = Array.isArray(data) ? payload.length : (data.count ?? payload.length);
+        const label = range === '1d' ? '1 day' : range === '7d' ? '7 days' : range === '30d' ? '30 days' : range === '90d' ? '90 days' : 'all time';
+        setHistoryFetchSummary(`Fetched ${count} records for the last ${label}.`);
+        alert(`Fetched ${count} telemetry records for the last ${label}.`);
       }
     } catch (err) {
       console.error('Failed to load database history logs:', err);
@@ -1659,20 +1720,70 @@ Overall Status : ${overallStatus}
     }
   };
 
+  const buildDiagnosticRemarksSummary = (remarksMap = diagnosticRemarks) => {
+    return Object.entries(remarksMap || {})
+      .filter(([, value]) => value && String(value).trim())
+      .map(([moduleKey, value]) => `${moduleKey.toUpperCase()}: ${String(value).trim()}`)
+      .join(' | ');
+  };
+
+  const persistDiagnosticsStateToDb = async ({ moduleKey = null, value = '', diagnosticsOverride = null, detailsOverride = null, source = 'ui' } = {}) => {
+    if (!imei || imei === '--') return;
+
+    const statusState = diagnosticsOverride || diagnosticsRef.current || diagnostics;
+    const detailState = detailsOverride || diagnosticsDetailsRef.current || diagnosticsDetails;
+    const nextStatusState = { ...statusState };
+    const nextDetailState = { ...detailState };
+
+    if (moduleKey) {
+      nextDetailState[moduleKey] = value;
+      nextStatusState[moduleKey] = nextStatusState[moduleKey] || 'WAITING';
+    }
+
+    const payload = {
+      imei,
+      pcbNumber: pcbNumber && pcbNumber !== '--' ? pcbNumber : '',
+      mac: mac && mac !== '--' ? mac : '',
+      connectionType: connection.type || 'tcp',
+      target: connection.target || '',
+      routerSSID: wifiRouterSsid || '',
+      routerPassword: wifiRouterPass || '',
+      telemetryInterval: telemetryRate || 1500,
+      deviceNumber: parseInt(regDeviceNumber) || 1,
+      remarks: buildDiagnosticRemarksSummary(diagnosticRemarks),
+      persistLog: true,
+      logSource: source,
+      ...Object.fromEntries(Object.keys(diagnosticRemarks).map(key => [`${key}Remarks`, diagnosticRemarks[key] || ''])),
+      ...Object.fromEntries(Object.keys(nextStatusState).map(key => [`${key}Status`, nextStatusState[key] || 'WAITING'])),
+      ...Object.fromEntries(Object.keys(nextDetailState).filter(key => nextDetailState[key] !== undefined).map(key => [`${key}Log`, nextDetailState[key] || '']))
+    };
+
+    if (moduleKey) {
+      if (source === 'remark') {
+        payload[`${moduleKey}Remarks`] = value;
+      } else {
+        payload[`${moduleKey}Log`] = value;
+      }
+      payload[`${moduleKey}Status`] = nextStatusState[moduleKey] || 'WAITING';
+    }
+
+    try {
+      await fetch('/api/devices/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      fetchRegisteredDevices();
+    } catch (err) {
+      console.error('[DB] Failed to save diagnostic state:', err);
+    }
+  };
+
   const saveModuleRemarkToDb = async (key, value) => {
     setDiagnosticsDetails(prev => ({ ...prev, [key]: value }));
     if (!imei || imei === '--') return;
     try {
-      const logField = `${key}Log`;
-      await fetch('/api/devices/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imei: imei,
-          [logField]: value
-        })
-      });
-      fetchRegisteredDevices();
+      await persistDiagnosticsStateToDb({ moduleKey: key, value, source: 'remark' });
     } catch (err) {
       console.error('[DB] Failed to save diagnostic remark:', err);
     }
@@ -2111,6 +2222,8 @@ Overall Status : ${overallStatus}
       const targetBranch = gitHubTargetAccount === 'regular_update' ? 'main' : gitHubRepoBranchInput;
       const res = await ipcRenderer.invoke('check-software-update', { repoUrl: targetUrl, branch: targetBranch });
       if (res.success) {
+        const now = new Date().toLocaleString();
+        localStorage.setItem('lastUpdateCheck', now);
         setUpdateState({
           checking: false,
           checked: true,
@@ -2119,7 +2232,8 @@ Overall Status : ${overallStatus}
           onlineVersion: res.onlineVersion,
           changes: res.changes,
           downloadUrl: res.downloadUrl,
-          error: null
+          error: null,
+          lastChecked: now
         });
       } else {
         setUpdateState(prev => ({ ...prev, checking: false, error: res.message }));
@@ -2671,7 +2785,11 @@ Overall Status : ${overallStatus}
   };
 
   const testModule = (moduleKey) => {
-    setDiagnostics(prev => ({ ...prev, [moduleKey]: 'TESTING' }));
+    const nextStatus = 'TESTING';
+    const nextDiagnostics = { ...diagnosticsRef.current, [moduleKey]: nextStatus };
+    setDiagnostics(nextDiagnostics);
+    setDiagnosticsDetails(prev => ({ ...prev, [moduleKey]: 'Test triggered by user.' }));
+    persistDiagnosticsStateToDb({ moduleKey, value: 'Test triggered by user.', diagnosticsOverride: nextDiagnostics, detailsOverride: { ...diagnosticsDetailsRef.current, [moduleKey]: 'Test triggered by user.' }, source: 'test' });
     sendControlCommand(`TEST_${moduleKey.toUpperCase()}`);
     addLogLine(`[CMD] Triggering diagnostics check for module: ${moduleKey.toUpperCase()}`);
   };
@@ -4277,6 +4395,12 @@ Overall Status : ${overallStatus}
                         v{updateState.onlineVersion}
                       </span>
                     </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <span style={{ color: 'var(--text-dim)' }}>Last Checked / Updated:</span>
+                      <span style={{ fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--accent-blue)' }}>
+                        {updateState.lastChecked}
+                      </span>
+                    </div>
                     <div style={{ marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '15px' }}>
                       <strong style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase' }}>What's New:</strong>
                       <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '5px', lineHeight: '1.4' }}>{updateState.changes}</p>
@@ -4285,7 +4409,7 @@ Overall Status : ${overallStatus}
                 ) : (
                   <div style={{ display: 'flex', justifyContent: 'center', gap: '15px' }}>
                     <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
-                      Current script version: <strong>v{updateState.currentVersion}</strong>
+                      Current script version: <strong>v{updateState.currentVersion}</strong> | Last Checked: <strong>{updateState.lastChecked}</strong>
                     </div>
                   </div>
                 )}
@@ -4776,6 +4900,9 @@ Overall Status : ${overallStatus}
                           localStorage.setItem('diagnosticRemarks', JSON.stringify(updated));
                         }}
                         onMouseLeave={e => {
+                          saveModuleRemarkToDb(key, e.target.value);
+                        }}
+                        onMouseOut={e => {
                           saveModuleRemarkToDb(key, e.target.value);
                         }}
                         onBlur={e => {
@@ -5345,81 +5472,35 @@ Overall Status : ${overallStatus}
               </div>
             </header>
 
-            <div className="glass-card" style={{ marginBottom: '20px', padding: '20px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                {/* Row 1: Mode, Starting Register, Number of Registers */}
-                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                  <div style={{ flex: 1, minWidth: '150px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Query Mode</label>
-                    <select
-                      value={modbusMode}
-                      onChange={(e) => setModbusMode(e.target.value)}
-                      style={{
-                        width: '100%',
-                        height: '38px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid var(--glass-border)',
-                        borderRadius: '6px',
-                        color: 'white',
-                        padding: '0 10px',
-                        fontSize: '14px',
-                        outline: 'none',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <option value="gateway" style={{ background: '#1c1b22', color: 'white' }}>Gateway Bridge (Connected HW)</option>
-                      <option value="direct" style={{ background: '#1c1b22', color: 'white' }}>Direct Modbus TCP (Desktop Client)</option>
-                    </select>
-                  </div>
-
-                  <div style={{ flex: 1, minWidth: '150px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Starting Register Address</label>
-                    <input
-                      type="number"
-                      value={modbusStartReg}
-                      onChange={(e) => setModbusStartReg(Math.max(0, parseInt(e.target.value) || 0))}
-                      placeholder="e.g. 2000"
-                      style={{
-                        width: '100%',
-                        height: '38px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid var(--glass-border)',
-                        borderRadius: '6px',
-                        color: 'white',
-                        padding: '0 12px',
-                        fontSize: '14px',
-                        outline: 'none'
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ flex: 1, minWidth: '150px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Number of Registers {modbusMode === 'gateway' ? '(Max 125)' : '(Chunked)'}</label>
-                    <input
-                      type="number"
-                      value={modbusCount}
-                      onChange={(e) => setModbusCount(modbusMode === 'gateway' ? Math.min(125, Math.max(1, parseInt(e.target.value) || 1)) : Math.max(1, parseInt(e.target.value) || 1))}
-                      placeholder="e.g. 100"
-                      style={{
-                        width: '100%',
-                        height: '38px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid var(--glass-border)',
-                        borderRadius: '6px',
-                        color: 'white',
-                        padding: '0 12px',
-                        fontSize: '14px',
-                        outline: 'none'
-                      }}
-                    />
-                  </div>
+            <div className="glass-card" style={{ marginBottom: '15px', padding: '10px 15px' }}>
+              <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: '8px', fontSize: '11px' }}>
+                <div style={{ flex: '1 1 120px' }}>
+                  <label style={{ display: 'block', marginBottom: '3px', color: 'var(--text-dim)', fontSize: '10px' }}>Query Mode</label>
+                  <select
+                    value={modbusMode}
+                    onChange={(e) => setModbusMode(e.target.value)}
+                    style={{
+                      width: '100%',
+                      height: '28px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '4px',
+                      color: 'white',
+                      padding: '0 5px',
+                      fontSize: '11px',
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="gateway" style={{ background: '#1c1b22', color: 'white' }}>Gateway Bridge (Connected HW)</option>
+                    <option value="direct" style={{ background: '#1c1b22', color: 'white' }}>Direct Modbus TCP (Desktop Client)</option>
+                  </select>
                 </div>
 
-                {/* Row 2: Direct Mode Inputs */}
                 {modbusMode === 'direct' && (
-                  <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '15px' }}>
-                    <div style={{ flex: 2, minWidth: '180px' }}>
-                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Modbus Device IP Address</label>
+                  <>
+                    <div style={{ flex: '1.5 1 120px' }}>
+                      <label style={{ display: 'block', marginBottom: '3px', color: 'var(--text-dim)', fontSize: '10px' }}>IP Address</label>
                       <input
                         type="text"
                         value={modbusIp}
@@ -5427,20 +5508,20 @@ Overall Status : ${overallStatus}
                         placeholder="e.g. 192.168.4.1"
                         style={{
                           width: '100%',
-                          height: '38px',
+                          height: '28px',
                           background: 'rgba(255, 255, 255, 0.05)',
                           border: '1px solid var(--glass-border)',
-                          borderRadius: '6px',
+                          borderRadius: '4px',
                           color: 'white',
-                          padding: '0 12px',
-                          fontSize: '14px',
+                          padding: '0 8px',
+                          fontSize: '11px',
                           outline: 'none'
                         }}
                       />
                     </div>
 
-                    <div style={{ flex: 1, minWidth: '100px' }}>
-                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Port</label>
+                    <div style={{ flex: '0.6 1 50px' }}>
+                      <label style={{ display: 'block', marginBottom: '3px', color: 'var(--text-dim)', fontSize: '10px' }}>Port</label>
                       <input
                         type="text"
                         value={modbusPort}
@@ -5448,20 +5529,20 @@ Overall Status : ${overallStatus}
                         placeholder="502"
                         style={{
                           width: '100%',
-                          height: '38px',
+                          height: '28px',
                           background: 'rgba(255, 255, 255, 0.05)',
                           border: '1px solid var(--glass-border)',
-                          borderRadius: '6px',
+                          borderRadius: '4px',
                           color: 'white',
-                          padding: '0 12px',
-                          fontSize: '14px',
+                          padding: '0 6px',
+                          fontSize: '11px',
                           outline: 'none'
                         }}
                       />
                     </div>
 
-                    <div style={{ flex: 1, minWidth: '100px' }}>
-                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Slave / Unit ID</label>
+                    <div style={{ flex: '0.6 1 50px' }}>
+                      <label style={{ display: 'block', marginBottom: '3px', color: 'var(--text-dim)', fontSize: '10px' }}>Slave ID</label>
                       <input
                         type="number"
                         value={modbusSlaveId}
@@ -5469,32 +5550,32 @@ Overall Status : ${overallStatus}
                         placeholder="1"
                         style={{
                           width: '100%',
-                          height: '38px',
+                          height: '28px',
                           background: 'rgba(255, 255, 255, 0.05)',
                           border: '1px solid var(--glass-border)',
-                          borderRadius: '6px',
+                          borderRadius: '4px',
                           color: 'white',
-                          padding: '0 12px',
-                          fontSize: '14px',
+                          padding: '0 6px',
+                          fontSize: '11px',
                           outline: 'none'
                         }}
                       />
                     </div>
 
-                    <div style={{ flex: 1.5, minWidth: '130px' }}>
-                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', color: 'var(--text-dim)' }}>Register Type</label>
+                    <div style={{ flex: '1 1 100px' }}>
+                      <label style={{ display: 'block', marginBottom: '3px', color: 'var(--text-dim)', fontSize: '10px' }}>Register Type</label>
                       <select
                         value={modbusRegType}
                         onChange={(e) => setModbusRegType(e.target.value)}
                         style={{
                           width: '100%',
-                          height: '38px',
+                          height: '28px',
                           background: 'rgba(255, 255, 255, 0.05)',
                           border: '1px solid var(--glass-border)',
-                          borderRadius: '6px',
+                          borderRadius: '4px',
                           color: 'white',
-                          padding: '0 10px',
-                          fontSize: '14px',
+                          padding: '0 5px',
+                          fontSize: '11px',
                           outline: 'none',
                           cursor: 'pointer'
                         }}
@@ -5503,46 +5584,99 @@ Overall Status : ${overallStatus}
                         <option value="input" style={{ background: '#1c1b22', color: 'white' }}>Input (FC 04)</option>
                       </select>
                     </div>
-                  </div>
+                  </>
                 )}
 
-                {/* Row 3: Format & Action Button */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '15px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Display Format:</span>
-                    <select
-                      value={modbusDisplay32 ? '32bit' : '16bit'}
-                      onChange={(e) => setModbusDisplay32(e.target.value === '32bit')}
-                      style={{
-                        height: '30px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid var(--glass-border)',
-                        color: 'white',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        padding: '0 8px',
-                        outline: 'none',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <option value="32bit" style={{ background: '#1c1b22', color: 'white' }}>32-Bit Grouped (Long Endian)</option>
-                      <option value="16bit" style={{ background: '#1c1b22', color: 'white' }}>16-Bit Raw Registers</option>
-                    </select>
-                  </div>
+                <div style={{ flex: '1 1 90px' }}>
+                  <label style={{ display: 'block', marginBottom: '3px', color: 'var(--text-dim)', fontSize: '10px' }}>Start Reg</label>
+                  <input
+                    type="number"
+                    value={modbusStartReg}
+                    onChange={(e) => setModbusStartReg(Math.max(0, parseInt(e.target.value) || 0))}
+                    placeholder="e.g. 2000"
+                    style={{
+                      width: '100%',
+                      height: '28px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '4px',
+                      color: 'white',
+                      padding: '0 8px',
+                      fontSize: '11px',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
 
+                <div style={{ flex: '1 1 80px' }}>
+                  <label style={{ display: 'block', marginBottom: '3px', color: 'var(--text-dim)', fontSize: '10px' }}>Count</label>
+                  <input
+                    type="number"
+                    value={modbusCount}
+                    onChange={(e) => setModbusCount(modbusMode === 'gateway' ? Math.min(125, Math.max(1, parseInt(e.target.value) || 1)) : Math.max(1, parseInt(e.target.value) || 1))}
+                    placeholder="Count"
+                    style={{
+                      width: '100%',
+                      height: '28px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '4px',
+                      color: 'white',
+                      padding: '0 8px',
+                      fontSize: '11px',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                <div style={{ flex: '1 1 120px' }}>
+                  <label style={{ display: 'block', marginBottom: '3px', color: 'var(--text-dim)', fontSize: '10px' }}>Display Format</label>
+                  <select
+                    value={modbusDisplay32 ? '32bit' : '16bit'}
+                    onChange={(e) => setModbusDisplay32(e.target.value === '32bit')}
+                    style={{
+                      width: '100%',
+                      height: '28px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid var(--glass-border)',
+                      color: 'white',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      padding: '0 5px',
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="32bit" style={{ background: '#1c1b22', color: 'white' }}>32-Bit Grouped (Long Endian)</option>
+                    <option value="16bit" style={{ background: '#1c1b22', color: 'white' }}>16-Bit Raw Registers</option>
+                  </select>
+                </div>
+
+                <div style={{ flex: '1.2 1 120px' }}>
                   <button
                     className="btn btn-primary"
                     onClick={triggerModbusRead}
                     disabled={isReadingModbus || (modbusMode === 'gateway' && !connection.type)}
-                    style={{ margin: 0, height: '38px', display: 'flex', alignItems: 'center', gap: '8px', minWidth: '180px', justifyContent: 'center' }}
+                    style={{
+                      width: '100%',
+                      height: '28px',
+                      margin: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      justifyContent: 'center',
+                      fontSize: '11px',
+                      padding: '0 10px',
+                      background: 'var(--grad-emerald-cyan)'
+                    }}
                   >
                     {isReadingModbus ? (
                       <>
-                        <span style={{ width: '12px', height: '12px', border: '2px solid white', borderRightColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.75s linear infinite' }}></span>
-                        Reading Modbus...
+                        <span style={{ width: '10px', height: '10px', border: '1.5px solid white', borderRightColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.75s linear infinite' }}></span>
+                        Reading...
                       </>
                     ) : (
-                      <>⚡ Query Registers</>
+                      '⚡ Query Registers'
                     )}
                   </button>
                 </div>
@@ -5718,6 +5852,11 @@ Overall Status : ${overallStatus}
                   >
                     {isInstallingCli ? '📥 Downloading toolchain...' : '📥 Download & Install Arduino CLI'}
                   </button>
+                  {!cliStatus.installed && (
+                    <div style={{ width: '100%', fontSize: '10.5px', color: 'var(--text-dim)', textAlign: 'center', marginTop: '5px', lineHeight: '1.4' }}>
+                      Automatic installer failing? Configure manually: <a href="https://arduino.github.io/arduino-cli/latest/installation/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-blue)', textDecoration: 'underline', fontWeight: 'bold' }}>Arduino CLI Official Manual Download</a>
+                    </div>
+                  )}
                   <button
                     className="btn btn-accent"
                     onClick={() => {
@@ -5836,7 +5975,7 @@ Overall Status : ${overallStatus}
                       href="https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="btn btn-secondary small"
+                      className="btn btn-secondary"
                       style={{ margin: 0, fontSize: '10.5px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', textDecoration: 'none' }}
                     >
                       🔌 CP210x USB to UART Driver
@@ -5845,7 +5984,7 @@ Overall Status : ${overallStatus}
                       href="https://arduino.github.io/arduino-cli/latest/"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="btn btn-secondary small"
+                      className="btn btn-secondary"
                       style={{ margin: 0, fontSize: '10.5px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', textDecoration: 'none' }}
                     >
                       🤖 Arduino CLI Official Download
@@ -5854,10 +5993,44 @@ Overall Status : ${overallStatus}
                       href="https://mongodb.com/try/download/community"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="btn btn-secondary small"
+                      className="btn btn-secondary"
                       style={{ margin: 0, fontSize: '10.5px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', textDecoration: 'none' }}
                     >
                       🍃 MongoDB Community Server
+                    </a>
+                  </div>
+                </div>
+
+                {/* Additional Online & GitHub Update Links */}
+                <div style={{ borderTop: '1px dashed rgba(255,255,255,0.06)', paddingTop: '10px', marginTop: '10px' }}>
+                  <span style={{ fontSize: '10px', color: 'var(--accent-blue)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '8px' }}>GitHub & Online Update Info</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <a
+                      href="https://github.com/YashGajjar7017/IOT_Manger_System"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary"
+                      style={{ margin: 0, fontSize: '10.5px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', textDecoration: 'none', borderColor: 'rgba(0, 240, 255, 0.2)' }}
+                    >
+                      🐙 My GitHub Repository (YashGajjar7017)
+                    </a>
+                    <a
+                      href="https://github.com/YashGajjar7017/IOT_Manger_System/releases"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary"
+                      style={{ margin: 0, fontSize: '10.5px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', textDecoration: 'none', borderColor: 'rgba(255, 0, 127, 0.2)' }}
+                    >
+                      🔄 Software Update Releases
+                    </a>
+                    <a
+                      href="https://github.com/YashGajjar7017/IOT_Manger_System#readme"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary"
+                      style={{ margin: 0, fontSize: '10.5px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', textDecoration: 'none' }}
+                    >
+                      🌐 Online Website & Documentation Info
                     </a>
                   </div>
                 </div>
@@ -6308,11 +6481,25 @@ Overall Status : ${overallStatus}
                   <h3><span className="icon">📊</span> Telemetry Database History Logs ({dbHistory.length} logs)</h3>
                   <p style={{ fontSize: '12px', color: 'var(--text-dim)', margin: 0 }}>Review telemetry snapshot logs stored inside MongoDB database</p>
                 </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button className="btn btn-secondary small" style={{ width: 'auto', padding: '6px 12px', fontSize: '11px', height: '30px' }} onClick={fetchDatabaseHistory}>🔄 Refresh Logs</button>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Window</label>
+                  <select value={historyRange} onChange={(e) => setHistoryRange(e.target.value)} style={{ background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px', padding: '4px 8px', fontSize: '11px' }}>
+                    <option value="1d">1 Day</option>
+                    <option value="7d">7 Days</option>
+                    <option value="30d">30 Days</option>
+                    <option value="90d">90 Days</option>
+                    <option value="all">All Time</option>
+                  </select>
+                  <button className="btn btn-secondary small" style={{ width: 'auto', padding: '6px 12px', fontSize: '11px', height: '30px' }} onClick={() => fetchDatabaseHistory(historyRange)}>🔄 Fetch History</button>
                   <button className="btn btn-danger small" style={{ width: 'auto', padding: '6px 12px', fontSize: '11px', height: '30px', background: 'rgba(255, 50, 50, 0.1)', border: '1px solid rgba(255, 50, 50, 0.3)', color: '#ff3333' }} onClick={clearDatabaseLogs}>Clear database logs</button>
                 </div>
               </div>
+
+              {historyFetchSummary && (
+                <div style={{ marginBottom: '12px', fontSize: '11px', color: 'var(--accent-cyan)', background: 'rgba(0, 240, 255, 0.06)', border: '1px solid rgba(0, 240, 255, 0.15)', borderRadius: '6px', padding: '8px 10px' }}>
+                  {historyFetchSummary}
+                </div>
+              )}
 
               {dbHistory.length === 0 ? (
                 <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--glass-border)', borderRadius: '8px' }}>
@@ -6408,22 +6595,37 @@ Overall Status : ${overallStatus}
 
                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '15px' }}>
                                 <div>
-                                  <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>RS232 Log</div>
-                                  <pre style={{ margin: 0, padding: '8px', background: '#040209', borderRadius: '4px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', color: '#00ffcc', textAlign: 'left' }}>
-                                    {record.rs232Log || 'No RS232 transmission log stored.'}
-                                  </pre>
+                                  <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>RS232 Log & Remarks</div>
+                                  <div style={{ background: '#040209', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '4px', padding: '10px', fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#e0e0f0', display: 'flex', flexDirection: 'column', gap: '6px', textAlign: 'left', maxHeight: '140px', overflowY: 'auto' }}>
+                                    <div>
+                                      <strong style={{ color: 'var(--accent-blue)' }}>RS232 :</strong> {record.rs232Log || 'No raw data log stored.'}
+                                    </div>
+                                    <div style={{ borderTop: '1px dashed rgba(255,255,255,0.08)', paddingTop: '6px' }}>
+                                      <strong style={{ color: 'var(--accent-pink)' }}>RS232_Remarks :</strong> {record.rs232Remarks || 'No remarks entered.'}
+                                    </div>
+                                  </div>
                                 </div>
                                 <div>
-                                  <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>RS485 Log</div>
-                                  <pre style={{ margin: 0, padding: '8px', background: '#040209', borderRadius: '4px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', color: '#00ffcc', textAlign: 'left' }}>
-                                    {record.rs485Log || 'No RS485 transmission log stored.'}
-                                  </pre>
+                                  <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>RS485 Log & Remarks</div>
+                                  <div style={{ background: '#040209', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '4px', padding: '10px', fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#e0e0f0', display: 'flex', flexDirection: 'column', gap: '6px', textAlign: 'left', maxHeight: '140px', overflowY: 'auto' }}>
+                                    <div>
+                                      <strong style={{ color: 'var(--accent-blue)' }}>RS485 :</strong> {record.rs485Log || 'No raw data log stored.'}
+                                    </div>
+                                    <div style={{ borderTop: '1px dashed rgba(255,255,255,0.08)', paddingTop: '6px' }}>
+                                      <strong style={{ color: 'var(--accent-pink)' }}>RS485_Remarks :</strong> {record.rs485Remarks || 'No remarks entered.'}
+                                    </div>
+                                  </div>
                                 </div>
                                 <div>
-                                  <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>GPRS Modem Log</div>
-                                  <pre style={{ margin: 0, padding: '8px', background: '#040209', borderRadius: '4px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', color: '#00ffcc', textAlign: 'left' }}>
-                                    {record.gprsLog || 'No GPRS AT-command log stored.'}
-                                  </pre>
+                                  <div style={{ fontSize: '11px', color: 'var(--accent-blue)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>GPRS Log & Remarks</div>
+                                  <div style={{ background: '#040209', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '4px', padding: '10px', fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#e0e0f0', display: 'flex', flexDirection: 'column', gap: '6px', textAlign: 'left', maxHeight: '140px', overflowY: 'auto' }}>
+                                    <div>
+                                      <strong style={{ color: 'var(--accent-blue)' }}>GPRS :</strong> {record.gprsLog || 'No raw data log stored.'}
+                                    </div>
+                                    <div style={{ borderTop: '1px dashed rgba(255,255,255,0.08)', paddingTop: '6px' }}>
+                                      <strong style={{ color: 'var(--accent-pink)' }}>GPRS_Remarks :</strong> {record.gprsRemarks || 'No remarks entered.'}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -7132,7 +7334,7 @@ Overall Status : ${overallStatus}
                   </div>
                 </div>
 
-                {/* Uploading progress indicator */}
+                 {/* Uploading progress indicator */}
                 {(isCertUploading || isUploadingUuid) && (
                   <div className="ota-progress-pane" style={{ marginTop: '15px' }}>
                     <div className="progress-details">
@@ -7146,6 +7348,101 @@ Overall Status : ${overallStatus}
                     </div>
                   </div>
                 )}
+
+                {/* Active UUID Acknowledgement Banner */}
+                {uuidUpdateAck && (
+                  <div style={{
+                    marginTop: '15px',
+                    padding: '12px 15px',
+                    background: 'rgba(0, 204, 85, 0.1)',
+                    border: '1px solid rgba(0, 204, 85, 0.3)',
+                    borderRadius: '8px',
+                    color: '#00ff66',
+                    fontSize: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    textAlign: 'left'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <strong>✅ Active UUID Update Succeeded!</strong>
+                      <button 
+                        onClick={() => setUuidUpdateAck(null)} 
+                        style={{ background: 'none', border: 'none', color: '#ff3366', cursor: 'pointer', fontSize: '14px', padding: 0 }}
+                      >
+                        &times;
+                      </button>
+                    </div>
+                    <div>Location: <code>{uuidUpdateAck.location}</code></div>
+                    <div>File: <code>{uuidUpdateAck.filename}</code></div>
+                    <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '4px' }}>
+                      Timestamp: {uuidUpdateAck.timestamp}
+                    </div>
+                  </div>
+                )}
+
+                {/* UUID Presets manager (5 slots) */}
+                <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '15px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--accent-pink)', fontWeight: 'bold', display: 'block', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    🎛️ Inverter & Meter UUID Presets Slot Manager (EPROM)
+                  </span>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {uuidPresets.map((preset) => (
+                      <div 
+                        key={preset.id} 
+                        style={{ 
+                          background: 'rgba(255,255,255,0.01)', 
+                          border: '1px solid rgba(255,255,255,0.04)', 
+                          borderRadius: '6px', 
+                          padding: '10px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-dim)', minWidth: '45px' }}>Slot #{preset.id}:</span>
+                          <input
+                            type="text"
+                            value={preset.label}
+                            onChange={(e) => handleUpdatePresetField(preset.id, 'label', e.target.value)}
+                            placeholder="Preset Label (e.g. Inverter #1)"
+                            style={{ flex: 1, fontSize: '11px', padding: '4px 8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '4px' }}
+                          />
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            value={preset.uuid}
+                            onChange={(e) => handleUpdatePresetField(preset.id, 'uuid', e.target.value)}
+                            placeholder="Enter Inverter/Meter UUID Token"
+                            style={{ flex: 2, fontSize: '11.5px', padding: '4px 8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '4px', fontFamily: 'monospace' }}
+                          />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
+                            <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>BusID:</span>
+                            <input
+                              type="number"
+                              value={preset.busId}
+                              onChange={(e) => handleUpdatePresetField(preset.id, 'busId', e.target.value)}
+                              placeholder="BusID"
+                              style={{ width: '45px', fontSize: '11.5px', padding: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '4px', textAlign: 'center' }}
+                            />
+                          </div>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => handleLoadPresetToEeprom(preset)}
+                            disabled={isUploadingUuid || !connection.type || connection.type === 'failed'}
+                            style={{ margin: 0, padding: '4px 8px', fontSize: '10px', height: '24px', background: 'var(--accent-primary)', border: 'none', color: '#fff' }}
+                            title="Flash this preset configuration to ESP32 /uuid.json SPIFFS"
+                          >
+                            💾 Load to EEPROM
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {/* Provisioning Verification Stepper */}

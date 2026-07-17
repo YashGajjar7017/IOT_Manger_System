@@ -104,7 +104,7 @@ async function readRegisters(socket, modbusClient, start, end, regType, slaveId,
 
 async function runFetcher(ip, port, slaveId, startRegister, endRegister, regType) {
     const socket = new net.Socket();
-    const client = new ModbusClient.TCP(socket, TIMEOUT);
+    const client = new ModbusClient.TCP(socket, slaveId);
 
     console.log(`Connecting to ${ip}:${port}...`);
 

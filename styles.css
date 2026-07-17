@@ -451,7 +451,7 @@ select {
   display: none;
   flex-direction: column;
   gap: 24px;
-  height: 100%;
+  min-height: 100%;
 }
 
 .page-view.active {

@@ -116,7 +116,19 @@ const TelemetrySchema = new mongoose.Schema({
   switchLog: { type: String, default: '' },
   apLog: { type: String, default: '' },
   busLog: { type: String, default: '' },
-  driverLog: { type: String, default: '' }
+  driverLog: { type: String, default: '' },
+  rs232Remarks: { type: String, default: '' },
+  rs485Remarks: { type: String, default: '' },
+  gprsRemarks: { type: String, default: '' },
+  diRemarks: { type: String, default: '' },
+  psramRemarks: { type: String, default: '' },
+  rtcRemarks: { type: String, default: '' },
+  flashRemarks: { type: String, default: '' },
+  frRemarks: { type: String, default: '' },
+  switchRemarks: { type: String, default: '' },
+  apRemarks: { type: String, default: '' },
+  busRemarks: { type: String, default: '' },
+  driverRemarks: { type: String, default: '' }
 });
 
 const TelemetryModel = mongoose.model('Telemetry', TelemetrySchema);
@@ -291,7 +303,19 @@ async function saveTelemetrySnapshot(data) {
     switchLog: (device && device.switchLog) || data.switchLog || '',
     apLog: (device && device.apLog) || data.apLog || '',
     busLog: (device && device.busLog) || data.busLog || '',
-    driverLog: (device && device.driverLog) || data.driverLog || ''
+    driverLog: (device && device.driverLog) || data.driverLog || '',
+    rs232Remarks: (device && device.rs232Remarks) || data.rs232Remarks || '',
+    rs485Remarks: (device && device.rs485Remarks) || data.rs485Remarks || '',
+    gprsRemarks: (device && device.gprsRemarks) || data.gprsRemarks || '',
+    diRemarks: (device && device.diRemarks) || data.diRemarks || '',
+    psramRemarks: (device && device.psramRemarks) || data.psramRemarks || '',
+    rtcRemarks: (device && device.rtcRemarks) || data.rtcRemarks || '',
+    flashRemarks: (device && device.flashRemarks) || data.flashRemarks || '',
+    frRemarks: (device && device.frRemarks) || data.frRemarks || '',
+    switchRemarks: (device && device.switchRemarks) || data.switchRemarks || '',
+    apRemarks: (device && device.apRemarks) || data.apRemarks || '',
+    busRemarks: (device && device.busRemarks) || data.busRemarks || '',
+    driverRemarks: (device && device.driverRemarks) || data.driverRemarks || ''
   };
 
   if (mongodbConnected) {
@@ -371,6 +395,18 @@ const DeviceIdentificationSchema = new mongoose.Schema({
   apLog: { type: String, default: '' },
   busLog: { type: String, default: '' },
   driverLog: { type: String, default: '' },
+  rs232Remarks: { type: String, default: '' },
+  rs485Remarks: { type: String, default: '' },
+  gprsRemarks: { type: String, default: '' },
+  diRemarks: { type: String, default: '' },
+  psramRemarks: { type: String, default: '' },
+  rtcRemarks: { type: String, default: '' },
+  flashRemarks: { type: String, default: '' },
+  frRemarks: { type: String, default: '' },
+  switchRemarks: { type: String, default: '' },
+  apRemarks: { type: String, default: '' },
+  busRemarks: { type: String, default: '' },
+  driverRemarks: { type: String, default: '' },
   lastOnline: { type: Date, default: Date.now },
   registrationMethod: { type: String, default: 'manual' }
 });
@@ -613,6 +649,18 @@ async function registerOrUpdateDevice(data) {
         apLog: data.apLog !== undefined ? data.apLog : localDevices[foundIdx].apLog,
         busLog: data.busLog !== undefined ? data.busLog : localDevices[foundIdx].busLog,
         driverLog: data.driverLog !== undefined ? data.driverLog : localDevices[foundIdx].driverLog,
+        rs232Remarks: data.rs232Remarks !== undefined ? data.rs232Remarks : localDevices[foundIdx].rs232Remarks,
+        rs485Remarks: data.rs485Remarks !== undefined ? data.rs485Remarks : localDevices[foundIdx].rs485Remarks,
+        gprsRemarks: data.gprsRemarks !== undefined ? data.gprsRemarks : localDevices[foundIdx].gprsRemarks,
+        diRemarks: data.diRemarks !== undefined ? data.diRemarks : localDevices[foundIdx].diRemarks,
+        psramRemarks: data.psramRemarks !== undefined ? data.psramRemarks : localDevices[foundIdx].psramRemarks,
+        rtcRemarks: data.rtcRemarks !== undefined ? data.rtcRemarks : localDevices[foundIdx].rtcRemarks,
+        flashRemarks: data.flashRemarks !== undefined ? data.flashRemarks : localDevices[foundIdx].flashRemarks,
+        frRemarks: data.frRemarks !== undefined ? data.frRemarks : localDevices[foundIdx].frRemarks,
+        switchRemarks: data.switchRemarks !== undefined ? data.switchRemarks : localDevices[foundIdx].switchRemarks,
+        apRemarks: data.apRemarks !== undefined ? data.apRemarks : localDevices[foundIdx].apRemarks,
+        busRemarks: data.busRemarks !== undefined ? data.busRemarks : localDevices[foundIdx].busRemarks,
+        driverRemarks: data.driverRemarks !== undefined ? data.driverRemarks : localDevices[foundIdx].driverRemarks,
         lastOnline: new Date().toISOString(),
         registrationMethod: data.registrationMethod || localDevices[foundIdx].registrationMethod || 'manual'
       };
@@ -657,6 +705,18 @@ async function registerOrUpdateDevice(data) {
         apLog: data.apLog || '',
         busLog: data.busLog || '',
         driverLog: data.driverLog || '',
+        rs232Remarks: data.rs232Remarks || '',
+        rs485Remarks: data.rs485Remarks || '',
+        gprsRemarks: data.gprsRemarks || '',
+        diRemarks: data.diRemarks || '',
+        psramRemarks: data.psramRemarks || '',
+        rtcRemarks: data.rtcRemarks || '',
+        flashRemarks: data.flashRemarks || '',
+        frRemarks: data.frRemarks || '',
+        switchRemarks: data.switchRemarks || '',
+        apRemarks: data.apRemarks || '',
+        busRemarks: data.busRemarks || '',
+        driverRemarks: data.driverRemarks || '',
         lastOnline: new Date().toISOString(),
         registrationMethod: data.registrationMethod || 'manual',
         timestamp: new Date().toISOString()
@@ -736,6 +796,18 @@ async function registerOrUpdateDevice(data) {
         doc.apLog = data.apLog !== undefined ? data.apLog : doc.apLog;
         doc.busLog = data.busLog !== undefined ? data.busLog : doc.busLog;
         doc.driverLog = data.driverLog !== undefined ? data.driverLog : doc.driverLog;
+        doc.rs232Remarks = data.rs232Remarks !== undefined ? data.rs232Remarks : doc.rs232Remarks;
+        doc.rs485Remarks = data.rs485Remarks !== undefined ? data.rs485Remarks : doc.rs485Remarks;
+        doc.gprsRemarks = data.gprsRemarks !== undefined ? data.gprsRemarks : doc.gprsRemarks;
+        doc.diRemarks = data.diRemarks !== undefined ? data.diRemarks : doc.diRemarks;
+        doc.psramRemarks = data.psramRemarks !== undefined ? data.psramRemarks : doc.psramRemarks;
+        doc.rtcRemarks = data.rtcRemarks !== undefined ? data.rtcRemarks : doc.rtcRemarks;
+        doc.flashRemarks = data.flashRemarks !== undefined ? data.flashRemarks : doc.flashRemarks;
+        doc.frRemarks = data.frRemarks !== undefined ? data.frRemarks : doc.frRemarks;
+        doc.switchRemarks = data.switchRemarks !== undefined ? data.switchRemarks : doc.switchRemarks;
+        doc.apRemarks = data.apRemarks !== undefined ? data.apRemarks : doc.apRemarks;
+        doc.busRemarks = data.busRemarks !== undefined ? data.busRemarks : doc.busRemarks;
+        doc.driverRemarks = data.driverRemarks !== undefined ? data.driverRemarks : doc.driverRemarks;
         doc.lastOnline = new Date();
         doc.registrationMethod = data.registrationMethod || doc.registrationMethod || 'manual';
 
@@ -782,6 +854,18 @@ async function registerOrUpdateDevice(data) {
           apLog: data.apLog || '',
           busLog: data.busLog || '',
           driverLog: data.driverLog || '',
+          rs232Remarks: data.rs232Remarks || '',
+          rs485Remarks: data.rs485Remarks || '',
+          gprsRemarks: data.gprsRemarks || '',
+          diRemarks: data.diRemarks || '',
+          psramRemarks: data.psramRemarks || '',
+          rtcRemarks: data.rtcRemarks || '',
+          flashRemarks: data.flashRemarks || '',
+          frRemarks: data.frRemarks || '',
+          switchRemarks: data.switchRemarks || '',
+          apRemarks: data.apRemarks || '',
+          busRemarks: data.busRemarks || '',
+          driverRemarks: data.driverRemarks || '',
           lastOnline: new Date(),
           registrationMethod: data.registrationMethod || 'manual'
         });

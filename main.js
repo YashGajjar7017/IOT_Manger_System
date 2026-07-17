@@ -62,6 +62,12 @@ let tcpReconnectTimeout = null;
 // ── Worker thread for off-main-thread JSON parsing + DB writes ──────────────
 let dataWorker = null;
 
+function persistConnectionEvent(type, message, details) {
+  if (db && typeof db.saveTroubleshootLog === 'function') {
+    db.saveTroubleshootLog(type, message, details || '').catch(() => {});
+  }
+}
+
 function updateDeviceAndSaveSnapshot(updateFields) {
   const hasWindow = mainWindow && !mainWindow.isDestroyed();
   const wc = hasWindow ? mainWindow.webContents : null;
@@ -70,7 +76,12 @@ function updateDeviceAndSaveSnapshot(updateFields) {
       if (doc) {
         currentDeviceDbId = doc._id;
         if (wc) wc.send('refresh-registered-devices');
-        
+
+        if (updateFields.persistLog && (updateFields.remarks || updateFields.logSource === 'remark' || updateFields.logSource === 'test')) {
+          const detailSummary = updateFields.remarks || Object.keys(updateFields).filter(k => k.endsWith('Log')).map(k => `${k}: ${updateFields[k]}`).join(' | ');
+          persistConnectionEvent('remark_update', 'Diagnostic remark/status persisted to database.', detailSummary);
+        }
+
         // Immediately save a telemetry snapshot record to MongoDB database logs
         return db.saveTelemetrySnapshot(updateFields)
           .then(() => {
@@ -240,14 +251,25 @@ function startExpressServer() {
   // REST API: Retrieve the last 50 historical telemetry snapshots
   expressApp.get('/api/telemetry/history', async (req, res) => {
     try {
+      const range = String(req.query.range || 'all').toLowerCase();
+      const limit = Math.min(parseInt(req.query.limit || '50', 10) || 50, 300);
+      let cutoff = null;
+
+      if (range === '1d') cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      else if (range === '7d') cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      else if (range === '30d' || range === '1m' || range === '1month') cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      else if (range === '90d' || range === '3m' || range === '3months') cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+      const query = cutoff ? { timestamp: { $gte: cutoff } } : {};
+
       if (db.isDbConnected()) {
-        const history = await db.TelemetryModel.find()
+        const history = await db.TelemetryModel.find(query)
           .sort({ timestamp: -1 })
-          .limit(50);
-        res.json(history);
+          .limit(limit);
+        res.json({ history, count: history.length });
       } else {
-        // Return memory buffer (newest first)
-        res.json([...db.getMemoryHistoryBuffer()].reverse());
+        const history = [...db.getMemoryHistoryBuffer()].filter(item => !cutoff || new Date(item.timestamp) >= cutoff).reverse();
+        res.json({ history: history.slice(0, limit), count: history.length });
       }
     } catch (err) {
       res.status(500).json({ error: `Failed to fetch logs: ${err.message}` });
@@ -481,16 +503,10 @@ function startExpressServer() {
       const deviceCertSize = await downloadAndUploadCert(deviceCertUrl, `${esp32BaseUrl}/api/upload_cert`);
       const privateKeySize = await downloadAndUploadCert(privateKeyUrl, `${esp32BaseUrl}/api/upload_key`);
 
-      const logData = {
-        imei,
-        gatewayIp,
-        rootCaSize,
-        deviceCertSize,
-        privateKeySize,
-        status: 'SUCCESS',
-        message: 'Successfully provisioned CA, Cert, and Key from SCADA to ESP32 on Port 8000.'
-      };
-      await db.saveCertificateLog(logData);
+      const successMessage = 'Successfully provisioned CA, Cert, and Key from SCADA to ESP32 on Port 8000.';
+      await db.saveCertificateLog({ imei, gatewayIp, rootCaSize, deviceCertSize: 0, privateKeySize: 0, status: 'SUCCESS', message: `${successMessage} [rootCA]`, certificateType: 'rootCA' });
+      await db.saveCertificateLog({ imei, gatewayIp, rootCaSize: 0, deviceCertSize, privateKeySize: 0, status: 'SUCCESS', message: `${successMessage} [deviceCert]`, certificateType: 'deviceCert' });
+      await db.saveCertificateLog({ imei, gatewayIp, rootCaSize: 0, deviceCertSize: 0, privateKeySize, status: 'SUCCESS', message: `${successMessage} [privateKey]`, certificateType: 'privateKey' });
 
       if (activeTcpSocket && !activeTcpSocket.destroyed) {
         safeTcpWrite('SYNC_CERTS_TO_QCOM\n');
@@ -514,16 +530,10 @@ function startExpressServer() {
         const deviceCertSize = await downloadAndUploadCert(deviceCertUrl, `${esp32BaseUrl}/api/upload_cert`);
         const privateKeySize = await downloadAndUploadCert(privateKeyUrl, `${esp32BaseUrl}/api/upload_key`);
 
-        const logData = {
-          imei,
-          gatewayIp,
-          rootCaSize,
-          deviceCertSize,
-          privateKeySize,
-          status: 'SUCCESS',
-          message: `Successfully provisioned CA, Cert, and Key from SCADA to ESP32 on OTA Port ${otaPort}.`
-        };
-        await db.saveCertificateLog(logData);
+        const successMessage = `Successfully provisioned CA, Cert, and Key from SCADA to ESP32 on OTA Port ${otaPort}.`;
+        await db.saveCertificateLog({ imei, gatewayIp, rootCaSize, deviceCertSize: 0, privateKeySize: 0, status: 'SUCCESS', message: `${successMessage} [rootCA]`, certificateType: 'rootCA' });
+        await db.saveCertificateLog({ imei, gatewayIp, rootCaSize: 0, deviceCertSize, privateKeySize: 0, status: 'SUCCESS', message: `${successMessage} [deviceCert]`, certificateType: 'deviceCert' });
+        await db.saveCertificateLog({ imei, gatewayIp, rootCaSize: 0, deviceCertSize: 0, privateKeySize, status: 'SUCCESS', message: `${successMessage} [privateKey]`, certificateType: 'privateKey' });
 
         return res.json({ success: true, message: `All certificates successfully provisioned on OTA Port ${otaPort}.` });
       } catch (errOta) {
@@ -2083,6 +2093,7 @@ function startTcpTelemetryServer() {
       mainWindow.webContents.send('connection-status', { status: 'connected', type: 'tcp', target: `${remoteAddress}:${remotePort}` });
       mainWindow.webContents.send('console-log', `[TCP SERVER] ESP32 client connected from ${remoteAddress}:${remotePort}`);
     }
+    persistConnectionEvent('socket_connect', 'TCP socket connected to gateway.', `type=tcp; target=${remoteAddress}:${remotePort}`);
 
     tcpBuffer = '';
 
@@ -2198,6 +2209,7 @@ function startTcpTelemetryServer() {
         mainWindow.webContents.send('connection-status', { status: 'disconnected' });
         mainWindow.webContents.send('console-log', '[TCP SERVER] ESP32 client socket closed.');
       }
+      persistConnectionEvent('socket_disconnect', 'TCP socket disconnected.', 'type=tcp; remote side closed the connection');
       if (activeTcpSocket === socket) {
         activeTcpSocket = null;
       }
@@ -2212,6 +2224,7 @@ function startTcpTelemetryServer() {
         mainWindow.webContents.send('connection-status', { status: 'error', message: `TCP Socket Error: ${err.message}` });
         mainWindow.webContents.send('console-log', `[TCP SERVER ERROR] ${err.message}`);
       }
+      persistConnectionEvent('socket_error', 'TCP socket error occurred.', err.message);
     });
   });
 
@@ -2988,7 +3001,8 @@ function pullGithubXml(repoUrl, branch) {
   });
 }
 
-// Schedule hourly XML sync (Requirement 2)
+// Schedule hourly XML sync (Requirement 2) - DISABLED for manual update testing
+/*
 setInterval(() => {
   const repoUrl = appConfig.githubRepoUrl || 'https://github.com/YashGajjar7017/IOT_Manger_System';
   const branch = appConfig.githubBranch || 'main';
@@ -3000,8 +3014,10 @@ setInterval(() => {
       console.error('[CRON ERROR] Automated hourly XML pull failed:', err.message);
     });
 }, 3600000);
+*/
 
-// Initial pull on startup
+// Initial pull on startup - DISABLED for manual update testing
+/*
 setTimeout(() => {
   const repoUrl = appConfig.githubRepoUrl || 'https://github.com/YashGajjar7017/IOT_Manger_System';
   const branch = appConfig.githubBranch || 'main';
@@ -3013,6 +3029,7 @@ setTimeout(() => {
       console.warn('[STARTUP WARNING] Initial Github XML pull failed on boot:', err.message);
     });
 }, 5000);
+*/
 
 // Troubleshoot Log IPC Handlers
 ipcMain.handle('get-troubleshoot-logs', async () => {
