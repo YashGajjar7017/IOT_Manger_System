@@ -182,10 +182,31 @@ function sanitizeMongoURI(uri) {
   return protocol + hostPart + pathOnly + queryPart;
 }
 
+let dbExistsStatus = 'checking';
+
+async function verifyDbExistence() {
+  if (!mongoose.connection || !mongoose.connection.db) {
+    dbExistsStatus = 'error';
+    return;
+  }
+  try {
+    const adminDb = mongoose.connection.db.admin();
+    const dbs = await adminDb.listDatabases();
+    const dbName = mongoose.connection.name || 'IOT_Monitor_System';
+    const dbExists = dbs.databases.some(d => d.name === dbName);
+    dbExistsStatus = dbExists ? 'exists' : 'not_found';
+    console.log(`[DATABASE] Checked database existence for '${dbName}': ${dbExistsStatus}`);
+  } catch (err) {
+    dbExistsStatus = 'error';
+    console.error('[DATABASE] Error verifying database existence:', err.message);
+  }
+}
+
 // Monitor connection states dynamically
 mongoose.connection.on('connected', () => {
   mongodbConnected = true;
   console.log('[DATABASE] MongoDB connection event: CONNECTED');
+  verifyDbExistence();
 });
 mongoose.connection.on('disconnected', () => {
   mongodbConnected = false;
@@ -1055,3 +1076,4 @@ async function verifyAdminUser(username, password) {
 module.exports.createAdminUser = createAdminUser;
 module.exports.verifyAdminUser = verifyAdminUser;
 module.exports.getDbStatus = () => ({ connected: mongodbConnected });
+module.exports.getDbExistsStatus = () => dbExistsStatus;

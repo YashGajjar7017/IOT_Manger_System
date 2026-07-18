@@ -239,12 +239,14 @@ function startExpressServer() {
       }
       res.json({
         mongodb: db.isDbConnected() ? 'CONNECTED' : 'FALLBACK_MEMORY',
-        recordsCount: count
+        recordsCount: count,
+        dbExistsStatus: db.getDbExistsStatus ? db.getDbExistsStatus() : 'checking'
       });
     } catch (err) {
       res.json({
         mongodb: db.isDbConnected() ? 'CONNECTED' : 'FALLBACK_MEMORY',
-        recordsCount: 0
+        recordsCount: 0,
+        dbExistsStatus: 'error'
       });
     }
   });

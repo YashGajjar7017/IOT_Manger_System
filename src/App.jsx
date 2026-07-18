@@ -1589,6 +1589,13 @@ export default function App() {
       });
   }, []);
 
+  // Poll database status periodically
+  useEffect(() => {
+    fetchDatabaseStatus();
+    const interval = setInterval(fetchDatabaseStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
 
 
   // Ping Loop for WiFi TCP Socket
@@ -5547,8 +5554,59 @@ Overall Status : ${overallStatus}
               </div>
             </header>
 
-            <div className="dashboard-top-grid">
-              {dashboardLayout.slice(0, 3).map(id => renderDashboardCard(id))}
+            {/* Database existence notification / alert */}
+            {dbStatus.mongodb === 'CONNECTED' && dbStatus.dbExistsStatus === 'not_found' && (
+              <div className="db-alert-banner warning" style={{
+                background: 'rgba(255, 153, 0, 0.1)',
+                border: '1px solid rgba(255, 153, 0, 0.3)',
+                borderRadius: '8px',
+                padding: '12px 20px',
+                marginBottom: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                color: '#ffaa00',
+                fontSize: '13px'
+              }}>
+                <span style={{ fontSize: '16px' }}>⚠️</span>
+                <div>
+                  <strong>Database Not Found:</strong> The database <code>IOT_Monitor_System</code> is not found in MongoDB. It will be auto-created on the first write.
+                </div>
+              </div>
+            )}
+
+            {dbStatus.mongodb === 'CONNECTED' && dbStatus.dbExistsStatus === 'exists' && (
+              <div className="db-alert-banner success" style={{
+                background: 'rgba(0, 255, 102, 0.1)',
+                border: '1px solid rgba(0, 255, 102, 0.3)',
+                borderRadius: '8px',
+                padding: '12px 20px',
+                marginBottom: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                color: '#00ff66',
+                fontSize: '13px'
+              }}>
+                <span style={{ fontSize: '16px' }}>✓</span>
+                <div>
+                  <strong>Database Verified:</strong> Database <code>IOT_Monitor_System</code> found correctly. Now you can push the data.
+                </div>
+              </div>
+            )}
+
+            <div className="dashboard-layout-row">
+              <div className="dashboard-left-col">
+                <div>
+                  {renderDashboardCard('connection-panel')}
+                </div>
+                <div>
+                  {renderDashboardCard('detected-devices-panel')}
+                </div>
+              </div>
+              <div className="dashboard-right-col">
+                {renderDashboardCard('diagnostic-board')}
+              </div>
             </div>
 
             {connectionMode !== 'ap' && (

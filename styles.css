@@ -821,10 +821,57 @@ select {
   width: 100%;
 }
 
+.dashboard-layout-row {
+  display: flex;
+  gap: 20px;
+  width: 100%;
+  align-items: stretch;
+}
+
+.dashboard-left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 0 0 400px;
+  min-width: 320px;
+}
+
+.dashboard-right-col {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+
+.dashboard-left-col > div {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.dashboard-left-col .glass-card,
+.dashboard-right-col .glass-card {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
 .glass-card.diagnostic-board {
-  max-width: 480px;
   width: 100%;
   box-sizing: border-box;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-layout-row {
+    flex-direction: column;
+  }
+  .dashboard-left-col {
+    flex: none;
+    width: 100%;
+    height: auto;
+  }
 }
 
 @media (max-width: 1200px) {
@@ -2519,6 +2566,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 4px;
 }
 
 .detected-device-card {
