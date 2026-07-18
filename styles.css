@@ -821,6 +821,12 @@ select {
   width: 100%;
 }
 
+.glass-card.diagnostic-board {
+  max-width: 480px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 @media (max-width: 1200px) {
   .dashboard-top-grid {
     grid-template-columns: 1fr;

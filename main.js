@@ -1432,6 +1432,9 @@ app.whenReady().then(async () => {
           wc.send('telemetry-payload', msg.payload);
           updateTelemetryCache(msg.payload);
           break;
+        case 'DB_SAVED':
+          wc.send('refresh-database-history');
+          break;
         case 'HARDWARE':
           wc.send('hardware-payload', msg.payload);
 
@@ -1935,7 +1938,9 @@ ipcMain.on('connect-serial', (event, { portPath, baudRate, pcbNumber }) => {
                 if (payload.type === 'telemetry') {
                   event.reply('telemetry-payload', payload);
                   updateTelemetryCache(payload);
-                  db.saveTelemetrySnapshot(payload);
+                  db.saveTelemetrySnapshot(payload).then(() => {
+                    event.reply('refresh-database-history');
+                  }).catch(err => console.error('[DATABASE] Fallback serial save error:', err));
                 } else {
                   event.reply('hardware-payload', payload);
                   
@@ -2134,7 +2139,11 @@ function startTcpTelemetryServer() {
                 mainWindow.webContents.send('telemetry-payload', payload);
               }
               updateTelemetryCache(payload);
-              db.saveTelemetrySnapshot(payload);
+              db.saveTelemetrySnapshot(payload).then(() => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                  mainWindow.webContents.send('refresh-database-history');
+                }
+              }).catch(err => console.error('[DATABASE] Fallback TCP save error:', err));
             } else if (payload.type === 'control_status') {
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('control-payload-sync', payload);
@@ -4621,6 +4630,15 @@ ipcMain.on('update-spiffs-file', (event, { ip, port, filename, content }) => {
   req.end();
 });
 
+// IPC Handler: Read UUID predefined preset from presets directory
+ipcMain.handle('read-uuid-preset', async (event, filename) => {
+  const filePath = path.join(__dirname, 'presets', filename);
+  if (fs.existsSync(filePath)) {
+    return fs.readFileSync(filePath, 'utf8');
+  }
+  throw new Error(`Preset file ${filename} not found`);
+});
+
 // IPC Handler: Save debug console logs to txt locally
 ipcMain.handle('save-log-file', async (event, logContent) => {
   const { filePath } = await dialog.showSaveDialog(mainWindow, {
@@ -4662,6 +4680,9 @@ ipcMain.handle('admin-signup', async (event, { username, email, password }) => {
 ipcMain.handle('db-manual-insert', async (event, record) => {
   try {
     await db.saveTelemetrySnapshot(record);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('refresh-database-history');
+    }
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };

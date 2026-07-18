@@ -1,0 +1,7 @@
+{
+  "uuid": "aux-uuid-4",
+  "busId": 4,
+  "deviceMode": "solaryan inverter",
+  "presetSlot": 4,
+  "label": "Preset Slot 4 (Auxiliary Node)"
+}

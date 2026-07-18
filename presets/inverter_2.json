@@ -1,0 +1,7 @@
+{
+  "uuid": "inverter-uuid-2",
+  "busId": 2,
+  "deviceMode": "solaryan inverter",
+  "presetSlot": 2,
+  "label": "Preset Slot 2 (Inverter #2)"
+}

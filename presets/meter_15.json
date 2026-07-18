@@ -1,0 +1,7 @@
+{
+  "uuid": "meter-uuid-15",
+  "busId": 15,
+  "deviceMode": "solaryan inverter",
+  "presetSlot": 3,
+  "label": "Preset Slot 3 (3-Phase Meter)"
+}

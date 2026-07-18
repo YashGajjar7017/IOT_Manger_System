@@ -500,6 +500,7 @@ export default function App() {
   });
   const [diagDraggedKey, setDiagDraggedKey] = useState(null);
   const [diagDraggedOverKey, setDiagDraggedOverKey] = useState(null);
+  const [diagnosticsDraggable, setDiagnosticsDraggable] = useState(false);
 
   // Social Auth state
   const [socialAuthUser, setSocialAuthUser] = useState(() => {
@@ -765,31 +766,39 @@ export default function App() {
     }
   }, [activeTab]);
 
-  const handleLoadPresetToEeprom = (preset) => {
-    const payload = {
-      uuid: preset.uuid,
-      busId: parseInt(preset.busId) || 1,
-      deviceMode: 'solaryan inverter',
-      presetSlot: preset.id,
-      timestamp: new Date().toISOString()
-    };
+  const handleLoadPresetToEeprom = () => {
+    if (!presetFileDetails) {
+      alert("No preset details loaded.");
+      return;
+    }
     const targetIp = otaIp || '192.168.4.1';
     const targetPort = otaPort || '80';
     setIsUploadingUuid(true);
     setUuidUpdateAck(null);
-    addLogLine(`[SPIFFS] Uploading preset slot ${preset.id} (${preset.label}) to EEPROM SPIFFS location '/uuid.json'...`);
+
+    const logMsg = `[SPIFFS] Reading and uploading preset file '${selectedPresetFile}' (UUID: ${presetFileDetails.uuid}, Bus ID: ${presetFileDetails.busId}) to EEPROM partition /uuid.json...`;
+    addLogLine(logMsg);
+
+    // Save upload log history
+    const logEntry = {
+      filename: selectedPresetFile,
+      uuid: presetFileDetails.uuid,
+      busId: presetFileDetails.busId,
+      timestamp: new Date().toLocaleString(),
+      status: 'pending'
+    };
+    setUuidUploadLogs(prev => {
+      const nextLogs = [logEntry, ...prev].slice(0, 50);
+      localStorage.setItem('uuid_upload_logs', JSON.stringify(nextLogs));
+      return nextLogs;
+    });
+
     ipcRenderer.send('update-spiffs-file', {
       ip: targetIp,
       port: targetPort,
       filename: '/uuid.json',
-      content: JSON.stringify(payload, null, 2)
+      content: JSON.stringify(presetFileDetails, null, 2)
     });
-  };
-
-  const handleUpdatePresetField = (id, field, val) => {
-    const updated = uuidPresets.map(p => p.id === id ? { ...p, [field]: val } : p);
-    setUuidPresets(updated);
-    localStorage.setItem('uuid_presets', JSON.stringify(updated));
   };
 
   const triggerCertificateProvision = async () => {
@@ -817,21 +826,31 @@ export default function App() {
   const [uuidToken, setUuidToken] = useState('');
   const [isUploadingUuid, setIsUploadingUuid] = useState(false);
   const [uuidUpdateAck, setUuidUpdateAck] = useState(null);
-  const [uuidPresets, setUuidPresets] = useState(() => {
+  const [selectedPresetFile, setSelectedPresetFile] = useState('inverter_1.json');
+  const [presetFileDetails, setPresetFileDetails] = useState(null);
+  const [uuidUploadLogs, setUuidUploadLogs] = useState(() => {
     try {
-      const saved = localStorage.getItem('uuid_presets');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error(e);
+      return JSON.parse(localStorage.getItem('uuid_upload_logs') || '[]');
+    } catch {
+      return [];
     }
-    return [
-      { id: 1, label: 'Preset Slot 1 (Inverter #1)', uuid: 'inverter-uuid-1', busId: '1' },
-      { id: 2, label: 'Preset Slot 2 (Inverter #2)', uuid: 'inverter-uuid-2', busId: '2' },
-      { id: 3, label: 'Preset Slot 3 (3-Phase Meter)', uuid: 'meter-uuid-15', busId: '15' },
-      { id: 4, label: 'Preset Slot 4 (Auxiliary Node)', uuid: 'aux-uuid-4', busId: '4' },
-      { id: 5, label: 'Preset Slot 5 (Custom Gateway)', uuid: 'gate-uuid-99', busId: '99' }
-    ];
   });
+
+  useEffect(() => {
+    if (ipcRenderer) {
+      ipcRenderer.invoke('read-uuid-preset', selectedPresetFile)
+        .then(content => {
+          try {
+            setPresetFileDetails(JSON.parse(content));
+          } catch (e) {
+            setPresetFileDetails(null);
+          }
+        })
+        .catch(() => {
+          setPresetFileDetails(null);
+        });
+    }
+  }, [selectedPresetFile]);
 
   // App Config Settings State (Requirement 6)
   const [dbUriInput, setDbUriInput] = useState('mongodb://127.0.0.1:27017/IOT_Monitor_System');
@@ -1426,11 +1445,33 @@ export default function App() {
             success: true
           });
           addLogLine('[SYS] uuid.json uploaded successfully. Token input reset.', 'success');
+
+          // Update uuidUploadLogs status in state and localStorage
+          setUuidUploadLogs(prev => {
+            const updated = [...prev];
+            if (updated.length > 0 && updated[0].status === 'pending') {
+              updated[0].status = 'success';
+            }
+            localStorage.setItem('uuid_upload_logs', JSON.stringify(updated));
+            return updated;
+          });
         }
         ipcRenderer.send('get-spiffs-storage', { ip: otaIpRef.current, port: otaPortRef.current });
       } else {
         alert(`Failed to update file: ${result.error}`);
         addLogLine(`[SPIFFS ERROR] Save failed: ${result.error}`, 'error');
+        if (result.filename === '/uuid.json') {
+          // Update uuidUploadLogs status in state and localStorage
+          setUuidUploadLogs(prev => {
+            const updated = [...prev];
+            if (updated.length > 0 && updated[0].status === 'pending') {
+              updated[0].status = 'failed';
+              updated[0].error = result.error;
+            }
+            localStorage.setItem('uuid_upload_logs', JSON.stringify(updated));
+            return updated;
+          });
+        }
       }
     };
     const onGitHubOauthSuccess = (event, user) => {
@@ -3820,8 +3861,16 @@ Overall Status : ${overallStatus}
   );
 
   const diagnosticBoardCard = (
-              <div draggable={true} onDragStart={(e) => handleCardDragStart(e, 'diagnostic-board')} onDragOver={(e) => handleCardDragOver(e, 'diagnostic-board')} onDragLeave={(e) => handleCardDragLeave(e, 'diagnostic-board')} onDrop={(e) => handleCardDrop(e, 'diagnostic-board')} onDragEnd={handleCardDragEnd} className={`glass-card diagnostic-board ${draggedOverCardId === 'diagnostic-board' ? 'drag-over' : ''}`}>
-                <div className="diag-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div draggable={diagnosticsDraggable} onDragStart={(e) => handleCardDragStart(e, 'diagnostic-board')} onDragOver={(e) => handleCardDragOver(e, 'diagnostic-board')} onDragLeave={(e) => handleCardDragLeave(e, 'diagnostic-board')} onDrop={(e) => handleCardDrop(e, 'diagnostic-board')} onDragEnd={(e) => { handleCardDragEnd(e); setDiagnosticsDraggable(false); }} className={`glass-card diagnostic-board ${draggedOverCardId === 'diagnostic-board' ? 'drag-over' : ''}`}>
+                <div className="diag-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'grab' }}
+                  onMouseDown={(e) => {
+                    if (!e.target.closest('button, input, select, textarea')) {
+                      setDiagnosticsDraggable(true);
+                    }
+                  }}
+                  onMouseUp={() => setDiagnosticsDraggable(false)}
+                  onMouseLeave={() => setDiagnosticsDraggable(false)}
+                >
                   <div>
                     <h3><span className="icon">&#9881;</span> Diagnostics status</h3>
                     <div className="diag-meta">
@@ -3839,8 +3888,16 @@ Overall Status : ${overallStatus}
                 </div>
 
                 <div className="diag-checklist">
-                  {Object.keys(diagnostics).map(key => (
-                    <div key={key} className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : diagnostics[key] === 'TESTING' ? 'warning' : ''}`} title={diagnosticsDetails[key] || ''}>
+                  {diagItemOrder.filter(key => key in diagnostics).map(key => (
+                    <div key={key}
+                      draggable={true}
+                      onDragStart={(e) => handleDiagDragStart(e, key)}
+                      onDragOver={(e) => handleDiagDragOver(e, key)}
+                      onDragEnd={handleDiagDragEnd}
+                      onDrop={(e) => handleDiagDrop(e, key)}
+                      className={`diag-item ${diagnostics[key] === 'OK' ? 'success' : diagnostics[key] === 'ERROR' ? 'error' : diagnostics[key] === 'TESTING' ? 'warning' : ''} ${diagDraggedOverKey === key ? 'diag-drag-over' : ''}`}
+                      title={diagnosticsDetails[key] || ''}
+                    >
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                         <div className="diag-indicator" style={{ marginRight: '8px' }}></div>
                         <div className="diag-label" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -4011,6 +4068,21 @@ Overall Status : ${overallStatus}
                                   }} />
                                 </div>
                               )}
+                            </div>
+                          ) : (diagnosticsDetails.psram || diagnostics.psram === 'OK') ? (
+                            <div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontSize: '11px', fontFamily: 'monospace', marginBottom: '8px' }}>
+                                <div><span style={{ color: '#8080a0' }}>PSRAM Detail:</span> <span style={{ color: '#00e676', fontWeight: 'bold' }}>{diagnosticsDetails.psram || 'OK'}</span></div>
+                                <div><span style={{ color: '#8080a0' }}>Status:</span> <span style={{ color: '#00e676', fontWeight: 'bold' }}>Present & Active</span></div>
+                              </div>
+                              <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '4px', overflow: 'hidden', height: '6px' }}>
+                                <div style={{
+                                  height: '100%',
+                                  width: '100%',
+                                  background: 'linear-gradient(90deg, #00e676, #00ffcc)',
+                                  borderRadius: '4px'
+                                }} />
+                              </div>
                             </div>
                           ) : (
                             <div style={{ fontSize: '11px', color: '#8080a0', fontStyle: 'italic' }}>
@@ -6583,7 +6655,6 @@ Overall Status : ${overallStatus}
                           <th style={{ padding: '8px' }}>Device #</th>
                           <th style={{ padding: '8px' }}>IMEI / PCB Serial</th>
                           <th style={{ padding: '8px' }}>Mode</th>
-                          <th style={{ padding: '8px' }}>Remarks</th>
                           <th style={{ padding: '8px' }}>Net Status</th>
                           <th style={{ padding: '8px' }}>Target Address</th>
                           <th style={{ padding: '8px' }}>MAC</th>
@@ -6596,6 +6667,7 @@ Overall Status : ${overallStatus}
                           <th style={{ padding: '8px' }}>AP</th>
                           <th style={{ padding: '8px' }}>Bus</th>
                           <th style={{ padding: '8px' }}>Driver</th>
+                          <th style={{ padding: '8px' }}>Remarks</th>
                           <th style={{ padding: '8px', textAlign: 'right' }}>Actions</th>
                         </tr>
                       </thead>
@@ -6605,6 +6677,21 @@ Overall Status : ${overallStatus}
                           const inDiscoveredGateways = discoveredGateways.some(g => g.imei === dev.imei || (g.mac && dev.mac && g.mac.replace(/:/g, '').toLowerCase() === dev.mac.replace(/:/g, '').toLowerCase()));
                           const inNearbyHotspots = dev.mac && nearbyHotspots.some(ssid => ssid.toLowerCase().includes(dev.mac.replace(/:/g, '').toLowerCase())) || (dev.routerSSID && nearbyHotspots.some(ssid => ssid.toLowerCase() === dev.routerSSID.toLowerCase()));
                           const isFound = isCurrentConnected || inDiscoveredGateways || inNearbyHotspots;
+
+                          const remarksList = [];
+                          if (dev.remarks) remarksList.push(`General: ${dev.remarks}`);
+                          if (dev.apRemarks) remarksList.push(`APRemarks: ${dev.apRemarks}`);
+                          if (dev.rs232Remarks) remarksList.push(`RS232Remarks: ${dev.rs232Remarks}`);
+                          if (dev.rs485Remarks) remarksList.push(`RS485Remarks: ${dev.rs485Remarks}`);
+                          if (dev.gprsRemarks) remarksList.push(`GPRSRemarks: ${dev.gprsRemarks}`);
+                          if (dev.diRemarks) remarksList.push(`DIRemarks: ${dev.diRemarks}`);
+                          if (dev.psramRemarks) remarksList.push(`PSRAMRemarks: ${dev.psramRemarks}`);
+                          if (dev.rtcRemarks) remarksList.push(`RTCRemarks: ${dev.rtcRemarks}`);
+                          if (dev.flashRemarks) remarksList.push(`FlashRemarks: ${dev.flashRemarks}`);
+                          if (dev.frRemarks) remarksList.push(`FRRemarks: ${dev.frRemarks}`);
+                          if (dev.switchRemarks) remarksList.push(`SwitchRemarks: ${dev.switchRemarks}`);
+                          if (dev.busRemarks) remarksList.push(`BusRemarks: ${dev.busRemarks}`);
+                          if (dev.driverRemarks) remarksList.push(`DriverRemarks: ${dev.driverRemarks}`);
 
                           return (
                             <tr key={dev._id || dev.imei || dev.pcbNumber} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#e0e0f0' }}>
@@ -6617,9 +6704,6 @@ Overall Status : ${overallStatus}
                               </td>
                               <td style={{ padding: '8px', fontSize: '11px', textTransform: 'capitalize' }}>
                                 <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold' }}>{dev.deviceMode || 'solaryan inverter'}</span>
-                              </td>
-                              <td style={{ padding: '8px', fontSize: '11px', color: 'var(--text-dim)' }}>
-                                {dev.remarks || '--'}
                               </td>
                               <td style={{ padding: '8px' }}>
                                 {isFound ? (
@@ -6675,6 +6759,28 @@ Overall Status : ${overallStatus}
                                 <span className={`status-tag ${dev.driverStatus === 'OK' ? 'ok' : dev.driverStatus === 'ERROR' ? 'err' : 'wait'}`} style={{ padding: '2px 6px', fontSize: '9px', minWidth: '45px', textAlign: 'center', display: 'inline-block' }}>
                                   {dev.driverStatus || 'WAITING'}
                                 </span>
+                              </td>
+                              <td style={{ padding: '8px' }}>
+                                <select
+                                  className="filter-select"
+                                  style={{
+                                    fontSize: '11px',
+                                    padding: '2px 6px',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    color: '#fff',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '4px',
+                                    maxWidth: '130px',
+                                    outline: 'none',
+                                    cursor: 'pointer'
+                                  }}
+                                  defaultValue=""
+                                >
+                                  <option value="" disabled>{remarksList.length > 0 ? 'View Remarks...' : 'No Remarks'}</option>
+                                  {remarksList.map((r, idx) => (
+                                    <option key={idx} value={r}>{r}</option>
+                                  ))}
+                                </select>
                               </td>
                               <td style={{ padding: '8px', textAlign: 'right' }}>
                                 <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
@@ -7818,66 +7924,68 @@ Overall Status : ${overallStatus}
                   </div>
                 </div>
 
-                {/* UUID Presets manager (5 slots) */}
+                {/* Predefined UUID File Uploader Section */}
                 <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '15px' }}>
                   <span style={{ fontSize: '11px', color: 'var(--accent-pink)', fontWeight: 'bold', display: 'block', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    🎛️ Inverter & Meter UUID Presets Slot Manager (EPROM)
+                    🎛️ Inverter & Meter Predefined UUID Preset File Uploader
                   </span>
                   
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {uuidPresets.map((preset) => (
-                      <div 
-                        key={preset.id} 
-                        style={{ 
-                          background: 'rgba(255,255,255,0.01)', 
-                          border: '1px solid rgba(255,255,255,0.04)', 
-                          borderRadius: '6px', 
-                          padding: '10px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '6px'
-                        }}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                    <div className="input-group">
+                      <label>Select Predefined UUID File</label>
+                      <select
+                        value={selectedPresetFile}
+                        onChange={(e) => setSelectedPresetFile(e.target.value)}
+                        style={{ width: '100%', padding: '10px', background: 'var(--input-bg)', color: 'white', border: '1px solid var(--glass-border)', borderRadius: '6px' }}
                       >
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-dim)', minWidth: '45px' }}>Slot #{preset.id}:</span>
-                          <input
-                            type="text"
-                            value={preset.label}
-                            onChange={(e) => handleUpdatePresetField(preset.id, 'label', e.target.value)}
-                            placeholder="Preset Label (e.g. Inverter #1)"
-                            style={{ flex: 1, fontSize: '11px', padding: '4px 8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '4px' }}
-                          />
-                        </div>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <input
-                            type="text"
-                            value={preset.uuid}
-                            onChange={(e) => handleUpdatePresetField(preset.id, 'uuid', e.target.value)}
-                            placeholder="Enter Inverter/Meter UUID Token"
-                            style={{ flex: 2, fontSize: '11.5px', padding: '4px 8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '4px', fontFamily: 'monospace' }}
-                          />
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
-                            <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>BusID:</span>
-                            <input
-                              type="number"
-                              value={preset.busId}
-                              onChange={(e) => handleUpdatePresetField(preset.id, 'busId', e.target.value)}
-                              placeholder="BusID"
-                              style={{ width: '45px', fontSize: '11.5px', padding: '4px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '4px', textAlign: 'center' }}
-                            />
-                          </div>
-                          <button
-                            className="btn btn-secondary"
-                            onClick={() => handleLoadPresetToEeprom(preset)}
-                            disabled={isUploadingUuid || !connection.type || connection.type === 'failed'}
-                            style={{ margin: 0, padding: '4px 8px', fontSize: '10px', height: '24px', background: 'var(--accent-primary)', border: 'none', color: '#fff' }}
-                            title="Flash this preset configuration to ESP32 /uuid.json SPIFFS"
-                          >
-                            💾 Load to EEPROM
-                          </button>
-                        </div>
+                        <option value="inverter_1.json">inverter_1.json (Preset Slot 1 - Inverter #1)</option>
+                        <option value="inverter_2.json">inverter_2.json (Preset Slot 2 - Inverter #2)</option>
+                        <option value="meter_15.json">meter_15.json (Preset Slot 3 - 3-Phase Meter)</option>
+                        <option value="aux_4.json">aux_4.json (Preset Slot 4 - Auxiliary Node)</option>
+                      </select>
+                    </div>
+
+                    {presetFileDetails && (
+                      <div style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(255, 255, 255, 0.05)', padding: '12px', borderRadius: '6px', fontSize: '11.5px', fontFamily: 'monospace' }}>
+                        <div style={{ fontWeight: 'bold', color: 'var(--accent-blue)', marginBottom: '6px' }}>📁 File Contents Preview ({selectedPresetFile})</div>
+                        <div>UUID: <span style={{ color: '#fff' }}>{presetFileDetails.uuid}</span></div>
+                        <div>Bus ID: <span style={{ color: '#fff' }}>{presetFileDetails.busId}</span></div>
+                        <div>Device Mode: <span style={{ color: '#fff' }}>{presetFileDetails.deviceMode}</span></div>
+                        <div>Label: <span style={{ color: '#fff' }}>{presetFileDetails.label}</span></div>
                       </div>
-                    ))}
+                    )}
+
+                    <button
+                      className="btn btn-secondary"
+                      onClick={handleLoadPresetToEeprom}
+                      disabled={isUploadingUuid || !connection.type || connection.type === 'failed'}
+                      style={{ width: '100%', height: '36px', background: 'var(--accent-primary)', border: 'none', color: '#fff', fontWeight: 'bold', fontSize: '12px' }}
+                      title="Upload the selected predefined UUID configuration file to connected hardware"
+                    >
+                      {isUploadingUuid ? 'Syncing /uuid.json...' : '📤 Upload Selected UUID Preset File'}
+                    </button>
+
+                    {/* UUID upload logs history section */}
+                    <div style={{ borderTop: '1px dashed rgba(255,255,255,0.06)', paddingTop: '10px' }}>
+                      <span style={{ fontSize: '10px', color: 'var(--text-dim)', fontWeight: 'bold', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>
+                        📜 UUID Upload Log History
+                      </span>
+                      <div style={{ maxHeight: '120px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.04)', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        {uuidUploadLogs.length === 0 ? (
+                          <div style={{ fontSize: '10.5px', color: '#505070', fontStyle: 'italic', textAlign: 'center', padding: '10px 0' }}>No upload logs yet.</div>
+                        ) : (
+                          uuidUploadLogs.map((log, idx) => (
+                            <div key={idx} style={{ fontSize: '10px', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.02)', paddingBottom: '3px' }}>
+                              <span style={{ color: 'var(--accent-pink)' }}>{log.filename}</span>
+                              <span style={{ color: '#fff', fontFamily: 'monospace' }}>UUID: {log.uuid} (ID: {log.busId})</span>
+                              <span style={{ color: log.status === 'success' ? '#00ff66' : log.status === 'failed' ? '#ff3366' : '#ffaa00' }}>
+                                {log.status.toUpperCase()}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
 

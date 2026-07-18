@@ -69,9 +69,13 @@ function processLine(line) {
         results.push({ type: 'TELEMETRY', payload });
         // Non-blocking DB save — errors are caught internally
         if (db) {
-          db.saveTelemetrySnapshot(payload).catch((err) => {
-            parentPort.postMessage({ type: 'CONSOLE_LOG', message: `[WORKER] DB save error: ${err.message}` });
-          });
+          db.saveTelemetrySnapshot(payload)
+            .then(() => {
+              parentPort.postMessage({ type: 'DB_SAVED' });
+            })
+            .catch((err) => {
+              parentPort.postMessage({ type: 'CONSOLE_LOG', message: `[WORKER] DB save error: ${err.message}` });
+            });
         }
       } else {
         results.push({ type: 'HARDWARE', payload });
@@ -101,9 +105,13 @@ function processLine(line) {
       if (payload.type === 'telemetry') {
         results.push({ type: 'TELEMETRY', payload });
         if (db) {
-          db.saveTelemetrySnapshot(payload).catch((err) => {
-            parentPort.postMessage({ type: 'CONSOLE_LOG', message: `[WORKER] DB save error: ${err.message}` });
-          });
+          db.saveTelemetrySnapshot(payload)
+            .then(() => {
+              parentPort.postMessage({ type: 'DB_SAVED' });
+            })
+            .catch((err) => {
+              parentPort.postMessage({ type: 'CONSOLE_LOG', message: `[WORKER] DB save error: ${err.message}` });
+            });
         }
       } else if (payload.type === 'control_status') {
         results.push({ type: 'CONTROL_STATUS', payload });
