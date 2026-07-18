@@ -859,8 +859,13 @@ select {
 }
 
 .glass-card.diagnostic-board {
+  max-width: 480px;
   width: 100%;
   box-sizing: border-box;
+}
+
+.dashboard-right-col .glass-card.diagnostic-board {
+  max-width: none;
 }
 
 @media (max-width: 1024px) {

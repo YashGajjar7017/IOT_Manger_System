@@ -4058,44 +4058,50 @@ Overall Status : ${overallStatus}
                           <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--accent-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                             💾 PSRAM Memory Info
                           </div>
-                          {queriedInfo?.free_psram != null ? (
-                            <div>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontSize: '11px', fontFamily: 'monospace', marginBottom: '8px' }}>
-                                <div><span style={{ color: '#8080a0' }}>Free PSRAM:</span> <span style={{ color: queriedInfo.free_psram > 0 ? '#00e676' : '#ff3366', fontWeight: 'bold' }}>{queriedInfo.free_psram === 0 ? 'Not Detected' : `${(queriedInfo.free_psram / 1024).toFixed(1)} KB`}</span></div>
-                                <div><span style={{ color: '#8080a0' }}>Status:</span> <span style={{ color: queriedInfo.free_psram > 0 ? '#00e676' : '#ff3366', fontWeight: 'bold' }}>{queriedInfo.free_psram > 0 ? 'Present & Active' : 'Not Available'}</span></div>
-                              </div>
-                              {queriedInfo.free_psram > 0 && (
+                          {(() => {
+                            const freePsram = queriedInfo ? (queriedInfo.free_psram !== undefined ? queriedInfo.free_psram : queriedInfo.psram) : null;
+                            if (freePsram != null) {
+                              return (
+                                <div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontSize: '11px', fontFamily: 'monospace', marginBottom: '8px' }}>
+                                    <div><span style={{ color: '#8080a0' }}>Free PSRAM:</span> <span style={{ color: freePsram > 0 ? '#00e676' : '#ff3366', fontWeight: 'bold' }}>{freePsram === 0 ? 'Not Detected' : `${(freePsram / 1024).toFixed(1)} KB`}</span></div>
+                                    <div><span style={{ color: '#8080a0' }}>Status:</span> <span style={{ color: freePsram > 0 ? '#00e676' : '#ff3366', fontWeight: 'bold' }}>{freePsram > 0 ? 'Present & Active' : 'Not Available'}</span></div>
+                                  </div>
+                                  {freePsram > 0 && (
+                                    <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '4px', overflow: 'hidden', height: '6px' }}>
+                                      <div style={{
+                                        height: '100%',
+                                        width: `${Math.min(100, (freePsram / (4 * 1024 * 1024)) * 100).toFixed(0)}%`,
+                                        background: 'linear-gradient(90deg, #00e676, #00ffcc)',
+                                        borderRadius: '4px',
+                                        transition: 'width 0.4s ease'
+                                      }} />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return (diagnosticsDetails.psram || diagnostics.psram === 'OK') ? (
+                              <div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontSize: '11px', fontFamily: 'monospace', marginBottom: '8px' }}>
+                                  <div><span style={{ color: '#8080a0' }}>PSRAM Detail:</span> <span style={{ color: '#00e676', fontWeight: 'bold' }}>{diagnosticsDetails.psram || 'OK'}</span></div>
+                                  <div><span style={{ color: '#8080a0' }}>Status:</span> <span style={{ color: '#00e676', fontWeight: 'bold' }}>Present & Active</span></div>
+                                </div>
                                 <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '4px', overflow: 'hidden', height: '6px' }}>
                                   <div style={{
                                     height: '100%',
-                                    width: `${Math.min(100, (queriedInfo.free_psram / (4 * 1024 * 1024)) * 100).toFixed(0)}%`,
+                                    width: '100%',
                                     background: 'linear-gradient(90deg, #00e676, #00ffcc)',
-                                    borderRadius: '4px',
-                                    transition: 'width 0.4s ease'
+                                    borderRadius: '4px'
                                   }} />
                                 </div>
-                              )}
-                            </div>
-                          ) : (diagnosticsDetails.psram || diagnostics.psram === 'OK') ? (
-                            <div>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontSize: '11px', fontFamily: 'monospace', marginBottom: '8px' }}>
-                                <div><span style={{ color: '#8080a0' }}>PSRAM Detail:</span> <span style={{ color: '#00e676', fontWeight: 'bold' }}>{diagnosticsDetails.psram || 'OK'}</span></div>
-                                <div><span style={{ color: '#8080a0' }}>Status:</span> <span style={{ color: '#00e676', fontWeight: 'bold' }}>Present & Active</span></div>
                               </div>
-                              <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '4px', overflow: 'hidden', height: '6px' }}>
-                                <div style={{
-                                  height: '100%',
-                                  width: '100%',
-                                  background: 'linear-gradient(90deg, #00e676, #00ffcc)',
-                                  borderRadius: '4px'
-                                }} />
+                            ) : (
+                              <div style={{ fontSize: '11px', color: '#8080a0', fontStyle: 'italic' }}>
+                                Connect via HTTP and query device info to see live PSRAM readings.
                               </div>
-                            </div>
-                          ) : (
-                            <div style={{ fontSize: '11px', color: '#8080a0', fontStyle: 'italic' }}>
-                              Connect via HTTP and query device info to see live PSRAM readings.
-                            </div>
-                          )}
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
@@ -4257,8 +4263,19 @@ Overall Status : ${overallStatus}
                       <div><span style={{ color: '#8080a0' }}>Framework:</span> Arduino v2.0.6 & ESP-IDF</div>
                       <div><span style={{ color: '#8080a0' }}>Filesystem:</span> SPIFFS (credential storage)</div>
                       <div><span style={{ color: '#8080a0' }}>Active Fw:</span> v{queriedInfo?.fw_version || '3.2.0'} (Updated)</div>
-                      <div><span style={{ color: '#8080a0' }}>Free Heap:</span> {queriedInfo?.free_heap ? `${(queriedInfo.free_heap / 1024).toFixed(1)} KB` : '182.4 KB (Estimated)'}</div>
-                      <div><span style={{ color: '#8080a0' }}>Free PSRAM:</span> <span style={{ color: queriedInfo?.free_psram > 0 ? '#00e676' : queriedInfo?.free_psram === 0 ? '#ff3366' : '#8080a0' }}>{queriedInfo?.free_psram != null ? (queriedInfo.free_psram === 0 ? 'Not Detected' : `${(queriedInfo.free_psram / 1024).toFixed(1)} KB`) : 'N/A'}</span></div>
+                      <div><span style={{ color: '#8080a0' }}>Free Heap:</span> {(() => {
+                        const freeHeap = queriedInfo ? (queriedInfo.free_heap !== undefined ? queriedInfo.free_heap : queriedInfo.heap) : null;
+                        return freeHeap ? `${(freeHeap / 1024).toFixed(1)} KB` : '182.4 KB (Estimated)';
+                      })()}</div>
+                      <div><span style={{ color: '#8080a0' }}>Free PSRAM:</span> {(() => {
+                        const freePsram = queriedInfo ? (queriedInfo.free_psram !== undefined ? queriedInfo.free_psram : queriedInfo.psram) : null;
+                        if (freePsram == null) return <span style={{ color: '#8080a0' }}>N/A</span>;
+                        return (
+                          <span style={{ color: freePsram > 0 ? '#00e676' : '#ff3366' }}>
+                            {freePsram === 0 ? 'Not Detected' : `${(freePsram / 1024).toFixed(1)} KB`}
+                          </span>
+                        );
+                      })()}</div>
                       <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#8080a0' }}>Telemetry Ports:</span> TCP/9000 (Data), UDP/5002 (Discovery)</div>
                       <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#8080a0' }}>HTTP API Services:</span> TCP/8000 (Diagnostics, OTA, Files)</div>
                     </div>
@@ -4358,6 +4375,50 @@ Overall Status : ${overallStatus}
 
   return (
     <>
+      {/* Floating DB status notification in bottom right */}
+      {dbStatus.mongodb === 'CONNECTED' && (
+        <div className={`db-floating-status ${dbStatus.dbExistsStatus}`} style={{
+          position: 'fixed',
+          bottom: '25px',
+          right: '25px',
+          zIndex: 9999,
+          background: 'rgba(5, 10, 25, 0.85)',
+          backdropFilter: 'blur(10px)',
+          border: `1px solid ${dbStatus.dbExistsStatus === 'exists' ? 'rgba(0, 255, 102, 0.3)' : dbStatus.dbExistsStatus === 'not_found' ? 'rgba(255, 153, 0, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+          boxShadow: `0 8px 32px 0 rgba(0, 0, 0, 0.5), 0 0 15px ${dbStatus.dbExistsStatus === 'exists' ? 'rgba(0, 255, 102, 0.15)' : dbStatus.dbExistsStatus === 'not_found' ? 'rgba(255, 153, 0, 0.15)' : 'rgba(255, 255, 255, 0.05)'}`,
+          borderRadius: '10px',
+          padding: '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          fontSize: '12px',
+          fontFamily: 'var(--font-sans)',
+          color: '#fff',
+          transition: 'all 0.3s ease'
+        }}>
+          {dbStatus.dbExistsStatus === 'exists' ? (
+            <>
+              <span style={{ color: '#00ff66', fontSize: '15px', fontWeight: 'bold' }}>✓</span>
+              <div>
+                <span style={{ fontWeight: 'bold', color: '#00ff66' }}>Database Verified:</span> Ready to push data.
+              </div>
+            </>
+          ) : dbStatus.dbExistsStatus === 'not_found' ? (
+            <>
+              <span style={{ color: '#ffaa00', fontSize: '15px', fontWeight: 'bold' }}>⚠️</span>
+              <div>
+                <span style={{ fontWeight: 'bold', color: '#ffaa00' }}>Database Not Found:</span> Auto-creates on write.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="pulse-dot" style={{ background: 'var(--accent-pink)', width: '6px', height: '6px', borderRadius: '50%' }} />
+              <div>Verifying database existence...</div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Frameless window header bar */}
       <div className="window-titlebar">
         <div className="titlebar-logo">
@@ -5554,47 +5615,6 @@ Overall Status : ${overallStatus}
               </div>
             </header>
 
-            {/* Database existence notification / alert */}
-            {dbStatus.mongodb === 'CONNECTED' && dbStatus.dbExistsStatus === 'not_found' && (
-              <div className="db-alert-banner warning" style={{
-                background: 'rgba(255, 153, 0, 0.1)',
-                border: '1px solid rgba(255, 153, 0, 0.3)',
-                borderRadius: '8px',
-                padding: '12px 20px',
-                marginBottom: '20px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                color: '#ffaa00',
-                fontSize: '13px'
-              }}>
-                <span style={{ fontSize: '16px' }}>⚠️</span>
-                <div>
-                  <strong>Database Not Found:</strong> The database <code>IOT_Monitor_System</code> is not found in MongoDB. It will be auto-created on the first write.
-                </div>
-              </div>
-            )}
-
-            {dbStatus.mongodb === 'CONNECTED' && dbStatus.dbExistsStatus === 'exists' && (
-              <div className="db-alert-banner success" style={{
-                background: 'rgba(0, 255, 102, 0.1)',
-                border: '1px solid rgba(0, 255, 102, 0.3)',
-                borderRadius: '8px',
-                padding: '12px 20px',
-                marginBottom: '20px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                color: '#00ff66',
-                fontSize: '13px'
-              }}>
-                <span style={{ fontSize: '16px' }}>✓</span>
-                <div>
-                  <strong>Database Verified:</strong> Database <code>IOT_Monitor_System</code> found correctly. Now you can push the data.
-                </div>
-              </div>
-            )}
-
             <div className="dashboard-layout-row">
               <div className="dashboard-left-col">
                 <div>
@@ -5611,11 +5631,17 @@ Overall Status : ${overallStatus}
 
             {connectionMode !== 'ap' && (
               <div className="dashboard-middle-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px', marginBottom: '20px' }}>
-                {dashboardLayout.slice(3, 5).map(id => renderDashboardCard(id))}
+                {dashboardLayout
+                  .filter(id => id !== 'connection-panel' && id !== 'detected-devices-panel' && id !== 'diagnostic-board')
+                  .slice(0, 2)
+                  .map(id => renderDashboardCard(id))}
               </div>
             )}
 
-            {renderDashboardCard(dashboardLayout[5])}
+            {renderDashboardCard(
+              dashboardLayout
+                .filter(id => id !== 'connection-panel' && id !== 'detected-devices-panel' && id !== 'diagnostic-board')[2]
+            )}
 
             {/* System Boot & Update Orchestrator */}
             {false && (
