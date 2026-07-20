@@ -262,6 +262,12 @@ function connectDatabase(customURI) {
     .then(() => {
       mongodbConnected = true;
       console.log('[DATABASE] MongoDB connection established successfully.');
+      try {
+        const mongoDbCreator = require('./MongoDB_Creator');
+        mongoDbCreator.initializeDatabase(rawURI);
+      } catch (e) {
+        console.warn('[DATABASE] Error triggering auto collection init:', e.message);
+      }
       return mongoose.connection;
     })
     .catch((err) => {

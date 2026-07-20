@@ -212,6 +212,13 @@ void resetDiagnosticsResults() {
   }
 }
 
+// Forward declarations
+void loadUuidConfig();
+void saveUuidConfig();
+bool mount(const char *partition);
+bool unmount();
+void setFloatValue(const char *key, float val);
+
 volatile bool testRunning = false;
 volatile bool pendingAll = false;
 volatile int pendingTestID = -1;
@@ -638,7 +645,7 @@ void testRS232() {
              hexStr(resp, min(rn, (size_t)16)).c_str(), (unsigned)rn);
       passes++;
     } else {
-      logLn("       Sent OK (No response frame check needed)");
+      logLn("       No response");
     }
 
     uint32_t nextSend = millis() + CONT_INTERVAL;
@@ -653,9 +660,9 @@ void testRS232() {
               "MUX OK | Device responded " + String(passes) + "/" +
                   String(attempts) + " times");
   } else {
-    setResult(T_RS232, S_FAIL,
-              "ERROR: No response from slave (" + String(attempts) +
-                  " rounds)");
+    setResult(T_RS232, S_WARN,
+              "MUX switched OK · no device responded (" + String(attempts) +
+                  " attempts)");
   }
 
   testRunning = false;
@@ -2507,6 +2514,48 @@ void processWiFiEvents() {
     queueTcpNotification("{\"status\":\"STA_GOT_IP\",\"ip\":\"" + ip + "\"}");
     sendBootSuccessPayload();
   }
+}
+
+#define MOUNT_STATUS "mount_status"
+
+float mountStatusVal = 0.0f;
+void setFloatValue(const char *key, float val) {
+  mountStatusVal = val;
+  logFmt("[STORAGE] Set status '%s' = %.1f\n", key, val);
+}
+
+bool mount(const char *partition)
+{
+  if (SPIFFS.begin(true, partition))
+  {
+    if (String(partition) == "core")
+    {
+      setFloatValue(MOUNT_STATUS, 1);
+    }
+    else if (String(partition) == "config")
+    {
+      setFloatValue(MOUNT_STATUS, 2);
+    }
+    return 1;
+  }
+  else
+  {
+    if (String(partition) == "storage")
+    {
+      setFloatValue(MOUNT_STATUS, -1);
+    }
+    else if (String(partition) == "config")
+    {
+      setFloatValue(MOUNT_STATUS, -2);
+    }
+    return 0;
+  }
+}
+
+bool unmount()
+{
+  SPIFFS.end();
+  return 1;
 }
 
 void saveUuidConfig() {

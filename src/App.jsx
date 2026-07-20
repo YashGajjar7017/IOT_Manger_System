@@ -275,6 +275,20 @@ export default function App() {
   const [modbusMode, setModbusMode] = useState('direct');
   const [modbusDisplay32, setModbusDisplay32] = useState(true);
 
+  // Modbus Modpoll view states (Request 7)
+  const [modbusViewStyle, setModbusViewStyle] = useState('modpoll'); // 'modpoll' | 'cards'
+  const [modbusSearchQuery, setModbusSearchQuery] = useState('');
+  const [modbusTxCount, setModbusTxCount] = useState(0);
+  const [modbusErrCount, setModbusErrCount] = useState(0);
+
+  // Arduino CLI Upload Terminal states (Request 2 & 3)
+  const [usbFlashLogs, setUsbFlashLogs] = useState([]);
+  const [usbFlashProgressState, setUsbFlashProgressState] = useState({ status: 'idle', progress: 0, message: '' });
+  const [showUsbTerminalModal, setShowUsbTerminalModal] = useState(false);
+
+  // Database Collections Init state (Request 4)
+  const [isInitDbLoading, setIsInitDbLoading] = useState(false);
+
   const [showGprsConsole, setShowGprsConsole] = useState(false);
   const [gprsCommandInput, setGprsCommandInput] = useState('');
   const [continuousDiagnostics, setContinuousDiagnostics] = useState(false);
@@ -1269,18 +1283,27 @@ export default function App() {
     };
     ipcRenderer.on('ota-progress', onOtaProgress);
 
+    const onUsbFlashOutput = (event, { type, line }) => {
+      setUsbFlashLogs(prev => {
+        const next = [...prev, { time: new Date().toLocaleTimeString(), type, text: line }];
+        if (next.length > 800) next.shift();
+        return next;
+      });
+    };
+    ipcRenderer.on('usb-flash-output', onUsbFlashOutput);
+
     const onUsbFlashProgress = (event, payload) => {
+      setUsbFlashProgressState(payload);
       if (payload.status === 'compiling' || payload.status === 'uploading') {
         setIsFlashingUsb(true);
+        setShowUsbTerminalModal(true);
         addLogLine(`[USB FLASH PROGRESS] ${payload.message || 'Processing...'} (${payload.progress}%)`, 'info');
       } else if (payload.status === 'success') {
         setIsFlashingUsb(false);
         addLogLine(`[USB FLASH SUCCESS] ${payload.message}`, 'success');
-        alert('USB Flash Completed successfully!');
       } else if (payload.status === 'error') {
         setIsFlashingUsb(false);
         addLogLine(`[USB FLASH ERROR] Flashing failed: ${payload.message}`, 'error');
-        alert(`USB Flashing Failed:\n${payload.message}`);
       }
     };
     ipcRenderer.on('usb-flash-progress', onUsbFlashProgress);
@@ -2208,11 +2231,13 @@ Overall Status : ${overallStatus}
   const triggerModbusRead = async () => {
     setIsReadingModbus(true);
     setModbusError(null);
+    setModbusTxCount(prev => prev + 1);
 
     if (modbusMode === 'gateway') {
       if (!connection.type) {
         alert('Gateway must be connected via TCP or Serial to read registers in Gateway mode.');
         setIsReadingModbus(false);
+        setModbusErrCount(prev => prev + 1);
         return;
       }
       sendControlCommand(`READ_MODBUS:${modbusStartReg}:${modbusCount}`);
@@ -2235,11 +2260,13 @@ Overall Status : ${overallStatus}
           setModbusData32(result.values || {});
           addLogLine(`[MODBUS] Direct query success. Read ${result.raw16.length} registers.`, 'success');
         } else {
+          setModbusErrCount(prev => prev + 1);
           setModbusError(result.error || 'Modbus communication error');
           addLogLine(`[MODBUS ERROR] Direct query failed: ${result.error}`, 'error');
         }
       } catch (err) {
         setIsReadingModbus(false);
+        setModbusErrCount(prev => prev + 1);
         setModbusError(err.message);
         addLogLine(`[MODBUS ERROR] Direct query exception: ${err.message}`, 'error');
       }
@@ -2373,27 +2400,80 @@ Overall Status : ${overallStatus}
   const [autoConnectMode, setAutoConnectMode] = useState(false);
 
   const connectSerial = () => {
-    if (!selectedSerialPort) return;
-    ipcRenderer.send('connect-serial', { portPath: selectedSerialPort, baudRate: selectedBaud, pcbNumber });
+    let port = selectedSerialPort;
+    if (!port || port === 'CUSTOM_PORT') {
+      port = (serialPorts.length > 0 ? serialPorts[0].path : null);
+    }
+    if (!port) {
+      alert('No COM port available or selected. Please select a port or click "Auto-Scan & Connect".');
+      return;
+    }
+    setSelectedSerialPort(port);
+    addLogLine(`[SERIAL] Connecting to port: ${port} @ ${selectedBaud || '115200'} baud...`, 'system');
+    ipcRenderer.send('connect-serial', { portPath: port, baudRate: selectedBaud || '115200', pcbNumber });
+  };
+
+  const autoScanAndConnect = () => {
+    addLogLine('[AUTO CONNECT] Auto-scanning available COM ports and wireless gateways...', 'system');
+    refreshPorts();
+
+    setTimeout(() => {
+      let targetPort = selectedSerialPort && selectedSerialPort !== 'CUSTOM_PORT' ? selectedSerialPort : null;
+      if (!targetPort && serialPorts.length > 0) {
+        targetPort = serialPorts[0].path;
+      }
+
+      if (targetPort) {
+        setSelectedSerialPort(targetPort);
+        addLogLine(`[AUTO CONNECT] Auto-connecting to serial port: ${targetPort}...`, 'system');
+        ipcRenderer.send('connect-serial', { portPath: targetPort, baudRate: selectedBaud || '115200', pcbNumber });
+      } else {
+        const ipToConnect = wifiIp || directConnectIp || '192.168.0.1';
+        addLogLine(`[AUTO CONNECT] Auto-connecting to TCP telemetry server at ${ipToConnect}:9000...`, 'system');
+        ipcRenderer.send('connect-tcp', { ip: ipToConnect, port: wifiPort || '9000', pcbNumber });
+      }
+    }, 400);
   };
 
   const handleUsbFlash = () => {
-    const port = selectedSerialPort || (connection.type === 'serial' ? connection.target : null);
+    const port = selectedSerialPort || (serialPorts.length > 0 ? serialPorts[0].path : null) || (connection.type === 'serial' ? connection.target : null);
     if (!port || port === 'CUSTOM_PORT') {
-      alert('Please select a valid COM port first.');
+      alert('Please select or scan a valid COM port first before flashing.');
       return;
     }
 
     const fqbn = localStorage.getItem('arduino_fqbn') || 'esp32:esp32:esp32s3';
 
     if (connection.type === 'serial') {
-      addLogLine(`[USB FLASH] Disconnecting active serial connection on ${port} to release port for flashing...`);
+      addLogLine(`[USB FLASH] Releasing active serial connection on ${port}...`);
       ipcRenderer.send('disconnect-active');
     }
 
+    setUsbFlashLogs([]);
+    setUsbFlashProgressState({ status: 'compiling', progress: 5, message: 'Initiating compiler...' });
     setIsFlashingUsb(true);
+    setShowUsbTerminalModal(true);
     addLogLine(`[USB FLASH] Initiating compiler & flash upload to ${port} using FQBN: ${fqbn}...`);
     ipcRenderer.send('compile-and-flash-serial', { port, fqbn });
+  };
+
+  const handleInitDatabaseCollections = async () => {
+    setIsInitDbLoading(true);
+    try {
+      const res = await ipcRenderer.invoke('init-database-collections');
+      if (res.success) {
+        addLogLine(`[DATABASE ACKNOWLEDGEMENT] ${res.message}`, 'success');
+        alert(`Database Acknowledgement:\n\n${res.message}`);
+      } else {
+        addLogLine(`[DATABASE ACKNOWLEDGEMENT ERROR] ${res.message}`, 'error');
+        alert(`Database Initialization Error:\n\n${res.message}`);
+      }
+    } catch (err) {
+      addLogLine(`[DATABASE ACKNOWLEDGEMENT EXCEPTION] ${err.message}`, 'error');
+      alert(`Database Error:\n\n${err.message}`);
+    } finally {
+      setIsInitDbLoading(false);
+    }
   };
 
   const checkCliInstallation = async () => {
@@ -5894,6 +5974,20 @@ Overall Status : ${overallStatus}
               </div>
             </header>
 
+            {/* Modpoll Screenshot Style Header Bar (Request 7) */}
+            <div className="glass-card" style={{ marginBottom: '15px', padding: '12px 18px', background: '#0b101d', border: '1px solid #1e293b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', fontFamily: 'Consolas, Monaco, "Courier New", monospace', fontSize: '13px' }}>
+                <div style={{ color: '#60a5fa', fontWeight: 'bold' }}>
+                  Tx = {modbusTxCount} : Err = {modbusErrCount} : ID = {modbusSlaveId || 1} : F = {modbusRegType === 'input' ? '04' : '03'} : SR = {telemetryRate || 1000}ms
+                </div>
+                <div style={{ fontWeight: 'bold' }}>
+                  <span style={{ color: (modbusError || modbusData.length === 0) ? '#ef4444' : '#10b981' }}>
+                    {(modbusError || modbusData.length === 0) ? 'No Connection' : 'Connected'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div className="glass-card" style={{ marginBottom: '15px', padding: '10px 15px' }}>
               <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: '8px', fontSize: '11px' }}>
                 <div style={{ flex: '1 1 120px' }}>
@@ -6015,7 +6109,7 @@ Overall Status : ${overallStatus}
                     type="number"
                     value={modbusStartReg}
                     onChange={(e) => setModbusStartReg(Math.max(0, parseInt(e.target.value) || 0))}
-                    placeholder="e.g. 2000"
+                    placeholder="e.g. 43807"
                     style={{
                       width: '100%',
                       height: '28px',
@@ -6051,11 +6145,12 @@ Overall Status : ${overallStatus}
                   />
                 </div>
 
-                <div style={{ flex: '1 1 120px' }}>
-                  <label style={{ display: 'block', marginBottom: '3px', color: 'var(--text-dim)', fontSize: '10px' }}>Display Format</label>
+                {/* View Mode Toggle (Modpoll vs Cards) */}
+                <div style={{ flex: '1 1 130px' }}>
+                  <label style={{ display: 'block', marginBottom: '3px', color: 'var(--text-dim)', fontSize: '10px' }}>Grid View Style</label>
                   <select
-                    value={modbusDisplay32 ? '32bit' : '16bit'}
-                    onChange={(e) => setModbusDisplay32(e.target.value === '32bit')}
+                    value={modbusViewStyle}
+                    onChange={(e) => setModbusViewStyle(e.target.value)}
                     style={{
                       width: '100%',
                       height: '28px',
@@ -6069,9 +6164,49 @@ Overall Status : ${overallStatus}
                       cursor: 'pointer'
                     }}
                   >
-                    <option value="32bit" style={{ background: '#1c1b22', color: 'white' }}>32-Bit Grouped (Long Endian)</option>
-                    <option value="16bit" style={{ background: '#1c1b22', color: 'white' }}>16-Bit Raw Registers</option>
+                    <option value="modpoll" style={{ background: '#1c1b22', color: 'white' }}>Modpoll Grid (5 Columns)</option>
+                    <option value="cards" style={{ background: '#1c1b22', color: 'white' }}>Detailed Cards View</option>
                   </select>
+                </div>
+
+                {/* Register Search Input & Button (Request 7) */}
+                <div style={{ flex: '1.5 1 180px', display: 'flex', gap: '5px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', marginBottom: '3px', color: 'var(--text-dim)', fontSize: '10px' }}>Search Address</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 43855"
+                      value={modbusSearchQuery}
+                      onChange={(e) => setModbusSearchQuery(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: '28px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid var(--glass-border)',
+                        borderRadius: '4px',
+                        color: 'white',
+                        padding: '0 8px',
+                        fontSize: '11px',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      if (modbusSearchQuery.trim()) {
+                        const targetReg = parseInt(modbusSearchQuery.trim());
+                        if (!isNaN(targetReg) && targetReg >= 0) {
+                          setModbusStartReg(targetReg);
+                          triggerModbusRead();
+                        }
+                      }
+                    }}
+                    style={{ height: '28px', alignSelf: 'flex-end', margin: 0, padding: '0 10px', fontSize: '11px' }}
+                    title="Jump to & read register"
+                  >
+                    🔍 Find
+                  </button>
                 </div>
 
                 <div style={{ flex: '1.2 1 120px' }}>
@@ -6114,121 +6249,161 @@ Overall Status : ${overallStatus}
             <div className="glass-card" style={{ padding: '20px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                 <h3 style={{ margin: 0, fontSize: '1rem', color: 'white' }}>
-                  Register Data Grid ({modbusDisplay32 ? Object.keys(grouped32BitData).length : modbusData.length} records shown)
+                  {modbusViewStyle === 'modpoll' ? 'Mbpoll Standard Register Table (5 Columns)' : 'Register Data Grid Cards'} ({modbusData.length} records)
                 </h3>
                 <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
-                  Format: Address [Decimal | Hex | Binary]
+                  {modbusViewStyle === 'modpoll' ? 'Format: [Address] = [Value]' : 'Format: Address [Decimal | Hex | Binary]'}
                 </div>
               </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', maxHeight: '500px', paddingRight: '5px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
-                  {modbusDisplay32 ? (
-                    // 32-bit grouped view
-                    Object.keys(grouped32BitData).sort((a, b) => parseInt(a) - parseInt(b)).map((key) => {
-                      const regAddr = parseInt(key);
-                      const val = grouped32BitData[key];
-                      if (val === null || val === undefined) {
-                        return (
-                          <div key={regAddr} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                              REG {regAddr} - {regAddr + 1}
-                            </span>
-                            <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--text-muted)' }}>
-                              NULL / TIMEOUT
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      const hasNext = (regAddr + 1 - modbusStartReg < modbusData.length);
-                      const hexStr = '0x' + val.toString(16).toUpperCase().padStart(8, '0');
-                      const binStr = val.toString(2).padStart(32, '0').replace(/(.{4})/g, '$1 ').trim();
-
-                      return (
-                        <div key={regAddr} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(0, 240, 255, 0.1)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px', transition: 'all 0.2s ease' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '11px', color: 'var(--accent-pink)', fontFamily: 'var(--font-mono)', fontWeight: 'bold' }}>
-                              REG {regAddr}{hasNext ? ` - ${regAddr + 1}` : ''} (32-Bit)
-                            </span>
-                            <span style={{ fontSize: '10px', color: 'var(--text-dim)', background: 'rgba(255,255,255,0.04)', padding: '1px 5px', borderRadius: '4px', fontFamily: 'var(--font-mono)' }}>
-                              {hexStr}
-                            </span>
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '6px' }}>
-                            <div>
-                              <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>UINT32 (Unsigned)</div>
-                              <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)' }}>{val}</div>
-                            </div>
-                            <div>
-                              <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>INT32 (Signed)</div>
-                              <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)' }}>{val | 0}</div>
-                            </div>
-                            <div style={{ gridColumn: '1 / -1' }}>
-                              <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>FLOAT32 (IEEE-754)</div>
-                              <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)' }}>{parseFloat32(val).toFixed(6).replace(/\.?0+$/, "")}</div>
-                            </div>
-                          </div>
-                          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', opacity: 0.8, marginTop: '2px' }}>
-                            BIN: {binStr}
-                          </div>
-                        </div>
-                      );
-                    })
+              {modbusViewStyle === 'modpoll' ? (
+                /* Modpoll 5-Column Screenshot Style View (Request 7) */
+                <div style={{
+                  flex: 1,
+                  background: '#090d16',
+                  borderRadius: '6px',
+                  border: '1px solid #1e293b',
+                  padding: '15px',
+                  fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+                  fontSize: '12.5px',
+                  overflowY: 'auto',
+                  maxHeight: '480px',
+                  lineHeight: '1.6'
+                }}>
+                  {modbusData.length === 0 ? (
+                    <div style={{ color: '#ef4444', textAlign: 'left', fontWeight: 'bold' }}>
+                      No Connection / Data not available. Click "Query Registers" to poll.
+                    </div>
                   ) : (
-                    // 16-bit raw registers view
-                    modbusData.map((val, idx) => {
-                      const regAddr = modbusStartReg + idx;
-                      if (val === null || val === undefined) {
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px 12px' }}>
+                      {modbusData.map((val, idx) => {
+                        const regAddr = modbusStartReg + idx;
+                        const isMatch = modbusSearchQuery && regAddr.toString().includes(modbusSearchQuery.trim());
                         return (
-                          <div key={regAddr} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                              REG {regAddr}
+                          <div
+                            key={regAddr}
+                            style={{
+                              display: 'flex',
+                              justify: 'space-between',
+                              padding: '2px 6px',
+                              borderRadius: '3px',
+                              background: isMatch ? 'rgba(0, 240, 255, 0.25)' : 'transparent',
+                              border: isMatch ? '1px solid #00f0ff' : 'none',
+                              color: isMatch ? '#fff' : '#cbd5e1'
+                            }}
+                          >
+                            <span style={{ color: '#94a3b8' }}>{regAddr} =</span>
+                            <span style={{ color: val === null ? '#ef4444' : '#38bdf8', fontWeight: 'bold', marginLeft: '8px' }}>
+                              {val === null ? '0' : val}
                             </span>
-                            <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--text-muted)' }}>
-                              NULL / TIMEOUT
-                            </div>
                           </div>
                         );
-                      }
-                      const hexStr = '0x' + val.toString(16).toUpperCase().padStart(4, '0');
-                      const binStr = val.toString(2).padStart(16, '0').replace(/(.{4})/g, '$1 ').trim();
-                      return (
-                        <div key={regAddr} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px', transition: 'all 0.2s ease' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '11px', color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)', fontWeight: 'bold' }}>
-                              REG {regAddr} (16-Bit)
-                            </span>
-                            <span style={{ fontSize: '10px', color: 'var(--text-dim)', background: 'rgba(255,255,255,0.04)', padding: '1px 5px', borderRadius: '4px', fontFamily: 'var(--font-mono)' }}>
-                              {hexStr}
-                            </span>
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '6px' }}>
-                            <div>
-                              <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>UINT16 (Unsigned)</div>
-                              <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)' }}>{val}</div>
-                            </div>
-                            <div>
-                              <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>INT16 (Signed)</div>
-                              <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)' }}>{(val << 16) >> 16}</div>
-                            </div>
-                          </div>
-                          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', opacity: 0.8, marginTop: '2px' }}>
-                            BIN: {binStr}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-
-                  {modbusData.length === 0 && (
-                    <div style={{ gridColumn: '1 / -1', padding: '60px 0', textAlign: 'center', color: 'var(--text-dim)' }}>
-                      <div style={{ fontSize: '2rem', marginBottom: '10px' }}>📊</div>
-                      No register data read yet. Configure the parameters above and click "Query Registers".
+                      })}
                     </div>
                   )}
                 </div>
-              </div>
+              ) : (
+                /* Cards View */
+                <div style={{ flex: 1, overflowY: 'auto', maxHeight: '500px', paddingRight: '5px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+                    {modbusDisplay32 ? (
+                      Object.keys(grouped32BitData).sort((a, b) => parseInt(a) - parseInt(b)).map((key) => {
+                        const regAddr = parseInt(key);
+                        const val = grouped32BitData[key];
+                        if (val === null || val === undefined) {
+                          return (
+                            <div key={regAddr} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                REG {regAddr} - {regAddr + 1}
+                              </span>
+                              <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--text-muted)' }}>
+                                NULL / TIMEOUT
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        const hasNext = (regAddr + 1 - modbusStartReg < modbusData.length);
+                        const hexStr = '0x' + val.toString(16).toUpperCase().padStart(8, '0');
+                        const binStr = val.toString(2).padStart(32, '0').replace(/(.{4})/g, '$1 ').trim();
+
+                        return (
+                          <div key={regAddr} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(0, 240, 255, 0.1)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px', transition: 'all 0.2s ease' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '11px', color: 'var(--accent-pink)', fontFamily: 'var(--font-mono)', fontWeight: 'bold' }}>
+                                REG {regAddr}{hasNext ? ` - ${regAddr + 1}` : ''} (32-Bit)
+                              </span>
+                              <span style={{ fontSize: '10px', color: 'var(--text-dim)', background: 'rgba(255,255,255,0.04)', padding: '1px 5px', borderRadius: '4px', fontFamily: 'var(--font-mono)' }}>
+                                {hexStr}
+                              </span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '6px' }}>
+                              <div>
+                                <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>UINT32 (Unsigned)</div>
+                                <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)' }}>{val}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>INT32 (Signed)</div>
+                                <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)' }}>{val | 0}</div>
+                              </div>
+                              <div style={{ gridColumn: '1 / -1' }}>
+                                <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>FLOAT32 (IEEE-754)</div>
+                                <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)' }}>{parseFloat32(val).toFixed(6).replace(/\.?0+$/, "")}</div>
+                              </div>
+                            </div>
+                            <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', opacity: 0.8, marginTop: '2px' }}>
+                              BIN: {binStr}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      modbusData.map((val, idx) => {
+                        const regAddr = modbusStartReg + idx;
+                        if (val === null || val === undefined) {
+                          return (
+                            <div key={regAddr} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                REG {regAddr}
+                              </span>
+                              <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--text-muted)' }}>
+                                NULL / TIMEOUT
+                              </div>
+                            </div>
+                          );
+                        }
+                        const hexStr = '0x' + val.toString(16).toUpperCase().padStart(4, '0');
+                        const binStr = val.toString(2).padStart(16, '0').replace(/(.{4})/g, '$1 ').trim();
+                        return (
+                          <div key={regAddr} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px', transition: 'all 0.2s ease' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '11px', color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)', fontWeight: 'bold' }}>
+                                REG {regAddr} (16-Bit)
+                              </span>
+                              <span style={{ fontSize: '10px', color: 'var(--text-dim)', background: 'rgba(255,255,255,0.04)', padding: '1px 5px', borderRadius: '4px', fontFamily: 'var(--font-mono)' }}>
+                                {hexStr}
+                              </span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '6px' }}>
+                              <div>
+                                <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>UINT16 (Unsigned)</div>
+                                <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)' }}>{val}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>INT16 (Signed)</div>
+                                <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', fontFamily: 'var(--font-mono)' }}>{(val << 16) >> 16}</div>
+                              </div>
+                            </div>
+                            <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', opacity: 0.8, marginTop: '2px' }}>
+                              BIN: {binStr}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
@@ -10181,6 +10356,147 @@ Overall Status : ${overallStatus}
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* USB Upload Progress & Live Terminal Modal Showcase (Request 2 & 3) */}
+      {(showUsbTerminalModal || isFlashingUsb) && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 9999,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: '780px',
+            background: '#0d1117',
+            border: '1px solid #30363d',
+            borderRadius: '12px',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.8)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* Terminal Header */}
+            <div style={{
+              background: '#161b22',
+              padding: '12px 20px',
+              borderBottom: '1px solid #30363d',
+              display: 'flex',
+              justify: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '18px' }}>⚡</span>
+                <div>
+                  <h4 style={{ margin: 0, color: 'white', fontSize: '14px', fontWeight: 'bold' }}>
+                    USB Firmware Compiler &amp; Live CLI Terminal Showcase
+                  </h4>
+                  <span style={{ fontSize: '11px', color: '#8b949e' }}>
+                    {usbFlashProgressState.message || 'Processing firmware operations...'}
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{
+                  padding: '3px 10px',
+                  borderRadius: '12px',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  background: usbFlashProgressState.status === 'success' ? 'rgba(46, 160, 67, 0.2)' : usbFlashProgressState.status === 'error' ? 'rgba(248, 81, 73, 0.2)' : 'rgba(56, 139, 253, 0.2)',
+                  color: usbFlashProgressState.status === 'success' ? '#3fb950' : usbFlashProgressState.status === 'error' ? '#f85149' : '#58a6ff',
+                  border: `1px solid ${usbFlashProgressState.status === 'success' ? '#2ea043' : usbFlashProgressState.status === 'error' ? '#f85149' : '#388bfd'}`
+                }}>
+                  {usbFlashProgressState.status.toUpperCase()} ({usbFlashProgressState.progress || 0}%)
+                </span>
+                {(!isFlashingUsb || usbFlashProgressState.status === 'success' || usbFlashProgressState.status === 'error') && (
+                  <button
+                    onClick={() => setShowUsbTerminalModal(false)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#8b949e',
+                      cursor: 'pointer',
+                      fontSize: '18px',
+                      padding: '0 5px'
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div style={{ background: '#21262d', height: '6px', width: '100%', position: 'relative' }}>
+              <div style={{
+                height: '100%',
+                width: `${usbFlashProgressState.progress || 0}%`,
+                background: usbFlashProgressState.status === 'error' ? '#f85149' : 'linear-gradient(90deg, #388bfd 0%, #2ea043 100%)',
+                transition: 'width 0.3s ease'
+              }}></div>
+            </div>
+
+            {/* Live Monospaced CLI Terminal Console */}
+            <div style={{
+              background: '#040d21',
+              padding: '15px',
+              height: '350px',
+              overflowY: 'auto',
+              fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+              fontSize: '12px',
+              color: '#c9d1d9',
+              lineHeight: 1.5,
+              textAlign: 'left'
+            }}>
+              {usbFlashLogs.map((log, i) => (
+                <div key={i} style={{
+                  color: log.type === 'stderr' ? '#ff7b72' : log.type === 'system' ? '#79c0ff' : '#a5d6ff',
+                  marginBottom: '3px',
+                  wordBreak: 'break-all'
+                }}>
+                  <span style={{ color: '#484f58', marginRight: '8px' }}>[{log.time}]</span>
+                  {log.text}
+                </div>
+              ))}
+              {usbFlashLogs.length === 0 && (
+                <div style={{ color: '#484f58', fontStyle: 'italic', textAlign: 'center', paddingTop: '140px' }}>
+                  Starting arduino-cli process... Output streams will appear here in real-time.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              background: '#161b22',
+              padding: '12px 20px',
+              borderTop: '1px solid #30363d',
+              display: 'flex',
+              justify: 'space-between',
+              alignItems: 'center'
+            }}>
+              <span style={{ fontSize: '11px', color: '#8b949e' }}>
+                Total CLI logs captured: {usbFlashLogs.length} lines
+              </span>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowUsbTerminalModal(false)}
+                disabled={isFlashingUsb && usbFlashProgressState.status !== 'success' && usbFlashProgressState.status !== 'error'}
+                style={{ margin: 0, padding: '6px 16px', fontSize: '12px' }}
+              >
+                {isFlashingUsb ? 'Flashing in background...' : 'Close Showcase Terminal'}
+              </button>
             </div>
           </div>
         </div>

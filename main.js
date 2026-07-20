@@ -2859,6 +2859,12 @@ function getArduinoCliCmd() {
   return 'arduino-cli';
 }
 
+// IPC Handler: Manual or automated DB & collections creation / verification with acknowledgment
+ipcMain.handle('init-database-collections', async () => {
+  const mongoDbCreator = require('./backend/MongoDB_Creator');
+  return await mongoDbCreator.initializeDatabase();
+});
+
 // IPC Handler: Check if arduino-cli is installed (globally or locally)
 ipcMain.handle('check-arduino-cli-installed', async () => {
   const { exec } = require('child_process');
@@ -3402,9 +3408,9 @@ ipcMain.on('sync-code-from-github', async (event, { repoUrl, branch }) => {
   });
 });
 
-// IPC Handler: compile and upload firmware using arduino-cli
+// IPC Handler: compile and upload firmware using arduino-cli with real-time stream & progress parsing
 ipcMain.on('compile-and-flash-serial', (event, { port, fqbn }) => {
-  const { exec } = require('child_process');
+  const { spawn } = require('child_process');
   const isDev = !app.isPackaged;
   const firmwareInoPath = isDev
     ? path.join(__dirname, 'firmware', 'firmware', 'firmware.ino')
@@ -3413,41 +3419,138 @@ ipcMain.on('compile-and-flash-serial', (event, { port, fqbn }) => {
   const boardFqbn = fqbn || 'esp32:esp32:esp32s3';
   const cliCmd = getArduinoCliCmd();
 
+  // Cleanly close active serial connection to release COM port for esptool/arduino-cli
+  if (activeSerialPort && activeSerialPort.isOpen) {
+    event.reply('console-log', `[USB FLASH] Releasing COM port ${port} before uploading...`);
+    try {
+      activeSerialPort.close();
+      activeSerialPort = null;
+    } catch (e) {
+      console.warn('[USB FLASH] Error closing active serial port:', e.message);
+    }
+  }
+
   event.reply('console-log', `[USB FLASH] Preparing compilation. Target FQBN: ${boardFqbn}. COM Port: ${port}...`);
   event.reply('usb-flash-progress', { status: 'compiling', progress: 10, message: 'Compiling firmware...' });
+  event.reply('usb-flash-output', { type: 'system', line: `=== STARTING ARDUINO-CLI FIRMWARE PIPELINE ===\nTarget FQBN: ${boardFqbn}\nCOM Port: ${port}\nFirmware: ${firmwareInoPath}\n` });
 
-  const compileCmd = `${cliCmd} compile --fqbn ${boardFqbn} "${firmwareInoPath}"`;
-  event.reply('console-log', `[USB FLASH] Command: ${compileCmd}`);
+  const compileArgs = ['compile', '--fqbn', boardFqbn, firmwareInoPath];
+  event.reply('console-log', `[USB FLASH] Command: ${cliCmd} ${compileArgs.join(' ')}`);
 
-  exec(compileCmd, (compileErr, stdout, stderr) => {
-    if (stdout) event.reply('console-log', `[USB COMPILER] ${stdout}`);
-    if (stderr) event.reply('console-log', `[USB COMPILER MSG] ${stderr}`);
+  const compileProc = spawn(cliCmd, compileArgs, { shell: true });
 
-    if (compileErr) {
-      console.error('[USB FLASH] Compile error:', compileErr.message);
-      event.reply('console-log', `[USB FLASH ERROR] Compile failed: ${compileErr.message}`);
-      event.reply('usb-flash-progress', { status: 'error', message: `Compilation failed: ${compileErr.message}` });
+  let compileOutput = '';
+
+  compileProc.stdout.on('data', (data) => {
+    const text = data.toString();
+    compileOutput += text;
+    const lines = text.split('\n');
+    lines.forEach(line => {
+      if (line.trim()) {
+        event.reply('usb-flash-output', { type: 'stdout', line: line.trim() });
+        event.reply('console-log', `[USB COMPILER] ${line.trim()}`);
+      }
+    });
+  });
+
+  compileProc.stderr.on('data', (data) => {
+    const text = data.toString();
+    compileOutput += text;
+    const lines = text.split('\n');
+    lines.forEach(line => {
+      if (line.trim()) {
+        event.reply('usb-flash-output', { type: 'stderr', line: line.trim() });
+        event.reply('console-log', `[USB COMPILER MSG] ${line.trim()}`);
+      }
+    });
+  });
+
+  compileProc.on('error', (err) => {
+    console.error('[USB FLASH] Spawn compile error:', err.message);
+    event.reply('console-log', `[USB FLASH ERROR] Compile process error: ${err.message}`);
+    event.reply('usb-flash-progress', { status: 'error', message: `Compilation process failed: ${err.message}` });
+  });
+
+  compileProc.on('close', (code) => {
+    if (code !== 0) {
+      console.error(`[USB FLASH] Compile process exited with code ${code}`);
+      event.reply('console-log', `[USB FLASH ERROR] Compilation failed with exit code ${code}`);
+      event.reply('usb-flash-progress', { status: 'error', message: `Compilation failed (Exit Code ${code})` });
       return;
     }
 
-    event.reply('usb-flash-progress', { status: 'uploading', progress: 50, message: 'Compilation successful. Flashing binary...' });
+    event.reply('usb-flash-progress', { status: 'uploading', progress: 50, message: 'Compilation successful. Starting USB upload...' });
     event.reply('console-log', `[USB FLASH] Compilation complete. Uploading firmware to port ${port}...`);
+    event.reply('usb-flash-output', { type: 'system', line: `\n=== COMPILATION SUCCESSFUL (100%) ===\nInitiating upload to port ${port}...\n` });
 
-    const uploadCmd = `${cliCmd} upload -p ${port} --fqbn ${boardFqbn} "${firmwareInoPath}"`;
-    event.reply('console-log', `[USB FLASH] Command: ${uploadCmd}`);
+    const uploadArgs = ['upload', '-p', port, '--fqbn', boardFqbn, firmwareInoPath];
+    event.reply('console-log', `[USB FLASH] Command: ${cliCmd} ${uploadArgs.join(' ')}`);
 
-    exec(uploadCmd, (uploadErr, upStdout, upStderr) => {
-      if (upStdout) event.reply('console-log', `[USB UPLOADER] ${upStdout}`);
-      if (upStderr) event.reply('console-log', `[USB UPLOADER MSG] ${upStderr}`);
+    const uploadProc = spawn(cliCmd, uploadArgs, { shell: true });
 
-      if (uploadErr) {
-        console.error('[USB FLASH] Upload error:', uploadErr.message);
-        event.reply('console-log', `[USB FLASH ERROR] Upload failed: ${uploadErr.message}`);
-        event.reply('usb-flash-progress', { status: 'error', message: `Upload failed: ${uploadErr.message}` });
+    uploadProc.stdout.on('data', (data) => {
+      const text = data.toString();
+      const lines = text.split('\n');
+      lines.forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed) {
+          event.reply('usb-flash-output', { type: 'stdout', line: trimmed });
+          event.reply('console-log', `[USB UPLOADER] ${trimmed}`);
+
+          // Parse uploading progress percentage e.g. "Writing at 0x00010000... (25 %)" or "(50 %)"
+          const pctMatch = trimmed.match(/\((\d+)\s*%\)/);
+          if (pctMatch) {
+            const uploadPct = parseInt(pctMatch[1]);
+            const overallPct = Math.min(99, 50 + Math.round(uploadPct * 0.5));
+            event.reply('usb-flash-progress', {
+              status: 'uploading',
+              progress: overallPct,
+              message: `Flashing firmware binary... (${uploadPct}% uploaded)`
+            });
+          }
+        }
+      });
+    });
+
+    uploadProc.stderr.on('data', (data) => {
+      const text = data.toString();
+      const lines = text.split('\n');
+      lines.forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed) {
+          event.reply('usb-flash-output', { type: 'stderr', line: trimmed });
+          event.reply('console-log', `[USB UPLOADER MSG] ${trimmed}`);
+
+          const pctMatch = trimmed.match(/\((\d+)\s*%\)/);
+          if (pctMatch) {
+            const uploadPct = parseInt(pctMatch[1]);
+            const overallPct = Math.min(99, 50 + Math.round(uploadPct * 0.5));
+            event.reply('usb-flash-progress', {
+              status: 'uploading',
+              progress: overallPct,
+              message: `Flashing firmware binary... (${uploadPct}% uploaded)`
+            });
+          }
+        }
+      });
+    });
+
+    uploadProc.on('error', (err) => {
+      console.error('[USB FLASH] Spawn upload error:', err.message);
+      event.reply('console-log', `[USB FLASH ERROR] Upload process error: ${err.message}`);
+      event.reply('usb-flash-progress', { status: 'error', message: `Upload process failed: ${err.message}` });
+    });
+
+    uploadProc.on('close', (upCode) => {
+      if (upCode !== 0) {
+        console.error(`[USB FLASH] Upload process exited with code ${upCode}`);
+        event.reply('console-log', `[USB FLASH ERROR] Upload failed with exit code ${upCode}`);
+        event.reply('usb-flash-progress', { status: 'error', message: `Upload failed (Exit Code ${upCode}). Ensure device is in bootloader mode or port is available.` });
         return;
       }
 
       event.reply('usb-flash-progress', { status: 'success', progress: 100, message: 'Flash completed successfully!' });
+      event.reply('usb-flash-output', { type: 'system', line: `\n=== FLASH COMPLETED SUCCESSFULLY (100%) ===\nFirmware written to ESP32 on port ${port}.\n` });
       event.reply('console-log', `[USB FLASH SUCCESS] Firmware successfully booted on device on port ${port}!`);
     });
   });
