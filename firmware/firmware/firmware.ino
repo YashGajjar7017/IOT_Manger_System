@@ -660,7 +660,7 @@ void testRS232() {
               "MUX OK | Device responded " + String(passes) + "/" +
                   String(attempts) + " times");
   } else {
-    setResult(T_RS232, S_WARN,
+    setResult(T_RS232, S_FAIL,
               "MUX switched OK · no device responded (" + String(attempts) +
                   " attempts)");
   }
@@ -721,7 +721,7 @@ void testRS485() {
               "MUX OK | Device responded " + String(passes) + "/" +
                   String(attempts) + " times");
   else
-    setResult(T_RS485, S_WARN,
+    setResult(T_RS485, S_FAIL,
               "MUX switched OK · no device responded (" + String(attempts) +
                   " attempts)");
 

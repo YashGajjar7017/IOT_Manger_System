@@ -244,6 +244,46 @@ function startHeartbeatReconnection(uri) {
   }, 10000);
 }
 
+async function ensureCollectionsAndSeedAdmin() {
+  if (!mongoose.connection || !mongoose.connection.db) {
+    console.warn('[DATABASE] Connection not active, skipping collection verification.');
+    return;
+  }
+  const db = mongoose.connection.db;
+  try {
+    const existingCollections = await db.listCollections().toArray();
+    const existingNames = existingCollections.map(c => c.name);
+
+    const collectionsToCreate = [
+      "Device_Name",
+      "Troubleshoot_Logs",
+      "adminusers",
+      "certificatelogs",
+      "telemetries"
+    ];
+
+    for (const name of collectionsToCreate) {
+      if (!existingNames.includes(name)) {
+        await db.createCollection(name);
+        console.log(`[DATABASE] Automatically created collection: ${name}`);
+      }
+    }
+
+    // Seed default admin user if adminusers is empty
+    const adminCount = await AdminModel.countDocuments();
+    if (adminCount === 0) {
+      await AdminModel.create({
+        username: 'admin',
+        email: 'admin@iot-monitor.local',
+        password: 'admin_secure_gate'
+      });
+      console.log('[DATABASE] Seeded default administrator credentials (admin / admin_secure_gate).');
+    }
+  } catch (err) {
+    console.error('[DATABASE] Error in collection auto-init & seeding:', err.message);
+  }
+}
+
 function connectDatabase(customURI) {
   const rawURI = customURI || process.env.MONOGDB_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/IOT_Monitor_System';
   const mongoURI = sanitizeMongoURI(rawURI);
@@ -259,14 +299,13 @@ function connectDatabase(customURI) {
   return mongoose.connect(mongoURI, {
     serverSelectionTimeoutMS: 3000
   })
-    .then(() => {
+    .then(async () => {
       mongodbConnected = true;
       console.log('[DATABASE] MongoDB connection established successfully.');
       try {
-        const mongoDbCreator = require('./MongoDB_Creator');
-        mongoDbCreator.initializeDatabase(rawURI);
+        await ensureCollectionsAndSeedAdmin();
       } catch (e) {
-        console.warn('[DATABASE] Error triggering auto collection init:', e.message);
+        console.warn('[DATABASE] Error triggering auto collection init & seed:', e.message);
       }
       return mongoose.connection;
     })

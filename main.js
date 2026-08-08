@@ -1458,7 +1458,7 @@ app.whenReady().then(async () => {
 
             const mapStatus = (val) => {
               if (val === true || val === 'true' || val === 'OK' || val === 'PASSED' || val === 'PASS') return 'OK';
-              if (val === false || val === 'false' || val === 'ERROR' || val === 'FAILED' || val === 'FAIL') return 'ERROR';
+              if (val === false || val === 'false' || val === 'ERROR' || val === 'FAILED' || val === 'FAIL' || val === 'WARN' || val === 'WARNING') return 'ERROR';
               if (val === 'WAITING' || val === 'PENDING') return 'WAITING';
               return val;
             };
@@ -1959,7 +1959,7 @@ ipcMain.on('connect-serial', (event, { portPath, baudRate, pcbNumber }) => {
 
                     const mapStatus = (val) => {
                       if (val === true || val === 'true' || val === 'OK' || val === 'PASSED' || val === 'PASS') return 'OK';
-                      if (val === false || val === 'false' || val === 'ERROR' || val === 'FAILED' || val === 'FAIL') return 'ERROR';
+                      if (val === false || val === 'false' || val === 'ERROR' || val === 'FAILED' || val === 'FAIL' || val === 'WARN' || val === 'WARNING') return 'ERROR';
                       if (val === 'WAITING' || val === 'PENDING') return 'WAITING';
                       return val;
                     };
@@ -2172,7 +2172,7 @@ function startTcpTelemetryServer() {
 
                 const mapStatus = (val) => {
                   if (val === true || val === 'true' || val === 'OK' || val === 'PASSED' || val === 'PASS') return 'OK';
-                  if (val === false || val === 'false' || val === 'ERROR' || val === 'FAILED' || val === 'FAIL') return 'ERROR';
+                  if (val === false || val === 'false' || val === 'ERROR' || val === 'FAILED' || val === 'FAIL' || val === 'WARN' || val === 'WARNING') return 'ERROR';
                   if (val === 'WAITING' || val === 'PENDING') return 'WAITING';
                   return val;
                 };
@@ -3419,6 +3419,8 @@ ipcMain.on('compile-and-flash-serial', (event, { port, fqbn }) => {
   const boardFqbn = fqbn || 'esp32:esp32:esp32s3';
   const cliCmd = getArduinoCliCmd();
 
+  const sketchDir = path.dirname(firmwareInoPath);
+
   // Cleanly close active serial connection to release COM port for esptool/arduino-cli
   if (activeSerialPort && activeSerialPort.isOpen) {
     event.reply('console-log', `[USB FLASH] Releasing COM port ${port} before uploading...`);
@@ -3434,7 +3436,7 @@ ipcMain.on('compile-and-flash-serial', (event, { port, fqbn }) => {
   event.reply('usb-flash-progress', { status: 'compiling', progress: 10, message: 'Compiling firmware...' });
   event.reply('usb-flash-output', { type: 'system', line: `=== STARTING ARDUINO-CLI FIRMWARE PIPELINE ===\nTarget FQBN: ${boardFqbn}\nCOM Port: ${port}\nFirmware: ${firmwareInoPath}\n` });
 
-  const compileArgs = ['compile', '--fqbn', boardFqbn, firmwareInoPath];
+  const compileArgs = ['compile', '--fqbn', boardFqbn, sketchDir];
   event.reply('console-log', `[USB FLASH] Command: ${cliCmd} ${compileArgs.join(' ')}`);
 
   const compileProc = spawn(cliCmd, compileArgs, { shell: true });
@@ -3480,13 +3482,14 @@ ipcMain.on('compile-and-flash-serial', (event, { port, fqbn }) => {
     }
 
     event.reply('usb-flash-progress', { status: 'uploading', progress: 50, message: 'Compilation successful. Starting USB upload...' });
-    event.reply('console-log', `[USB FLASH] Compilation complete. Uploading firmware to port ${port}...`);
+    event.reply('console-log', `[USB FLASH] Compilation complete. Waiting for COM port handle release...`);
     event.reply('usb-flash-output', { type: 'system', line: `\n=== COMPILATION SUCCESSFUL (100%) ===\nInitiating upload to port ${port}...\n` });
 
-    const uploadArgs = ['upload', '-p', port, '--fqbn', boardFqbn, firmwareInoPath];
-    event.reply('console-log', `[USB FLASH] Command: ${cliCmd} ${uploadArgs.join(' ')}`);
+    setTimeout(() => {
+      const uploadArgs = ['upload', '-p', port, '--fqbn', boardFqbn, sketchDir];
+      event.reply('console-log', `[USB FLASH] Command: ${cliCmd} ${uploadArgs.join(' ')}`);
 
-    const uploadProc = spawn(cliCmd, uploadArgs, { shell: true });
+      const uploadProc = spawn(cliCmd, uploadArgs, { shell: true });
 
     uploadProc.stdout.on('data', (data) => {
       const text = data.toString();
@@ -3553,6 +3556,7 @@ ipcMain.on('compile-and-flash-serial', (event, { port, fqbn }) => {
       event.reply('usb-flash-output', { type: 'system', line: `\n=== FLASH COMPLETED SUCCESSFULLY (100%) ===\nFirmware written to ESP32 on port ${port}.\n` });
       event.reply('console-log', `[USB FLASH SUCCESS] Firmware successfully booted on device on port ${port}!`);
     });
+    }, 500);
   });
 });
 

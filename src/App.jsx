@@ -163,6 +163,7 @@ export default function App() {
   const [diagnostics, setDiagnostics] = useState({
     rs232: 'WAITING',
     rs485: 'WAITING',
+    fr: 'WAITING',
     gprs: 'WAITING',
     bus: 'WAITING',
     ap: 'WAITING',
@@ -175,6 +176,7 @@ export default function App() {
   const [diagnosticsDetails, setDiagnosticsDetails] = useState({
     rs232: '',
     rs485: '',
+    fr: '',
     gprs: '',
     bus: '',
     ap: '',
@@ -187,6 +189,10 @@ export default function App() {
   const [diPinsSimulated, setDiPinsSimulated] = useState([false, false, false, false]);
   const [diPinsHardware, setDiPinsHardware] = useState([false, false, false, false]);
   const [testerSwitch, setTesterSwitch] = useState(false);
+
+  // Database Connection Acknowledgement Modal state (Request 3)
+  const [showDbAckModal, setShowDbAckModal] = useState(false);
+  const [dbAckData, setDbAckData] = useState(null);
 
   // Boot Sequence State
   const [bootProgress, setBootProgress] = useState(0);
@@ -299,6 +305,13 @@ export default function App() {
   const [diagnosticRemarks, setDiagnosticRemarks] = useState(() => {
     try { return JSON.parse(localStorage.getItem('diagnosticRemarks') || '{}'); } catch { return {}; }
   });
+
+  // 3-dots context menu & dialog popups states (Task 5)
+  const [menuAnchor, setMenuAnchor] = useState(null);
+  const [activeMenuModule, setActiveMenuModule] = useState(null);
+  const [showRemarksModal, setShowRemarksModal] = useState(false);
+  const [showLogsModal, setShowLogsModal] = useState(false);
+  const [tempRemarksText, setTempRemarksText] = useState('');
 
   // Device reconnect — known device banner state
   const [reconnectBanner, setReconnectBanner] = useState(null); // null | { imei, doc }
@@ -2413,28 +2426,6 @@ Overall Status : ${overallStatus}
     ipcRenderer.send('connect-serial', { portPath: port, baudRate: selectedBaud || '115200', pcbNumber });
   };
 
-  const autoScanAndConnect = () => {
-    addLogLine('[AUTO CONNECT] Auto-scanning available COM ports and wireless gateways...', 'system');
-    refreshPorts();
-
-    setTimeout(() => {
-      let targetPort = selectedSerialPort && selectedSerialPort !== 'CUSTOM_PORT' ? selectedSerialPort : null;
-      if (!targetPort && serialPorts.length > 0) {
-        targetPort = serialPorts[0].path;
-      }
-
-      if (targetPort) {
-        setSelectedSerialPort(targetPort);
-        addLogLine(`[AUTO CONNECT] Auto-connecting to serial port: ${targetPort}...`, 'system');
-        ipcRenderer.send('connect-serial', { portPath: targetPort, baudRate: selectedBaud || '115200', pcbNumber });
-      } else {
-        const ipToConnect = wifiIp || directConnectIp || '192.168.0.1';
-        addLogLine(`[AUTO CONNECT] Auto-connecting to TCP telemetry server at ${ipToConnect}:9000...`, 'system');
-        ipcRenderer.send('connect-tcp', { ip: ipToConnect, port: wifiPort || '9000', pcbNumber });
-      }
-    }, 400);
-  };
-
   const handleUsbFlash = () => {
     const port = selectedSerialPort || (serialPorts.length > 0 ? serialPorts[0].path : null) || (connection.type === 'serial' ? connection.target : null);
     if (!port || port === 'CUSTOM_PORT') {
@@ -2461,16 +2452,17 @@ Overall Status : ${overallStatus}
     setIsInitDbLoading(true);
     try {
       const res = await ipcRenderer.invoke('init-database-collections');
+      setDbAckData(res);
+      setShowDbAckModal(true);
       if (res.success) {
         addLogLine(`[DATABASE ACKNOWLEDGEMENT] ${res.message}`, 'success');
-        alert(`Database Acknowledgement:\n\n${res.message}`);
       } else {
         addLogLine(`[DATABASE ACKNOWLEDGEMENT ERROR] ${res.message}`, 'error');
-        alert(`Database Initialization Error:\n\n${res.message}`);
       }
     } catch (err) {
+      setDbAckData({ success: false, message: err.message });
+      setShowDbAckModal(true);
       addLogLine(`[DATABASE ACKNOWLEDGEMENT EXCEPTION] ${err.message}`, 'error');
-      alert(`Database Error:\n\n${err.message}`);
     } finally {
       setIsInitDbLoading(false);
     }
@@ -3992,72 +3984,35 @@ Overall Status : ${overallStatus}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <div className="diag-value" style={{ fontSize: '11px', fontWeight: 'bold' }}>{diagnostics[key]}</div>
-                          {connection.type && diagnostics[key] !== 'TESTING' && (
-                            key === 'gprs' ? (
-                              <div style={{ display: 'flex', gap: '6px', width: '130px', flexShrink: 0 }}>
-                                <button
-                                  className="btn btn-secondary small"
-                                  style={{ flex: 1, margin: 0, padding: '2px 4px', fontSize: '10px', height: '22px', minWidth: 'auto', border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
-                                  onClick={() => testModule(key)}
-                                >
-                                  Test
-                                </button>
-                                <button
-                                  className="btn btn-secondary small"
-                                  style={{ flex: 1, margin: 0, padding: '2px 4px', fontSize: '10px', height: '22px', minWidth: 'auto', border: '1px solid rgba(0, 240, 255, 0.4)', color: '#00f0ff', background: 'rgba(0, 240, 255, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', cursor: 'pointer' }}
-                                  onClick={() => setShowGprsConsole(true)}
-                                  title="Open GPRS Modem Interactive AT Command Debug Console"
-                                >
-                                  📟 Debug
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                className="btn btn-secondary small"
-                                style={{ padding: '2px 8px', fontSize: '10px', height: '22px', minWidth: 'auto', margin: 0, border: '1px solid rgba(249, 83, 198, 0.3)', cursor: 'pointer' }}
-                                onClick={() => testModule(key)}
-                              >
-                                Test
-                              </button>
-                            )
-                          )}
+                          <button
+                            className="btn-dots"
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'rgba(255, 255, 255, 0.6)',
+                              cursor: 'pointer',
+                              fontSize: '15px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'all 0.2s',
+                              outline: 'none',
+                              marginLeft: '4px'
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              // Shift left slightly to align dropdown menu nicely
+                              setMenuAnchor({ x: rect.right - 150, y: rect.bottom + window.scrollY });
+                              setActiveMenuModule(key);
+                            }}
+                          >
+                            ⋮
+                          </button>
                         </div>
                       </div>
-                      {/* Remarks textarea for each diagnostic module */}
-                      <textarea
-                        placeholder={`${key.toUpperCase()} remarks — what was not working, next steps...`}
-                        value={diagnosticRemarks[key] || ''}
-                        onChange={e => {
-                          const updated = { ...diagnosticRemarks, [key]: e.target.value };
-                          setDiagnosticRemarks(updated);
-                          localStorage.setItem('diagnosticRemarks', JSON.stringify(updated));
-                        }}
-                        onMouseLeave={e => {
-                          saveModuleRemarkToDb(key, e.target.value);
-                        }}
-                        onMouseOut={e => {
-                          saveModuleRemarkToDb(key, e.target.value);
-                        }}
-                        onBlur={e => {
-                          saveModuleRemarkToDb(key, e.target.value);
-                        }}
-                        rows={2}
-                        style={{
-                          width: '100%',
-                          marginTop: '6px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.07)',
-                          borderRadius: '5px',
-                          color: 'rgba(255,255,255,0.6)',
-                          fontSize: '10px',
-                          padding: '5px 8px',
-                          resize: 'vertical',
-                          outline: 'none',
-                          fontFamily: 'var(--font-mono)',
-                          lineHeight: 1.5,
-                          boxSizing: 'border-box'
-                        }}
-                      />
                       {key === 'di' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                           <div className="di-pins-container" style={{
@@ -4544,6 +4499,9 @@ Overall Status : ${overallStatus}
           />
         </div>
       )}
+      {/* Drifting background neon glow-spheres (Task 6) */}
+      <div className="glow-sphere sphere-1" />
+      <div className="glow-sphere sphere-2" />
 
       <div className="app-container">
 
@@ -10496,6 +10454,393 @@ Overall Status : ${overallStatus}
                 style={{ margin: 0, padding: '6px 16px', fontSize: '12px' }}
               >
                 {isFlashingUsb ? 'Flashing in background...' : 'Close Showcase Terminal'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Database Connection & Collection Initialization Popup Modal (Request 3) */}
+      {showDbAckModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'rgba(0, 0, 0, 0.8)',
+          backdropFilter: 'blur(6px)',
+          zIndex: 99999,
+          display: 'flex',
+          justify: 'center',
+          alignItems: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: '540px',
+            background: '#0f172a',
+            border: '1px solid #1e293b',
+            borderRadius: '12px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+            padding: '24px',
+            color: '#f8fafc'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '15px' }}>
+              <div style={{ fontSize: '32px' }}>🗄️</div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#38bdf8' }}>
+                  MongoDB Database &amp; Collections Status
+                </h3>
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                  Target Database: <strong style={{ color: '#f1f5f9' }}>IOT_Monitor_System</strong>
+                </span>
+              </div>
+            </div>
+
+            <div style={{
+              background: '#020617',
+              borderRadius: '8px',
+              padding: '14px',
+              border: '1px solid #1e293b',
+              marginBottom: '20px',
+              fontSize: '13px',
+              lineHeight: 1.6
+            }}>
+              <div style={{ color: dbAckData?.success ? '#4ade80' : '#f87171', fontWeight: 'bold', marginBottom: '8px' }}>
+                {dbAckData?.success ? '🟢 DATABASE CONNECTED & INITIALIZED' : '🔴 CONNECTION / INITIALIZATION ERROR'}
+              </div>
+              <p style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'monospace', color: '#cbd5e1' }}>
+                {dbAckData?.message || 'Processing database connection setup...'}
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-primary"
+                onClick={() => setShowDbAckModal(false)}
+                style={{ margin: 0, padding: '8px 24px', background: 'linear-gradient(135deg, #38bdf8 0%, #0284c7 100%)' }}
+              >
+                Acknowledge &amp; Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3-dots Context Menu Dropdown */}
+      {menuAnchor && activeMenuModule && (
+        <>
+          <div
+            onClick={() => setMenuAnchor(null)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 9998,
+              background: 'transparent'
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              top: menuAnchor.y + 5,
+              left: menuAnchor.x,
+              zIndex: 9999,
+              background: 'rgba(30, 30, 30, 0.95)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '6px',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+              padding: '6px 0',
+              minWidth: '150px',
+              animation: 'fadeIn 0.15s ease-out'
+            }}
+          >
+            <button
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                background: 'none',
+                border: 'none',
+                color: '#fff',
+                padding: '8px 12px',
+                fontSize: '12px',
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              onClick={() => {
+                setMenuAnchor(null);
+                testModule(activeMenuModule);
+              }}
+            >
+              🔄 Retry Test
+            </button>
+            <button
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                background: 'none',
+                border: 'none',
+                color: '#fff',
+                padding: '8px 12px',
+                fontSize: '12px',
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              onClick={() => {
+                setMenuAnchor(null);
+                setShowLogsModal(true);
+              }}
+            >
+              📋 View Logs
+            </button>
+            <button
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                background: 'none',
+                border: 'none',
+                color: '#fff',
+                padding: '8px 12px',
+                fontSize: '12px',
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              onClick={() => {
+                setMenuAnchor(null);
+                setTempRemarksText(diagnosticRemarks[activeMenuModule] || '');
+                setShowRemarksModal(true);
+              }}
+            >
+              ✍_ Remarks
+            </button>
+            <button
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                background: 'none',
+                border: 'none',
+                color: '#fff',
+                padding: '8px 12px',
+                fontSize: '12px',
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              onClick={() => {
+                setMenuAnchor(null);
+                setDiagnostics(prev => ({ ...prev, [activeMenuModule]: 'WAITING' }));
+                setDiagnosticsDetails(prev => ({ ...prev, [activeMenuModule]: '' }));
+              }}
+            >
+              ❌ Clear Status
+            </button>
+            {activeMenuModule === 'gprs' && (
+              <button
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  background: 'none',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '8px 12px',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setShowGprsConsole(true);
+                }}
+              >
+                📟 AT Console
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Edit Remarks Dialog Modal */}
+      {showRemarksModal && activeMenuModule && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <div
+            className="glass-card"
+            style={{
+              width: '450px',
+              padding: '24px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(30, 30, 30, 0.85)',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+              borderRadius: '16px',
+              animation: 'scaleIn 0.2s ease-out'
+            }}
+          >
+            <h3 style={{ textTransform: 'uppercase', color: 'var(--accent-pink)', marginBottom: '16px', fontSize: '15px' }}>
+              ✍_ Edit Remarks: {activeMenuModule.toUpperCase()} Module
+            </h3>
+            <p style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '12px' }}>
+              Enter observations, debugging notes or pending work items for this module.
+            </p>
+            <textarea
+              placeholder="e.g. Loopback test failed due to TX open line, check resistor R12..."
+              value={tempRemarksText}
+              onChange={e => setTempRemarksText(e.target.value)}
+              rows={4}
+              style={{
+                width: '100%',
+                background: 'rgba(0,0,0,0.3)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '8px',
+                color: 'white',
+                padding: '10px',
+                fontSize: '12.5px',
+                fontFamily: 'var(--font-mono)',
+                outline: 'none',
+                resize: 'none',
+                marginBottom: '20px'
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '8px 16px', margin: 0, fontSize: '12px' }}
+                onClick={() => setShowRemarksModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ padding: '8px 24px', margin: 0, fontSize: '12px', background: 'linear-gradient(135deg, var(--accent-pink) 0%, var(--accent-blue) 100%)' }}
+                onClick={() => {
+                  const updated = { ...diagnosticRemarks, [activeMenuModule]: tempRemarksText };
+                  setDiagnosticRemarks(updated);
+                  localStorage.setItem('diagnosticRemarks', JSON.stringify(updated));
+                  saveModuleRemarkToDb(activeMenuModule, tempRemarksText);
+                  setShowRemarksModal(false);
+                }}
+              >
+                Save Remarks
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Diagnostics Logs Dialog Modal */}
+      {showLogsModal && activeMenuModule && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <div
+            className="glass-card"
+            style={{
+              width: '600px',
+              padding: '24px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(30, 30, 30, 0.85)',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+              borderRadius: '16px',
+              animation: 'scaleIn 0.2s ease-out'
+            }}
+          >
+            <h3 style={{ textTransform: 'uppercase', color: 'var(--accent-blue)', marginBottom: '16px', fontSize: '15px' }}>
+              📋 Raw Diagnostics Log: {activeMenuModule.toUpperCase()} Module
+            </h3>
+            
+            <div
+              style={{
+                width: '100%',
+                maxHeight: '300px',
+                overflowY: 'auto',
+                background: 'rgba(0,0,0,0.4)',
+                border: '1px solid rgba(255,255,255,0.05)',
+                borderRadius: '8px',
+                padding: '12px',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '11px',
+                color: '#8be9fd',
+                whiteSpace: 'pre-wrap',
+                marginBottom: '20px',
+                lineHeight: 1.5
+              }}
+            >
+              {diagnosticsDetails[activeMenuModule] || 'No diagnostic output log recorded for this session. Trigger a "Run Test" or retry this module.'}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '8px 16px', margin: 0, fontSize: '12px' }}
+                onClick={() => {
+                  const logContent = diagnosticsDetails[activeMenuModule] || '';
+                  navigator.clipboard.writeText(logContent);
+                  alert('Logs copied to clipboard!');
+                }}
+                disabled={!diagnosticsDetails[activeMenuModule]}
+              >
+                📋 Copy Logs
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ padding: '8px 24px', margin: 0, fontSize: '12px', background: 'linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-pink) 100%)' }}
+                onClick={() => setShowLogsModal(false)}
+              >
+                Close Dialog
               </button>
             </div>
           </div>
