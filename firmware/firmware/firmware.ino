@@ -2928,19 +2928,28 @@ void processCommand(String cmd) {
       if (tcpClient && tcpClient.connected())
         tcpClient.println(reply);
     } else {
-      logLn("[GPRS ERROR] Failed to extract a valid 15-digit IMEI from modem response. Defaulting to '--'.");
-      deviceIMEI = "--";
-      File f = SPIFFS.open("/imei.txt", "w");
-      if (f) {
-        f.print(deviceIMEI);
-        f.close();
-        logLn("[SPIFFS] Saved default IMEI '--' to /imei.txt");
+      logLn("[GPRS ERROR] Failed to extract a valid 15-digit IMEI from modem response.");
+      if (deviceIMEI.length() >= 15 && deviceIMEI != "--") {
+        logFmt("[GPRS FALLBACK] Keeping existing IMEI: %s\n", deviceIMEI.c_str());
+        String reply = "{\"status\":\"IMEI_UPDATED\",\"imei\":\"" + deviceIMEI + "\"}";
+        Serial.print("JSON_PAYLOAD:");
+        Serial.println(reply);
+        if (tcpClient && tcpClient.connected())
+          tcpClient.println(reply);
+      } else {
+        deviceIMEI = "--";
+        File f = SPIFFS.open("/imei.txt", "w");
+        if (f) {
+          f.print(deviceIMEI);
+          f.close();
+          logLn("[SPIFFS] Saved default IMEI '--' to /imei.txt");
+        }
+        String reply = "{\"status\":\"IMEI_FETCH_FAILED\",\"imei\":\"--\",\"msg\":\"GPRS IMEI not found\"}";
+        Serial.print("JSON_PAYLOAD:");
+        Serial.println(reply);
+        if (tcpClient && tcpClient.connected())
+          tcpClient.println(reply);
       }
-      String reply = "{\"status\":\"IMEI_FETCH_FAILED\",\"imei\":\"--\",\"msg\":\"GPRS IMEI not found\"}";
-      Serial.print("JSON_PAYLOAD:");
-      Serial.println(reply);
-      if (tcpClient && tcpClient.connected())
-        tcpClient.println(reply);
     }
   } else if (cmd == "SERIAL_BRIDGE") {
     logLn("[SYSTEM] Starting Serial-to-Serial GPRS passthrough bridge.");

@@ -1482,8 +1482,8 @@ app.whenReady().then(async () => {
               mac: msg.payload.mac || ''
             });
           }
-          // Auto-sync configuration from MongoDB registry to the connected hardware device
-          if (msg.payload.imei && msg.payload.imei !== '--') {
+          // Auto-sync configuration from MongoDB registry to the connected hardware device ONLY on full boot success
+          if (msg.payload.status === 'BOOT_SUCCESS' && msg.payload.imei && msg.payload.imei !== '--') {
             db.syncDeviceConfig(msg.payload.imei, {
               ...msg.payload,
               connectionType: activeTcpSocket ? 'tcp' : (activeSerialPort ? 'serial' : 'unknown'),
@@ -1516,9 +1516,10 @@ app.whenReady().then(async () => {
                   sendCommand(`SET_INTERVAL:${config.telemetryInterval}`);
                 }
 
-                // Push custom Wi-Fi router configuration if SSID differs
+                // Push custom Wi-Fi router configuration if SSID differs (only if device reports a non-empty SSID)
                 const currentSsid = msg.payload.wifi ? msg.payload.wifi.ssid : '';
-                if (config.routerSSID && config.routerSSID !== currentSsid) {
+                console.log(`[DB-SYNC-CHECK] DB SSID: ${JSON.stringify(config.routerSSID)} | Device SSID: ${JSON.stringify(currentSsid)}`);
+                if (config.routerSSID && currentSsid && config.routerSSID !== currentSsid) {
                   console.log(`[DB-SYNC] Pushing wireless router SSID update: ${config.routerSSID}`);
                   sendCommand(`SET_WIFI:${config.routerSSID}:${config.routerPassword}`);
                   // Reboot the gateway after 1 second so changes apply
@@ -1655,7 +1656,7 @@ app.whenReady().then(async () => {
     } catch (e) {
       console.error('[USB POLLER] Error listing ports:', e.message);
     }
-  }, 2000);
+  }, 5000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -1670,13 +1671,10 @@ app.on('window-all-closed', () => {
   if (tcpTelemetryServer) {
     try { tcpTelemetryServer.close(); } catch (e) { }
   }
-  // Terminate the worker thread gracefully
+  // Terminate the worker thread immediately to prevent zombie background processes
   if (dataWorker) {
     try {
-      dataWorker.postMessage({ type: 'SHUTDOWN' });
-      setTimeout(() => {
-        if (dataWorker) dataWorker.terminate();
-      }, 500);
+      dataWorker.terminate();
     } catch (e) { /* ignore */ }
   }
   // Flush any pending cache write immediately
@@ -1809,7 +1807,7 @@ function startBackgroundScanning(webContents) {
     } catch (e) {
       console.error('[UDP BG] Socket error:', e.message);
     }
-  }, 4000);
+  }, 10000);
 }
 
 // Helper: Cleanup active network and serial connections

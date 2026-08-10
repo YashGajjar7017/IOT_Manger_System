@@ -311,8 +311,9 @@ export default function App() {
   const [activeMenuModule, setActiveMenuModule] = useState(null);
   const [showRemarksModal, setShowRemarksModal] = useState(false);
   const [showLogsModal, setShowLogsModal] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState('');
   const [tempRemarksText, setTempRemarksText] = useState('');
-
   // Device reconnect — known device banner state
   const [reconnectBanner, setReconnectBanner] = useState(null); // null | { imei, doc }
 
@@ -722,6 +723,46 @@ export default function App() {
   const [isSavingFile, setIsSavingFile] = useState(false);
   const [isCreatingNewFile, setIsCreatingNewFile] = useState(false);
   const [newFileNameInput, setNewFileNameInput] = useState('');
+
+  useEffect(() => {
+    if (showQrModal) {
+      const qrPayload = {
+        imei: imei || 'N/A',
+        pcbNumber: pcbNumber || 'N/A',
+        mac: (registeredDevices.find(d => d.imei === imei || d.pcbNumber === pcbNumber)?.mac) || 'N/A',
+        deviceMode: (registeredDevices.find(d => d.imei === imei || d.pcbNumber === pcbNumber)?.deviceMode) || 'solaryan inverter',
+        routerSSID: (registeredDevices.find(d => d.imei === imei || d.pcbNumber === pcbNumber)?.routerSSID) || 'Medha_Network\'s',
+        telemetryInterval: (registeredDevices.find(d => d.imei === imei || d.pcbNumber === pcbNumber)?.telemetryInterval) || 1500,
+        status: {
+          rs232: diagnostics.rs232 || 'WAITING',
+          rs485: diagnostics.rs485 || 'WAITING',
+          gprs: diagnostics.gprs || 'WAITING',
+          flash: diagnostics.flash || 'WAITING',
+          di: diagnostics.di || 'WAITING',
+          rtc: diagnostics.rtc || 'WAITING',
+          psram: diagnostics.psram || 'WAITING',
+          switch: diagnostics.switch || 'WAITING',
+          fr: diagnostics.fr || 'WAITING',
+          ap: diagnostics.ap || 'WAITING',
+          bus: diagnostics.bus || 'WAITING',
+          driver: diagnostics.driver || 'WAITING'
+        }
+      };
+      
+      import('qrcode').then((QRCodeLib) => {
+        const QRCode = QRCodeLib.default || QRCodeLib;
+        QRCode.toDataURL(JSON.stringify(qrPayload), { width: 250, margin: 2 }, (err, url) => {
+          if (!err) {
+            setQrDataUrl(url);
+          } else {
+            console.error('QR Code generation failed:', err);
+          }
+        });
+      }).catch(err => {
+        console.error('Failed to load qrcode library:', err);
+      });
+    }
+  }, [showQrModal, imei, pcbNumber, registeredDevices, diagnostics]);
 
   // Auto-fill values when device connects/boots
   useEffect(() => {
@@ -5618,10 +5659,13 @@ Overall Status : ${overallStatus}
                   <button className="btn btn-danger header-btn" onClick={() => sendControlCommand('REBOOT')} disabled={!connection.type} title="Force soft reboot of connected gateway" style={{ height: '28px', fontSize: '10.5px', padding: '0 8px', margin: 0, minWidth: 'auto', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#ff4d4d' }}>
                     Reboot
                   </button>
+                  <button className="btn btn-primary header-btn" onClick={() => setShowQrModal(true)} disabled={!connection.type} title="Generate and display QR configuration for mobile transfer" style={{ height: '28px', fontSize: '10.5px', padding: '0 8px', margin: 0, minWidth: 'auto', background: 'linear-gradient(135deg, var(--accent-pink) 0%, var(--accent-blue) 100%)', border: 'none', fontWeight: 'bold' }}>
+                    📱 QR Transfer
+                  </button>
                 </div>
 
                 <div className="header-right-status" style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: '0 0 auto' }}>
-                  <div className="live-status-container" style={{ display: 'flex', gap: '12px', background: 'rgba(255,255,255,0.02)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '11.5px' }}>
+                  <div className="live-status-container" style={{ display: 'flex', gap: '12px', background: 'rgba(255,255,255,0.02)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '11.5px', flexWrap: 'wrap' }}>
                     <div className="live-status-item">
                       <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>Link: </span>
                       <span className="live-status-value" style={{ fontWeight: 'bold', color: connection.type ? '#00ff66' : '#ff3366' }}>
@@ -5641,6 +5685,30 @@ Overall Status : ${overallStatus}
                     <div className="live-status-item">
                       <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>PCB: </span>
                       <span className="live-status-value" style={{ fontWeight: 'bold', color: '#fff' }}>{pcbNumber || 'N/A'}</span>
+                    </div>
+                    <div className="live-status-item">
+                      <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>Mode: </span>
+                      <span className="live-status-value" style={{ fontWeight: 'bold', color: '#fff' }}>
+                        {(registeredDevices.find(d => d.imei === imei || d.pcbNumber === pcbNumber)?.deviceMode) || 'solaryan inverter'}
+                      </span>
+                    </div>
+                    <div className="live-status-item">
+                      <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>SSID: </span>
+                      <span className="live-status-value" style={{ fontWeight: 'bold', color: '#00f0ff' }}>
+                        {(registeredDevices.find(d => d.imei === imei || d.pcbNumber === pcbNumber)?.routerSSID) || 'N/A'}
+                      </span>
+                    </div>
+                    <div className="live-status-item">
+                      <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>Interval: </span>
+                      <span className="live-status-value" style={{ fontWeight: 'bold', color: '#ffbb00' }}>
+                        {(registeredDevices.find(d => d.imei === imei || d.pcbNumber === pcbNumber)?.telemetryInterval) || 1500}ms
+                      </span>
+                    </div>
+                    <div className="live-status-item">
+                      <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>STA IP: </span>
+                      <span className="live-status-value" style={{ fontWeight: 'bold', color: '#fff', fontFamily: 'monospace' }}>
+                        {wifiDetails.ip_sta || '0.0.0.0'}
+                      </span>
                     </div>
                     <div className="live-status-item">
                       <span className="live-status-label" style={{ color: 'var(--text-dim)' }}>DB Status: </span>
@@ -10839,6 +10907,111 @@ Overall Status : ${overallStatus}
                 className="btn btn-primary"
                 style={{ padding: '8px 24px', margin: 0, fontSize: '12px', background: 'linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-pink) 100%)' }}
                 onClick={() => setShowLogsModal(false)}
+              >
+                Close Dialog
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QR Code Transfer Dialog Modal */}
+      {showQrModal && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <div
+            className="glass-card"
+            style={{
+              width: '450px',
+              padding: '24px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(30, 30, 30, 0.9)',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+              borderRadius: '16px',
+              animation: 'scaleIn 0.2s ease-out',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center'
+            }}
+          >
+            <h3 style={{ textTransform: 'uppercase', color: 'var(--accent-pink)', marginBottom: '8px', fontSize: '15px', textAlign: 'center' }}>
+              📱 Mobile QR Transfer
+            </h3>
+            <p style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginBottom: '16px', textAlign: 'center' }}>
+              Scan this QR code with any reader/phone to instantly copy the full device configuration profile and diagnostics.
+            </p>
+            
+            <div style={{ background: '#fff', padding: '12px', borderRadius: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: '16px', border: '2px solid rgba(255, 255, 255, 0.1)' }}>
+              <img
+                src={qrDataUrl || ''}
+                alt="Device Config QR Code"
+                style={{ width: '200px', height: '200px', display: 'block' }}
+              />
+            </div>
+            
+            <textarea
+              readOnly
+              value={JSON.stringify(
+                {
+                  imei: imei || 'N/A',
+                  pcbNumber: pcbNumber || 'N/A',
+                  mac: (registeredDevices.find(d => d.imei === imei || d.pcbNumber === pcbNumber)?.mac) || 'N/A',
+                  deviceMode: (registeredDevices.find(d => d.imei === imei || d.pcbNumber === pcbNumber)?.deviceMode) || 'solaryan inverter',
+                  routerSSID: (registeredDevices.find(d => d.imei === imei || d.pcbNumber === pcbNumber)?.routerSSID) || 'Medha_Network\'s',
+                  telemetryInterval: (registeredDevices.find(d => d.imei === imei || d.pcbNumber === pcbNumber)?.telemetryInterval) || 1500,
+                  status: {
+                    rs232: diagnostics.rs232 || 'WAITING',
+                    rs485: diagnostics.rs485 || 'WAITING',
+                    gprs: diagnostics.gprs || 'WAITING',
+                    flash: diagnostics.flash || 'WAITING',
+                    di: diagnostics.di || 'WAITING',
+                    rtc: diagnostics.rtc || 'WAITING',
+                    psram: diagnostics.psram || 'WAITING',
+                    switch: diagnostics.switch || 'WAITING',
+                    fr: diagnostics.fr || 'WAITING',
+                    ap: diagnostics.ap || 'WAITING',
+                    bus: diagnostics.bus || 'WAITING',
+                    driver: diagnostics.driver || 'WAITING'
+                  }
+                },
+                null,
+                2
+              )}
+              style={{
+                width: '100%',
+                background: 'rgba(0,0,0,0.3)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '8px',
+                color: '#fff',
+                padding: '10px',
+                fontSize: '11px',
+                fontFamily: 'var(--font-mono)',
+                outline: 'none',
+                resize: 'none',
+                height: '100px',
+                marginBottom: '20px'
+              }}
+            />
+            
+            <div style={{ display: 'flex', width: '100%', justifyContent: 'center' }}>
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '8px 24px', margin: 0, fontSize: '12px' }}
+                onClick={() => setShowQrModal(false)}
               >
                 Close Dialog
               </button>
